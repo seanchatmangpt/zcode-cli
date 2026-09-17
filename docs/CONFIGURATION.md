@@ -385,3 +385,131 @@ HTTP MCP services are reported as disabled with an `official_auth_unavailable`
 diagnostic. Other plugin components remain available. This does not disable
 certificate, origin, or permission checks, and does not suppress services when
 the runtime provides the required registry. No user configuration is rewritten.
+
+## Registering a local or dev MCP server or plugin
+
+Nothing else in this repository's docs covers how to connect a local or
+in-development MCP server (or plugin) to ZCode. This section documents both
+supported paths, verified end to end this session against ZCode 3.11.2-25 by
+reverse-engineering the bundled runtime (`vendor/zcode.cjs`) and confirming
+behavior live in the TUI.
+
+### Direct MCP server registration
+
+The fastest path — and, per the known limitation below, currently the only
+path that works for a server needing a real secret — is registering the
+server directly under the `mcp.servers` key in `config.json`. No plugin,
+marketplace, or trust system is involved:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "my-server-name": {
+        "type": "http",
+        "url": "http://localhost:PORT/path",
+        "headers": { "Authorization": "Bearer <token>" }
+      }
+    }
+  }
+}
+```
+
+The config loader reads this key from either the global config
+(`~/.zcode/cli/config.json`, see "Configuration file location" above) or a
+project-level config file — `zcode.json` or `.zcode/config.json` — found by
+walking up from the current working directory to the nearest `.git`
+ancestor. This is the same project-override mechanism already used for
+provider and model settings (see "Using the custom provider" above); an
+`mcp.servers` entry works the same way at either level.
+
+Verified this session end to end: adding an entry this way made the server
+show up in the TUI's `/mcp` panel as `connected · http · N tools`, and it
+was genuinely callable by name from a live task after starting (or
+restarting) `zcode`.
+
+### Plugin marketplace install path
+
+ZCode also supports installing an MCP server bundled inside a plugin, via a
+local marketplace:
+
+```bash
+zcode plugins marketplace add <local-dir-with-marketplace.json> --yes --json
+zcode plugins install <plugin-name>@<marketplace-name> --yes --json
+```
+
+The exact shape required for both files is exercised end to end by
+`test/runtime/launcher.test.ts`'s `"adds a local marketplace and installs
+its Plugin end to end"` test (around lines 267-336); read that test for the
+authoritative, currently-passing example. Its `marketplace.json`:
+
+```json
+{
+  "name": "cli-smoke-marketplace",
+  "pluginRoot": ".",
+  "plugins": [
+    {
+      "description": "CLI smoke plugin",
+      "name": "cli-smoke-plugin",
+      "source": "./plugin",
+      "version": "1.0.0"
+    }
+  ]
+}
+```
+
+And the plugin's own `.zcode-plugin/plugin.json`, at the path named by
+`plugins[].source` relative to `pluginRoot`:
+
+```json
+{
+  "description": "CLI smoke plugin",
+  "name": "cli-smoke-plugin",
+  "skills": "skills",
+  "version": "1.0.0"
+}
+```
+
+`skills` names a directory, relative to the plugin root, containing one
+subdirectory per skill, each with its own `SKILL.md`. The same
+`.zcode-plugin/` layout is where a plugin's own `.mcp.json` (its bundled MCP
+server definitions) lives.
+
+#### Known limitation: install fails for any `.mcp.json` with a plain env var
+
+Confirmed this session: `zcode plugins install` fails with
+
+```json
+{
+  "code": "plugin_variable_missing",
+  "message": "Missing environment variable: <VAR>",
+  "severity": "error"
+}
+```
+
+for **any** plugin whose `.mcp.json` references a plain, non-`user_config.*`
+placeholder — `${ENV_VAR_NAME}` — even when that variable is genuinely set
+in the process environment, and even for `ZCODE_`-prefixed names that do not
+require `allowSensitive`. Root cause, found by reading the bundled runtime:
+the plugin-diagnostics preflight (function `Y4o` in this build) hardcodes an
+empty object (`env: {}`) as the substitution context for that check,
+regardless of the real process environment. This is a confirmed bug in the
+vendored runtime, not a mistake in the plugin author's `.mcp.json`.
+
+**Practical consequence:** any plugin whose `.mcp.json` needs a
+bearer-token or other secret environment variable cannot currently be
+installed via `zcode plugins install` on this ZCode build (3.11.2-25) at
+all. Until the runtime is patched, use the direct `mcp.servers`
+registration path above instead — it has no such preflight and works for
+servers needing real secrets today.
+
+### See Also
+
+- "Official MCP Availability" above — the separate
+  `official_auth_unavailable` diagnostic for official HTTP MCP services,
+  which is unrelated to the local/dev path documented here.
+- [Host integration contract](./HOST_INTEGRATION.md) — the process/stdio
+  boundary a host uses to launch `zcode`; it does not cover plugin or MCP
+  registration.
+- `test/runtime/launcher.test.ts` — canonical, currently-passing source for
+  the local-marketplace-plus-plugin-install shape used above.

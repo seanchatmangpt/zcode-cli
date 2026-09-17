@@ -2336,11 +2336,9 @@ class ZCodeTui {
       const tool = this.ensureToolView(event.toolCallId, event.toolName, event.partId, event.messageId);
       if (!tool.view.isTerminal()) this.updateToolView(tool, "complete", event.result, event.error, event.progress);
     } else if (event.kind === "error") {
-      this.addSystemEvent({
-        tone: "error",
-        title: "Model stream failed",
-        detail: event.error instanceof Error ? event.error.message : asString(event.error) ?? event.message
-      });
+      const detail = event.error instanceof Error ? event.error.message : asString(event.error) ?? event.message;
+      this.addSystemEvent({ tone: "error", title: "Model stream failed", detail });
+      this.markPendingTurnNotificationFailed(detail ?? "Model stream failed.");
     } else if (event.type === "model_request_started") {
       this.updateActivity(
         event.attempt !== undefined && event.attempt > 1
@@ -2351,6 +2349,7 @@ class ZCodeTui {
     } else if (event.type === "turn.failed" || event.type === "turn_error") {
       this.finalizeUnresolvedTools("failed", event.message ?? "Turn failed.");
       this.addSystemEvent({ tone: "error", title: "Turn failed", detail: event.message });
+      this.markPendingTurnNotificationFailed(event.message ?? "Turn failed.");
     } else if (event.type === "model_retry_scheduled" || event.type === "streamRecovery.updated") {
       const retry = modelRetryProgress(event, "scheduled");
       const delay = event.delayMs !== undefined ? `in ${Math.ceil(event.delayMs / 1_000)}s` : undefined;
@@ -2372,6 +2371,7 @@ class ZCodeTui {
         );
         if (event.retryable !== true) {
           this.addSystemEvent({ tone: "error", title: "Model request failed", detail: event.message });
+          this.markPendingTurnNotificationFailed(event.message ?? "Model request failed.");
         }
       }
     } else if (event.type === "model_stream_stalled") {
@@ -5604,6 +5604,29 @@ class ZCodeTui {
     ]);
     if (timeout) clearTimeout(timeout);
     if (usage !== undefined) this.applySessionUsage(usage);
+  }
+
+  /**
+   * Downgrade an optimistically-pending "completed" turn notification to
+   * "failed" when a turn/model failure event arrives on the stream.
+   *
+   * `submit()` sets `pendingTurnNotification = "completed"` before awaiting
+   * `sendInput`/`submitPrompt`, then only overwrites it to "failed" from the
+   * catch block if that call *throws*. After the attach-session-metadata /
+   * TUI-metadata-turn null-guard runtime patches (see scripts/sync-runtime.ts),
+   * a failed submission (e.g. a provider signing error or a 429 rate limit)
+   * can resolve normally instead of throwing — the real failure is reported
+   * only through this event stream. Without this correction, finishTurn()
+   * would still see "completed" and fire a false "Agent turn complete"
+   * notification for a turn that actually failed. Only downgrade a
+   * notification that is already pending ("/" commands and steer submissions
+   * that opted out of notifications leave pendingTurnNotification undefined,
+   * and must stay silent).
+   */
+  private markPendingTurnNotificationFailed(detail?: string): void {
+    if (!this.pendingTurnNotification) return;
+    this.pendingTurnNotification = "failed";
+    this.pendingTurnNotificationDetail = detail ?? this.pendingTurnNotificationDetail;
   }
 
   private finishTurn(unfinishedToolState = "interrupted"): void {
