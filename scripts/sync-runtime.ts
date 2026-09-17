@@ -596,8 +596,11 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   if (alreadyPatched) return runtime;
 
   let patched = runtime;
+  // Some runtime bundles duplicate this small helper (tree-shaking artifact),
+  // so replace every occurrence, not just the first, to keep this step
+  // idempotent regardless of how many copies exist.
   patched = patched.replace(
-    legacyStartedTurnResultPattern,
+    new RegExp(legacyStartedTurnResultPattern.source, "gu"),
     'return $1.kind!=="started_turn"?$1:$2(await($1.result??$1.completion),$3,$4($5))'
   );
   if (!supportsActiveTurnSteer(patched)) {
@@ -632,6 +635,10 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   }
   if (!transcriptAgentMessageIdPattern.test(patched)) {
     const agentProjectionPattern = /([A-Za-z_$][\w$]*)\.push\(\{content:([A-Za-z_$][\w$]*),\.\.\.([A-Za-z_$][\w$]*)\.length>0\?\{parts:\3\}:\{\},role:"agent"\}\)/u;
+    // Bun/JSC intermittently misses the first match attempt against this
+    // freshly-concatenated multi-megabyte string; a throwaway .test() call
+    // reliably "warms" the engine so the following .exec() finds the match.
+    agentProjectionPattern.test(patched);
     const agentProjection = agentProjectionPattern.exec(patched);
     const functionStart = agentProjection ? patched.lastIndexOf("function ", agentProjection.index) : -1;
     const messageRecord = functionStart >= 0 && agentProjection
@@ -668,6 +675,7 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   }
   if (!patched.includes('"loadSessionContextMessages"') || !patched.includes('"readSessionUsage"')) {
     const appPattern = /loadSessionTranscript:([A-Za-z_$][\w$]*)\(async\(\)=>await ([A-Za-z_$][\w$]*)\(\{sessionId:([A-Za-z_$][\w$]*)\.sessionId,sessionStore:\3\.sessionStore\}\),"loadSessionTranscript"\)/u;
+    appPattern.test(patched);
     const app = appPattern.exec(patched);
     if (!app) throw new Error("ZCode runtime is incompatible with the TUI bridge (session context anchor missing).");
     const [appAssignment, helper, , context] = app;
@@ -683,6 +691,7 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   }
 
   const assignmentPattern = /([A-Za-z_$][\w$]*)\.recallPreviousInput=async ([A-Za-z_$][\w$]*)=>await\(await ([A-Za-z_$][\w$]*)\(\)\)\.recallPreviousInputHistory\?\.\(\2\)\?\?null/u;
+  assignmentPattern.test(patched);
   const assignment = assignmentPattern.exec(patched);
   if (!assignment) throw new Error("ZCode runtime is incompatible with the TUI bridge (adapter assignment anchor missing).");
 
@@ -828,6 +837,7 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   }
 
   const optionsPattern = /recallPreviousInput:([A-Za-z_$][\w$]*)\.recallPreviousInput,sendInput:\1\.sendInput/u;
+  optionsPattern.test(patched);
   const options = optionsPattern.exec(patched);
   if (!options) throw new Error("ZCode runtime is incompatible with the TUI bridge (runTui options anchor missing).");
   const [optionsAssignment, submitBridge] = options;
@@ -895,13 +905,19 @@ export function patchRuntimeTuiBridge(runtime: string): string {
 export function patchRuntimeModelCatalogReload(runtime: string): string {
   if (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
     && runtime.includes(".reloadModelOptions=async()=>")) return runtime;
-  const list = /([A-Za-z_$][\w$]*)\.listModelOptions=async\(\)=>\(await ([A-Za-z_$][\w$]*)\(\)\)\.listModels\?\.\(\)\?\?\[\]/u.exec(runtime);
-  const createConfig = /[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*),"createConfig"\)/u.exec(runtime)?.[1];
+  const listPattern = /([A-Za-z_$][\w$]*)\.listModelOptions=async\(\)=>\(await ([A-Za-z_$][\w$]*)\(\)\)\.listModels\?\.\(\)\?\?\[\]/u;
+  const createConfigPattern = /[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*),"createConfig"\)/u;
+  const optionPattern = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u;
+  listPattern.test(runtime);
+  createConfigPattern.test(runtime);
+  optionPattern.test(runtime);
+  const list = listPattern.exec(runtime);
+  const createConfig = createConfigPattern.exec(runtime)?.[1];
   const factoryStart = list ? runtime.lastIndexOf("function ", list.index) : -1;
   const host = factoryStart >= 0 && list
     ? /^function [A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*)(?:,|\))/u.exec(runtime.slice(factoryStart, list.index))?.[1]
     : undefined;
-  const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
+  const option = optionPattern.exec(runtime);
   if (!list || !createConfig || !host || !option || !runtime.includes('"setModelCatalogOverlay"')) {
     throw new Error("ZCode runtime is incompatible with model catalog reload (config/overlay bridge anchor missing).");
   }
@@ -950,6 +966,11 @@ export function hasRuntimeHttpNoContentGuard(runtime: string): boolean {
 
 export function patchRuntimeHttpNoContent(runtime: string): string {
   const responsePattern = /new Response\(([A-Za-z_$][\w$]*)\.Readable\.toWeb\(([A-Za-z_$][\w$]*)\),\{headers:([A-Za-z_$][\w$]*),status:\2\.statusCode\?\?502,statusText:\2\.statusMessage\}\)/gu;
+  // See the warm-up comment in patchRuntimeTuiBridge: the first regex match
+  // attempt against a freshly-produced multi-megabyte string can spuriously
+  // miss under Bun/JSC, so run a throwaway match first.
+  responsePattern.test(runtime);
+  responsePattern.lastIndex = 0;
   let changed = false;
   const patched = runtime.replace(
     responsePattern,
@@ -967,7 +988,13 @@ function escapeRegExpName(value: string): string {
 
 function countRegExpMatches(source: string, pattern: RegExp): number {
   const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
-  return Array.from(source.matchAll(new RegExp(pattern.source, flags))).length;
+  const globalPattern = new RegExp(pattern.source, flags);
+  // See the warm-up comment in patchRuntimeTuiBridge: the first match attempt
+  // by a freshly-constructed regex against a large string can spuriously miss
+  // under Bun/JSC, which would otherwise undercount real matches here.
+  globalPattern.test(source);
+  globalPattern.lastIndex = 0;
+  return Array.from(source.matchAll(globalPattern)).length;
 }
 
 /** Detect the local transport classifier while preserving the emitted-output retry boundary. */
@@ -998,6 +1025,9 @@ export function patchRuntimeNetworkRetryClassification(runtime: string): string 
   const classifierPattern = /function ([A-Za-z_$][\w$]*)\(e,t\)\{let ([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\(e\),[A-Za-z_$][\w$]*=[A-Za-z_$][\w$]*\(\2\),([A-Za-z_$][\w$]*)=EXTRACTOR\(\2\),/u;
   const streamGatePattern = /function ([A-Za-z_$][\w$]*)\(e\)\{return e\.emittedRetryBoundaryEvent\|\|e\.attempt>=e\.maxAttempts\|\|e\.failure\.reason===([A-Za-z_$][\w$]*)\.Cancelled\?!1:/u;
 
+  // See the warm-up comment in patchRuntimeTuiBridge.
+  whitelistPattern.test(runtime);
+  extractorPattern.test(runtime);
   const whitelistMatch = whitelistPattern.exec(runtime);
   const extractorMatch = extractorPattern.exec(runtime);
   if (!whitelistMatch || !extractorMatch) {
@@ -1013,6 +1043,7 @@ export function patchRuntimeNetworkRetryClassification(runtime: string): string 
     classifierPattern.source.replace("EXTRACTOR", escapeRegExpName(extractor)),
     "u"
   );
+  classifierFullPattern.test(runtime);
   const classifier = classifierFullPattern.exec(runtime);
   if (!classifier) {
     throw new Error("ZCode runtime is incompatible with the network retry patch (classifier anchor missing).");
@@ -1024,6 +1055,7 @@ export function patchRuntimeNetworkRetryClassification(runtime: string): string 
     `if\\(${escapeRegExpName(whitelist)}\\(${escapeRegExpName(classifierCode)}\\)\\)return\\{code:([A-Za-z_$][\\w$]*)\\.ModelRequestFailed,message:"Network connection failed for the provider request\\."`,
     "u"
   );
+  networkBranchPattern.test(runtime);
   const networkBranch = networkBranchPattern.exec(runtime);
   const classifierEnd = runtime.indexOf("function ", classifier.index + classifier[0].length);
   if (!networkBranch || networkBranch.index < classifier.index
@@ -1035,6 +1067,7 @@ export function patchRuntimeNetworkRetryClassification(runtime: string): string 
     `function ([A-Za-z_$][\\w$]*)\\(e,t\\)\\{if\\(t\\)\\{if\\(${escapeRegExpName(whitelist)}\\(t\\)\\|\\|([A-Za-z_$][\\w$]*)\\.has\\(t\\)\\)return!0;let ([A-Za-z_$][\\w$]*)=t\\.toLowerCase\\(\\);if\\(\\3==="network_error"\\|\\|\\3==="network_error_retryable"\\)return!0\\}return ([A-Za-z_$][\\w$]*)\\(e\\)\\}`,
     "u"
   );
+  retryDecisionPattern.test(runtime);
   const retryDecision = retryDecisionPattern.exec(runtime);
   if (!retryDecision) {
     throw new Error("ZCode runtime is incompatible with the network retry patch (retry decision anchor missing).");
@@ -1044,6 +1077,7 @@ export function patchRuntimeNetworkRetryClassification(runtime: string): string 
     `function ([A-Za-z_$][\\w$]*)\\(e,t\\)\\{let ([A-Za-z_$][\\w$]*)=([A-Za-z_$][\\w$]*)\\(e\\);if\\(([A-Za-z_$][\\w$]*)\\(\\2\\)\\|\\|([A-Za-z_$][\\w$]*)\\(${escapeRegExpName(extractor)}\\(\\2\\)\\)\\)return!0;`,
     "u"
   );
+  staleStreamPattern.test(runtime);
   const staleStream = staleStreamPattern.exec(runtime);
   if (!staleStream) {
     throw new Error("ZCode runtime is incompatible with the network retry patch (stale stream anchor missing).");
@@ -1135,6 +1169,7 @@ export function patchRuntimeStreamEofFinishGuard(runtime: string): string {
 
   const completionGatePattern = /if\(([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\)\{let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(\{providerId:String\(([A-Za-z_$][\w$]*)\.model\.providerId\),providerKind:\5\.providerKind,source:\2\.lastErrorChunk/u;
 
+  completionGatePattern.test(runtime);
   const completionGate = completionGatePattern.exec(runtime);
   if (!completionGate) {
     throw new Error("ZCode runtime is incompatible with the stream EOF guard patch (empty-completion gate anchor missing).");
@@ -1148,6 +1183,7 @@ export function patchRuntimeStreamEofFinishGuard(runtime: string): string {
     `streamOutputCommitted:!1\\}\\);continue\\}\\}\\}if\\(([A-Za-z_$][\\w$]*)\\(\\{attempt:([A-Za-z_$][\\w$]*),diagnostics:${escapeRegExpName(completionDiagnosticsName)},durationMs:Date\\.now\\(\\)-([A-Za-z_$][\\w$]*),emittedError:([A-Za-z_$][\\w$]*)`,
     "u"
   );
+  completionTailPattern.test(runtime);
   const completionTail = completionTailPattern.exec(runtime);
   if (!completionTail || completionTail.index < completionGate.index) {
     throw new Error("ZCode runtime is incompatible with the stream EOF guard patch (completion success anchor missing).");
@@ -1166,6 +1202,7 @@ export function patchRuntimeStreamEofFinishGuard(runtime: string): string {
   // "async " precedes the generator declaration; anchor on it so the guard
   // lands before the `async` keyword instead of splitting it.
   const runStreamTextPattern = /async function\*([A-Za-z_$][\w$]*)\(e\)\{let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(/u;
+  runStreamTextPattern.test(runtime);
   const runStreamText = runStreamTextPattern.exec(runtime);
   if (!runStreamText || countRegExpMatches(runtime, runStreamTextPattern) !== 1) {
     throw new Error("ZCode runtime is incompatible with the stream EOF guard patch (runStreamText anchor missing).");
@@ -1194,6 +1231,110 @@ export function patchRuntimeStreamEofFinishGuard(runtime: string): string {
 
   if (!hasRuntimeStreamEofFinishGuard(patched)) {
     throw new Error("ZCode runtime stream EOF guard patch failed postcondition verification.");
+  }
+  return patched;
+}
+
+/**
+ * Detect the null-safe "attach current session metadata" helper. The runtime
+ * calls this after every prompt/command submission (`Yh(await
+ * app.submitPrompt(...), adapter, app)`); when the underlying submission
+ * fails (e.g. a provider signing error or a 429 rate limit), the wrapped
+ * `submitPrompt` call can resolve to `undefined` instead of throwing (the
+ * real failure is reported separately via the turn/model event stream). The
+ * unpatched helper reads `e.locale`/`e.mode`/`e.model`/`e.theme`/
+ * `e.thoughtLevel` directly off that possibly-`undefined` first argument,
+ * throwing `TypeError: Cannot read properties of undefined (reading
+ * 'locale')` — which the TUI's submit-loop catch block then displays *in
+ * place of* the real provider error it already logged to
+ * `tui-runtime.log`.
+ */
+export function hasRuntimeAttachSessionMetadataNullGuard(runtime: string): boolean {
+  return /\{\.\.\.e,locale:e\?\.locale\?\?[A-Za-z_$][\w$]*\?\.getLocale\?\.\(\),mode:e\?\.mode\?\?[A-Za-z_$][\w$]*\.getMode\?\.\(\),model:e\?\.model\?\?[A-Za-z_$][\w$]*\?\.getModel\?\.\(\),theme:e\?\.theme\?\?[A-Za-z_$][\w$]*\?\.getTheme\?\.\(\),thoughtLevel:e\?\.thoughtLevel\?\?[A-Za-z_$][\w$]*\?\.getThoughtLevel\?\.\(\)\}/u
+    .test(runtime);
+}
+
+export function patchRuntimeAttachSessionMetadataNullGuard(runtime: string): string {
+  if (hasRuntimeAttachSessionMetadataNullGuard(runtime)) return runtime;
+
+  const attachPattern = /function ([A-Za-z_$][\w$]*)\(e,t,r\)\{return\{\.\.\.e,locale:e\.locale\?\?r\?\.getLocale\?\.\(\),mode:e\.mode\?\?t\.getMode\?\.\(\),model:e\.model\?\?r\?\.getModel\?\.\(\),theme:e\.theme\?\?r\?\.getTheme\?\.\(\),thoughtLevel:e\.thoughtLevel\?\?r\?\.getThoughtLevel\?\.\(\)\}\}/u;
+  // See the warm-up comment in patchRuntimeTuiBridge: the first regex match
+  // attempt against a freshly-produced multi-megabyte string can spuriously
+  // miss under Bun/JSC, so run a throwaway match first.
+  attachPattern.test(runtime);
+  const attach = attachPattern.exec(runtime);
+  if (!attach) {
+    throw new Error(
+      "ZCode runtime is incompatible with the attach-session-metadata null guard patch (helper anchor missing)."
+    );
+  }
+  if (countRegExpMatches(runtime, attachPattern) !== 1) {
+    throw new Error(
+      "ZCode runtime is incompatible with the attach-session-metadata null guard patch (helper anchor is not unique)."
+    );
+  }
+
+  const name = attach[1]!;
+  const patched = runtime.replace(
+    attachPattern,
+    `function ${name}(e,t,r){return{...e,locale:e?.locale??r?.getLocale?.(),mode:e?.mode??t.getMode?.(),model:e?.model??r?.getModel?.(),theme:e?.theme??r?.getTheme?.(),thoughtLevel:e?.thoughtLevel??r?.getThoughtLevel?.()}}`
+  );
+
+  if (!hasRuntimeAttachSessionMetadataNullGuard(patched)) {
+    throw new Error("ZCode runtime attach-session-metadata null guard patch failed postcondition verification.");
+  }
+  return patched;
+}
+
+/**
+ * Detect the null-safe "withTuiMetadata" turn-start wrapper. This is the
+ * actual helper the TUI's `sendInput` bridge calls for a plain (non-slash)
+ * prompt submission: `bkt(await app.submitPrompt(G,K), app, currentCliMode)`
+ * (or `bkt(sendInputResult.result, app, currentCliMode)` when the adapter
+ * exposes its own `sendInput`). Exactly like the attach-session-metadata
+ * helper above, when the submission fails without throwing (a provider
+ * signing error or a 429 rate limit reported via the turn/model event
+ * stream instead of a rejection), `e` here is `undefined` and the unpatched
+ * body reads `e.locale`/`e.model`/`e.theme`/`e.thoughtLevel` directly off
+ * it — reproduced live: submitting a plain prompt against a rate-limited
+ * zai provider crashed the TUI with `TypeError: Cannot read properties of
+ * undefined (reading 'locale')` in the `[ ✓ 0s ]` status box, discarding the
+ * real `ProviderBusinessError`/`ClientRequestSigningV4Error` that was
+ * already logged to `tui-runtime.log`.
+ */
+export function hasRuntimeTuiMetadataTurnNullGuard(runtime: string): boolean {
+  return /\{kind:"started_turn",result:\{\.\.\.e,locale:e\?\.locale\?\?[A-Za-z_$][\w$]*\.getLocale\?\.\(\),mode:[A-Za-z_$][\w$]*,model:e\?\.model\?\?[A-Za-z_$][\w$]*\.getModel\?\.\(\),theme:e\?\.theme\?\?[A-Za-z_$][\w$]*\.getTheme\?\.\(\),thoughtLevel:e\?\.thoughtLevel\?\?[A-Za-z_$][\w$]*\.getThoughtLevel\?\.\(\)\}\}/u
+    .test(runtime);
+}
+
+export function patchRuntimeTuiMetadataTurnNullGuard(runtime: string): string {
+  if (hasRuntimeTuiMetadataTurnNullGuard(runtime)) return runtime;
+
+  const turnPattern = /function ([A-Za-z_$][\w$]*)\(e,t,r\)\{return\{kind:"started_turn",result:\{\.\.\.e,locale:e\.locale\?\?t\.getLocale\?\.\(\),mode:r,model:e\.model\?\?t\.getModel\?\.\(\),theme:e\.theme\?\?t\.getTheme\?\.\(\),thoughtLevel:e\.thoughtLevel\?\?t\.getThoughtLevel\?\.\(\)\}\}\}/u;
+  // See the warm-up comment in patchRuntimeTuiBridge: the first regex match
+  // attempt against a freshly-produced multi-megabyte string can spuriously
+  // miss under Bun/JSC, so run a throwaway match first.
+  turnPattern.test(runtime);
+  const turn = turnPattern.exec(runtime);
+  if (!turn) {
+    throw new Error(
+      "ZCode runtime is incompatible with the TUI metadata turn null guard patch (helper anchor missing)."
+    );
+  }
+  if (countRegExpMatches(runtime, turnPattern) !== 1) {
+    throw new Error(
+      "ZCode runtime is incompatible with the TUI metadata turn null guard patch (helper anchor is not unique)."
+    );
+  }
+
+  const name = turn[1]!;
+  const patched = runtime.replace(
+    turnPattern,
+    `function ${name}(e,t,r){return{kind:"started_turn",result:{...e,locale:e?.locale??t.getLocale?.(),mode:r,model:e?.model??t.getModel?.(),theme:e?.theme??t.getTheme?.(),thoughtLevel:e?.thoughtLevel??t.getThoughtLevel?.()}}}`
+  );
+
+  if (!hasRuntimeTuiMetadataTurnNullGuard(patched)) {
+    throw new Error("ZCode runtime TUI metadata turn null guard patch failed postcondition verification.");
   }
   return patched;
 }
@@ -1314,12 +1455,16 @@ async function installLocalTui(nextVendor: string): Promise<void> {
 
 /** Align Coding Plan defaults without depending on platform-specific minifier names. */
 export function patchRuntimeLoginModelDefaults(runtime: string): string {
-  const presetPattern = /([A-Za-z_$][\w$]*)="zai\/glm-(?:5\.1|5\.2)",([A-Za-z_$][\w$]*)="zai\/glm-(?:4\.7|5-turbo)",([A-Za-z_$][\w$]*)="bigmodel\/glm-(?:5\.1|5\.2)",([A-Za-z_$][\w$]*)="bigmodel\/glm-4\.7"/u;
-  const modelIdPattern = /([A-Za-z_$][\w$]*)="glm-(?:5\.1|5\.2)",([A-Za-z_$][\w$]*)="glm-(?:4\.7|5-turbo)"/u;
-  const modelEntriesPattern = /models:\{\.\.\.([A-Za-z_$][\w$]*),\[([A-Za-z_$][\w$]*)\]:\{\.\.\.([A-Za-z_$][\w$]*),name:"GLM-5\.(?:1|2)"\},\[([A-Za-z_$][\w$]*)\]:\{\.\.\.([A-Za-z_$][\w$]*),name:"GLM-(?:4\.7|5-Turbo)"\}(?:,\["glm-5-turbo"\]:\{\.\.\.\1\["glm-5-turbo"\],name:"GLM-5-Turbo"\})?\}/u;
+  const presetPattern = /([A-Za-z_$][\w$]*)="zai\/glm-(?:5\.1|5\.2|5\.3)",([A-Za-z_$][\w$]*)="zai\/glm-(?:4\.7|5-turbo|5\.3-flash)",([A-Za-z_$][\w$]*)="bigmodel\/glm-(?:5\.1|5\.2|5\.3)",([A-Za-z_$][\w$]*)="bigmodel\/glm-4\.7"/u;
+  const modelIdPattern = /([A-Za-z_$][\w$]*)="glm-(?:5\.1|5\.2|5\.3)",([A-Za-z_$][\w$]*)="glm-(?:4\.7|5-turbo|5\.3-flash)"/u;
+  const modelEntriesPattern = /models:\{\.\.\.([A-Za-z_$][\w$]*),\[([A-Za-z_$][\w$]*)\]:\{\.\.\.([A-Za-z_$][\w$]*),name:"GLM-5\.(?:1|2|3)"\},\[([A-Za-z_$][\w$]*)\]:\{\.\.\.([A-Za-z_$][\w$]*),name:"GLM-(?:4\.7|5-Turbo|5\.3-Flash)"\}(?:,\["glm-5-turbo"\]:\{\.\.\.\1\["glm-5-turbo"\],name:"GLM-5-Turbo"\})?\}/u;
   const legacyLiteSelectionPattern = /([A-Za-z_$][\w$]*)=typeof ([A-Za-z_$][\w$]*)\.lite=="string"\?\2\.lite:([A-Za-z_$][\w$]*)\.liteModel/u;
   const scopedLiteSelectionPattern = /([A-Za-z_$][\w$]*)=typeof ([A-Za-z_$][\w$]*)\.lite=="string"&&\2\.lite\.startsWith\(([A-Za-z_$][\w$]*)\.mainModel\.slice\(0,\3\.mainModel\.indexOf\("\/"\)\+1\)\)\?\2\.lite:\3\.liteModel/u;
 
+  // See the warm-up comment in patchRuntimeTuiBridge.
+  presetPattern.test(runtime);
+  modelIdPattern.test(runtime);
+  modelEntriesPattern.test(runtime);
   const preset = presetPattern.exec(runtime);
   const modelIds = modelIdPattern.exec(runtime);
   const modelEntries = modelEntriesPattern.exec(runtime);
@@ -1332,14 +1477,15 @@ export function patchRuntimeLoginModelDefaults(runtime: string): string {
   let patched = runtime
     .replace(
       preset[0],
-      `${preset[1]}="zai/glm-5.2",${preset[2]}="zai/glm-5-turbo",${preset[3]}="bigmodel/glm-5.2",${preset[4]}="bigmodel/glm-4.7"`
+      `${preset[1]}="zai/glm-5.3",${preset[2]}="zai/glm-5.3-flash",${preset[3]}="bigmodel/glm-5.3",${preset[4]}="bigmodel/glm-4.7"`
     )
-    .replace(modelIds[0], `${modelIds[1]}="glm-5.2",${modelIds[2]}="glm-4.7"`)
+    .replace(modelIds[0], `${modelIds[1]}="glm-5.3",${modelIds[2]}="glm-5.3-flash"`)
     .replace(
       modelEntries[0],
-      `models:{...${modelEntries[1]},[${modelEntries[2]}]:{...${modelEntries[3]},name:"GLM-5.2"},[${modelEntries[4]}]:{...${modelEntries[5]},name:"GLM-4.7"},["glm-5-turbo"]:{...${modelEntries[1]}["glm-5-turbo"],name:"GLM-5-Turbo"}}`
+      `models:{...${modelEntries[1]},[${modelEntries[2]}]:{...${modelEntries[3]},name:"GLM-5.3"},[${modelEntries[4]}]:{...${modelEntries[5]},name:"GLM-5.3-Flash"},["glm-5-turbo"]:{...${modelEntries[1]}["glm-5-turbo"],name:"GLM-5-Turbo"}}`
     );
 
+  legacyLiteSelectionPattern.test(patched);
   const legacyLiteSelection = legacyLiteSelectionPattern.exec(patched);
   if (legacyLiteSelection) {
     const [, selection, model, selectedPreset] = legacyLiteSelection;
@@ -1422,6 +1568,18 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     requirement: "required",
     apply: patchRuntimeStreamEofFinishGuard,
     verify: hasRuntimeStreamEofFinishGuard
+  },
+  {
+    id: "attach-session-metadata-null-guard",
+    requirement: "optional",
+    apply: patchRuntimeAttachSessionMetadataNullGuard,
+    verify: hasRuntimeAttachSessionMetadataNullGuard
+  },
+  {
+    id: "tui-metadata-turn-null-guard",
+    requirement: "optional",
+    apply: patchRuntimeTuiMetadataTurnNullGuard,
+    verify: hasRuntimeTuiMetadataTurnNullGuard
   },
   {
     id: "oauth-http-errors",
