@@ -213,6 +213,15 @@ Set both roles to keep all work on the custom provider:
 `main` is the normal conversation model. `lite` is used for lightweight and
 subagent work. Model IDs are case-sensitive and must match the endpoint.
 
+Built-in subagent model overrides saved by the ZCode desktop app in
+`<storage.dir>/v2/agents-state.json` (`builtInModelOverrides`) supersede `lite`
+for those subagents. Refs such as `custom:builtin%3Azai-coding-plan:GLM-5.3-Flash`
+name a desktop provider id that this config never registers, so the runtime
+resolves `builtin:zai-coding-plan` onto your configured `zai` provider (and
+`builtin:bigmodel-coding-plan` onto `bigmodel`). The override's model id is sent
+as written. To change which model those subagents use, change the override in
+the desktop app; `model.lite` does not apply to them.
+
 The no-login TUI path currently requires a non-empty `options.apiKey` in the
 local config; an environment-only API key does not satisfy the upstream login
 gate. Never commit the populated file, and keep its mode at `600`.

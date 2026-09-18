@@ -18,6 +18,7 @@ import {
   parseRuntimePatchReports,
   parseRuntimeLock,
   patchRuntimeAgentAutoBackground,
+  patchRuntimeBuiltinProviderAliases,
   patchRuntimeCliHelpContract,
   patchRuntimeDetachedAgentLifecycle,
   patchRuntimeGoalFailurePause,
@@ -1383,6 +1384,33 @@ describe("runtime synchronization", () => {
     expect(delay.call({ config: { subagents: { autoBackgroundMs: 0 } } }).autoBackgroundMs).toBe(0);
     expect(patchRuntimeAgentAutoBackground(patched)).toBe(patched);
     expect(() => patchRuntimeAgentAutoBackground("incompatible runtime")).toThrow(/incompatible/);
+  });
+
+  test("aliases desktop builtin coding-plan provider ids onto the configured family provider", () => {
+    const runtime = [
+      "function addProvider(e,t){e[t.provider]={kind:'anthropic',from:t.provider}}",
+      "function buildRegistry(e,t=process.env,r={}){let n={};",
+      "addProvider(n,e.main,t,r),e.lite&&addProvider(n,e.lite,t,r);",
+      "for(let o of e.available??[])addProvider(n,o,t,r);",
+      "return{codingPlanSignature:1,defaultProviderId:e.main.provider,providers:n,env:t}}"
+    ].join("");
+    const patched = patchRuntimeBuiltinProviderAliases(runtime);
+    const buildRegistry = new Function(`${patched};return buildRegistry;`)() as (
+      config: { main: { provider: string }; lite?: { provider: string }; available?: Array<{ provider: string }> }
+    ) => { providers: Record<string, { from: string }> };
+
+    const zai = buildRegistry({ main: { provider: "zai" } }).providers;
+    expect(zai["builtin:zai-coding-plan"]).toBe(zai.zai);
+    expect(zai["builtin:bigmodel-coding-plan"]).toBeUndefined();
+
+    const both = buildRegistry({ main: { provider: "zai" }, available: [{ provider: "bigmodel" }] }).providers;
+    expect(both["builtin:bigmodel-coding-plan"]).toBe(both.bigmodel);
+
+    const custom = buildRegistry({ main: { provider: "acme" } }).providers;
+    expect(Object.keys(custom)).toEqual(["acme"]);
+
+    expect(patchRuntimeBuiltinProviderAliases(patched)).toBe(patched);
+    expect(() => patchRuntimeBuiltinProviderAliases("incompatible runtime")).toThrow(/incompatible/);
   });
 
   test("contains failures from the detached background Agent lifecycle", async () => {

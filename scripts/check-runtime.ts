@@ -121,6 +121,8 @@ if (patchRuntimeLoginModelDefaults(runtimeSource) !== runtimeSource
   || !runtimeSource.includes('completedAt:o.status==="running"?null:')
   || (patchEnabled("agent-auto-background")
     && !runtimeSource.includes("autoBackgroundMs:this.config.subagents?.autoBackgroundMs??1e3,outputRootDir:"))
+  || (patchEnabled("builtin-provider-aliases")
+    && !runtimeSource.includes("$zBuiltinProviderAlias"))
   || (patchEnabled("detached-agent-lifecycle")
     && runtimeSource.split("Detached background agent lifecycle failed").length < 3)
   || !runtimeSource.includes('if(e?.restart===!0&&o.status==="running")')

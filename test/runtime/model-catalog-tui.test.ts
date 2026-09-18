@@ -74,11 +74,11 @@ test.skipIf(process.platform === "win32").each([false, true])("native TUI starts
       await waitFor(/Welcome to ZCode CLI/);
       await requested.promise;
       const initial = JSON.parse(await readFile(userConfigPath(env), "utf8"));
-      expect(initial.model.main).toBe("zai/glm-5.2");
+      expect(initial.model.main).toBe("zai/glm-5.3-flash");
       expect(initial.provider.zai.options.apiKey).toBeUndefined();
       return;
     }
-    await waitFor(/zai\/glm-5\.2/);
+    await waitFor(/zai\/glm-5\.3-flash/);
     await requested.promise;
     const firstPicker = output.length;
     terminal.write("/model\r");

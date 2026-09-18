@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
+import { builtinCodingPlanFamilies } from "./builtin-provider-families.ts";
 import { updateUserConfig } from "./model-access.ts";
 
 export const MODEL_CATALOG_REFRESH_TTL_MS = 6 * 60 * 60 * 1_000;
@@ -334,9 +335,9 @@ export async function refreshModelCatalog(
 }
 
 function providerFamilyForBuiltinId(builtinId: string): SupportedProviderId | undefined {
-  if (builtinId === "builtin:zai-coding-plan") return "zai";
-  if (builtinId === "builtin:bigmodel-coding-plan") return "bigmodel";
-  return undefined;
+  return Object.hasOwn(builtinCodingPlanFamilies, builtinId)
+    ? builtinCodingPlanFamilies[builtinId as keyof typeof builtinCodingPlanFamilies]
+    : undefined;
 }
 
 function buildReasoning(model: RemoteBuiltinModel): Record<string, unknown> | undefined {

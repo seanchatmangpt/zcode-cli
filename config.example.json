@@ -36,8 +36,8 @@
     }
   },
   "model": {
-    "main": "zai/glm-5.2",
-    "lite": "zai/glm-5-turbo"
+    "main": "zai/glm-5.3-flash",
+    "lite": "zai/glm-5.3-flash"
   },
   "modelCatalog": {
     "overrides": {}
