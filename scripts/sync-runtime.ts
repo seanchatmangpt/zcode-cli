@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
+import { builtinCodingPlanFamilies } from "../src/builtin-provider-families.ts";
 import {
   type RuntimeCapabilities,
   type RuntimeCliOptionCapability
@@ -439,6 +440,41 @@ export function patchRuntimeAgentAutoBackground(runtime: string): string {
     throw new Error("ZCode runtime is incompatible with the Agent auto-background patch.");
   }
   return runtime.replace(anchor, marker);
+}
+
+/**
+ * Resolve desktop-managed `builtin:<family>-coding-plan` provider ids onto the
+ * configured family provider. The desktop app persists concrete subagent
+ * model overrides (`custom:builtin%3Azai-coding-plan:<model>` in
+ * `~/.zcode/v2/agents-state.json`); the registry only holds providers named in
+ * the CLI config (`zai`), so those subagents failed with ProviderNotFound.
+ */
+export function patchRuntimeBuiltinProviderAliases(runtime: string): string {
+  const marker = "$zBuiltinProviderAlias";
+  if (runtime.includes(marker)) return runtime;
+  const id = "[A-Za-z_$][\\w$]*";
+  const registryPattern = new RegExp(
+    `(function ${id}\\((${id}),${id}=process\\.env,${id}=\\{\\}\\)\\{let (${id})=\\{\\};`
+    + `${id}\\(\\3,\\2\\.main,${id},${id}\\),\\2\\.lite&&${id}\\(\\3,\\2\\.lite,${id},${id}\\);`
+    + `for\\(let ${id} of \\2\\.available\\?\\?\\[\\]\\)${id}\\(\\3,${id},${id},${id}\\);)`
+    + "(return\\{codingPlanSignature:)",
+    "u"
+  );
+  // See the warm-up comment in patchRuntimeTuiBridge.
+  registryPattern.test(runtime);
+  registryPattern.lastIndex = 0;
+  if (!registryPattern.test(runtime)) {
+    throw new Error("ZCode runtime is incompatible with the builtin provider alias patch.");
+  }
+  const aliases = JSON.stringify(builtinCodingPlanFamilies);
+  return runtime.replace(
+    registryPattern,
+    (_match, head: string, _config: string, providers: string, tail: string) => (
+      `${head}for(let[${marker},$zBuiltinProviderFamily]of Object.entries(${aliases}))`
+      + `${providers}[$zBuiltinProviderFamily]&&!${providers}[${marker}]`
+      + `&&(${providers}[${marker}]=${providers}[$zBuiltinProviderFamily]);${tail}`
+    )
+  );
 }
 
 /** Keep a detached Agent lifecycle failure from terminating the entire CLI process. */
@@ -1646,6 +1682,12 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     verify: (runtime) => runtime.includes(
       "autoBackgroundMs:this.config.subagents?.autoBackgroundMs??1e3,outputRootDir:"
     )
+  },
+  {
+    id: "builtin-provider-aliases",
+    requirement: "optional",
+    apply: patchRuntimeBuiltinProviderAliases,
+    verify: (runtime) => runtime.includes("$zBuiltinProviderAlias")
   },
   {
     id: "http-no-content",
