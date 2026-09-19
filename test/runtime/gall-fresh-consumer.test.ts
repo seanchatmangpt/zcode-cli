@@ -11,7 +11,7 @@ function canonical(value: Json): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
   return "{" + Object.entries(value)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item))
     .join(",") + "}";
 }
@@ -160,6 +160,75 @@ describe("GALL-006 fresh consumer", () => {
     expect(result.code).toBe(1);
     const refusal = JSON.parse(result.stdout);
     expect(refusal.code).toBe("REFUSED_ARTIFACT");
+    expect(refusal.external_do_count).toBe(0);
+  });
+
+  test("portable GALL-005 artifact is consumed directly without producer runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-gall006-portable-"));
+    const home = join(root, "fresh-home");
+    mkdirSync(home);
+    const artifactPath = join(root, "gall-005-portable.json");
+
+    const base: Record<string, Json> = {
+      schema: "https://autofde.dev/gall/composition/v1",
+      release_id: "v26.9.18",
+      composition_digest: "deadbeef",
+      work_order_digest: "sha256:" + "f".repeat(64),
+      standing: "PARTIAL_ALIVE",
+      authority: "none",
+      checkpoints: [1, 2, 3, 4].map((index) => ({
+        checkpoint_id: `GALL-${String(index).padStart(3, "0")}`,
+        repository: `repo-${index}`,
+        exact_sha: String(index).repeat(40),
+        receipt_digest: "sha256:" + String(index).repeat(64),
+        standing: "PARTIAL_ALIVE",
+        evidence_class: "local_test",
+        work_order_digest: "sha256:" + String(index).repeat(64)
+      }))
+    };
+    writeFileSync(artifactPath, JSON.stringify({ ...base, artifact_digest: digest(base) }));
+
+    const result = await execute(["gall", "verify", "--artifact", artifactPath, "--json"], home);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    const receipt = JSON.parse(result.stdout);
+    expect(receipt.gate_11).toBe("PASS");
+    expect(receipt.external_do_count).toBe(0);
+    expect(receipt.source_standing).toBe("PARTIAL_ALIVE");
+    expect(receipt.upstream_gate_12).toBe("PORTABLE_GALL_005_ARTIFACT");
+  });
+
+  test("tampered portable artifact is refused without fallback to bundle or runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-gall006-portable-tamper-"));
+    const home = join(root, "fresh-home");
+    mkdirSync(home);
+    const artifactPath = join(root, "gall-005-portable.json");
+
+    const base: Record<string, Json> = {
+      schema: "https://autofde.dev/gall/composition/v1",
+      release_id: "v26.9.18",
+      composition_digest: "deadbeef",
+      work_order_digest: "",
+      standing: "PARTIAL_ALIVE",
+      authority: "none",
+      checkpoints: [1, 2, 3, 4].map((index) => ({
+        checkpoint_id: `GALL-${String(index).padStart(3, "0")}`,
+        repository: `repo-${index}`,
+        exact_sha: String(index).repeat(40),
+        receipt_digest: "sha256:" + String(index).repeat(64),
+        standing: "PARTIAL_ALIVE",
+        evidence_class: "local_test",
+        work_order_digest: ""
+      }))
+    };
+    const artifact = { ...base, artifact_digest: digest(base) };
+    artifact.standing = "ALIVE";
+    writeFileSync(artifactPath, JSON.stringify(artifact));
+
+    const result = await execute(["gall", "verify", "--artifact", artifactPath, "--json"], home);
+    expect(result.code).toBe(1);
+    const refusal = JSON.parse(result.stdout);
+    expect(refusal.standing).toBe("REFUSED");
     expect(refusal.external_do_count).toBe(0);
   });
 });
