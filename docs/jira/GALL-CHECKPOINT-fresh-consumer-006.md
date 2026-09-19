@@ -121,3 +121,190 @@ The checkpoint fails if reconstruction requires:
 - collapsing telemetry-valid, process-valid, and postcondition-valid into one untyped success flag.
 
 The portable composition subject must carry enough exact identities and digests to reconstruct the bounded claim through the supported public consumer interface.
+
+## Implementation specifics — refined 2026-09-18
+
+Current docs-only PR head at this refinement: `2d8fb4888f4d5e0616954e9413dc8fc3966f3bde`.
+
+### Verified public surfaces
+
+The checkpoint starts from public repository/runtime contracts already documented on the admitted base:
+
+- published `zcode` command from `bin/zcode.js`;
+- documented host integration in `docs/HOST_INTEGRATION.md`;
+- official runtime launched as a real child process with inherited stdio;
+- public Plugin, MCP, Skill, command, and headless/subcommand surfaces described in `README.md`;
+- package/runtime verification scripts in `package.json`:
+  - `bun run check`;
+  - `bun run typecheck`;
+  - `bun run test:runtime`;
+  - `bun run test:all`.
+- the current head already has precedent for a Chicago-style **real subprocess + local endpoint** runtime test from the builtin-provider-alias repair.
+
+The fresh-consumer implementation should reuse that real-subprocess testing pattern.
+
+### Public interface decision tree
+
+Attempt interfaces in this order and record which one is selected:
+
+1. **documented host/subprocess contract**
+   - preferred because it proves an external clean process and does not require TUI rendering.
+2. **public runtime subcommand / Skill / command surface**
+   - valid if it can consume the artifact as a file/input without private module imports.
+3. **MCP or Plugin surface**
+   - valid when already supported by the runtime and the fixture can run locally/deterministically.
+
+If all public paths fail to carry the artifact, emit:
+
+`UNSUPPORTED(public-consumer-interface)`
+
+with the failed interface attempts and exact reason. Do not import private extracted-runtime modules directly merely to finish GALL-006.
+
+### Proposed smallest diff
+
+Preferred implementation files:
+
+```text
+scripts/gall-fresh-consumer.ts
+test/runtime/gall-fresh-consumer.test.ts
+docs/jira/GALL-CHECKPOINT-fresh-consumer-006.md
+```
+
+No TUI component change is required unless the selected public interface itself depends on TUI behavior.
+
+`scripts/gall-fresh-consumer.ts` is a **test/qualification driver**, not a second SA2A implementation.
+
+Responsibilities:
+
+1. validate the GALL-005 bundle exists;
+2. compute its own SHA-256 of the composition manifest and receipt files;
+3. create an isolated temp HOME/workspace/config root;
+4. verify the producer PID is absent/not reused;
+5. launch the published/local `zcode` command as a real subprocess using the documented host contract;
+6. pass only the admitted artifact through the selected public interface;
+7. capture structured output;
+8. compare reconstructed standing + exact composition identity;
+9. record external-DO count == 0;
+10. emit a fresh-consumer receipt.
+
+### Clean-state requirements
+
+The test MUST isolate at least:
+
+```text
+HOME
+working directory
+ZCode CLI config/storage directory
+session history
+plugin/MCP fixture state
+temporary artifact directory
+```
+
+The consumer MUST NOT inherit:
+
+- producer process environment containing hidden receipt values;
+- open file descriptors from the producer;
+- producer temp directory except the explicitly copied release bundle;
+- prior ZCode session state containing the expected answer.
+
+The test should copy the GALL-005 bundle into a fresh temp directory and pass that path explicitly.
+
+### Test fixture
+
+Input bundle:
+
+```text
+gall-composition-manifest.json
+machine-experience.json
+episode-1-receipt.json
+episode-2-receipt.json
+gall-005-crown-receipt.json
+```
+
+Expected reconstructed output:
+
+```json
+{
+  "composition_digest": "...",
+  "source_standing": "PARTIAL_ALIVE|ALIVE",
+  "reconstructed_standing": "PARTIAL_ALIVE|ALIVE",
+  "gate_11": "PASS",
+  "external_do_count": 0,
+  "consumed_artifact_digests": ["..."]
+}
+```
+
+The consumer may preserve the upstream standing ceiling; it may not upgrade it merely because reconstruction succeeded.
+
+### Required runtime tests
+
+`test/runtime/gall-fresh-consumer.test.ts` MUST include:
+
+1. clean subprocess reconstructs exact composition identity;
+2. producer PID/process is absent;
+3. missing required artifact refuses;
+4. stale/tampered composition digest refuses;
+5. hidden workspace/session recovery is impossible under isolated HOME;
+6. public interface path is recorded;
+7. private runtime import is not required;
+8. external DO fixture count remains zero;
+9. parsing a Weaver/telemetry receipt does not promote it to postcondition/authority standing;
+10. successful reconstruction sets Gate 11 PASS only for the same exact composition digest.
+
+### Exact acceptance commands
+
+```bash
+bun run typecheck
+bun test test/runtime/gall-fresh-consumer.test.ts
+bun run test:runtime
+bun run check
+```
+
+Run `bun run test:all` if the implementation changes shared launcher/runtime integration used outside the focused qualification path.
+
+Do not require TUI scenario/e2e checks for a headless host-contract implementation that does not touch TUI code.
+
+### GALL-006 receipt
+
+Emit a deterministic JSON receipt containing:
+
+```text
+zcode_cli_repo_sha
+zcode_runtime_lock_digest
+node_version
+bun_version
+public_interface
+gall_005_composition_digest
+consumed_artifact_digests[]
+fresh_home_digest_or_identity
+fresh_workspace_identity
+consumer_command
+exit_code
+reconstructed_standing
+gate_11 = PASS
+external_do_count = 0
+falsifiers_attempted[]
+```
+
+Do not include credentials, provider secrets, or private runtime objects.
+
+### Final Chicago handoff
+
+GALL-006 does not issue the overall crown by itself.
+
+It returns Gate 11 evidence to the final standing issuer, which must verify:
+
+- GALL-005 and GALL-006 bind the exact same composition digest;
+- GALL-005's Gate 12 evidence remains intact;
+- GALL-006 did not re-actuate the consequence.
+
+### Stop conditions
+
+Return `UNSUPPORTED(public-consumer-interface)` rather than expanding the product when:
+
+- only a private extracted-runtime import can parse the artifact;
+- the runtime cannot receive an explicit file/artifact through any supported public surface;
+- clean isolation cannot prevent reuse of producer/session state;
+- reconstructing standing would require executing the original consequence again.
+
+A precise unsupported boundary is a successful qualification result for the purpose of identifying the next required public contract; it is not Gate 11 PASS.
