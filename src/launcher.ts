@@ -28,6 +28,7 @@ import {
 import { requestAppServer } from "./app-server-client.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
+import { gallWorkInvocation } from "./gall-work.ts";
 import {
   capabilitiesFromExtractionMetadata,
   type RuntimeCliOptionType
@@ -499,6 +500,24 @@ export async function main(args: string[]): Promise<number> {
   }
 
   const node = resolveNodeExecutable();
+
+  try {
+    const gallWork = await gallWorkInvocation(args);
+    if (gallWork) {
+      const env = { ...process.env, ...gallWork.env };
+      const diagnostic = await promptPreflight(gallWork.args, env);
+      if (diagnostic) {
+        console.error(diagnostic);
+        return 1;
+      }
+      const runtimeArgs = withDefaultBrowserUse(gallWork.args);
+      return await runRuntime(node, runtimeArgs, gallWork.env);
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+
   const pluginAbortController = new AbortController();
   const cancelPluginCommand = (signal: NodeJS.Signals) => () => pluginAbortController.abort(signal);
   const onPluginSigint = cancelPluginCommand("SIGINT");
