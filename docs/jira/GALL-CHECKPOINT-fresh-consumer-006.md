@@ -98,3 +98,26 @@ Feeds the final Chicago standing issuer by closing Gate 11 for that same composi
 Either: (A) one exact clean zcode process reconstructs the same bounded standing solely from the admitted public artifact/receipt path with zero external re-actuation, producing a fresh-consumer receipt; or (B) the repository emits a precise `UNSUPPORTED(public-consumer-interface)` boundary naming the missing public contract. No private shortcut is accepted.
 
 Standing on successful completion: `ALIVE` for the exact fresh-consumer reconstruction subject, not for the underlying external consequence itself.
+
+## 2026-09-18 semantic telemetry reconstruction
+
+The fresh-consumer court MUST reconstruct the strengthened upstream evidence distinctions without requiring producer memory or a live producer-side Weaver process.
+
+The consumed GALL-005 artifact may reference:
+
+- exact semantic-registry / Weaver validation evidence;
+- beam4pm GALL-004 OCEL/conformance evidence;
+- independent postcondition evidence;
+- observational semantic consequence profiles.
+
+These MUST remain separate evidence classes. Parsing a Weaver receipt or consequence profile MUST NOT promote it into process proof, postcondition proof, or authority.
+
+The checkpoint fails if reconstruction requires:
+
+- hidden semantic-registry state not bound by the artifact;
+- producer process handles or in-memory objects;
+- unreproducible local Weaver state;
+- re-actuation merely to recover prior standing;
+- collapsing telemetry-valid, process-valid, and postcondition-valid into one untyped success flag.
+
+The portable composition subject must carry enough exact identities and digests to reconstruct the bounded claim through the supported public consumer interface.
