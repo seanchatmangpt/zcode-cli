@@ -357,3 +357,51 @@ Do not fake closure by using `captureCommand` to shell out to the producer's ver
 - separate app-server transport / plugin discovery seams: `PARTIAL_ALIVE` by source inspection;
 - deterministic GALL artifact consumer: `UNKNOWN`;
 - GALL-006 fresh-consumer seal: `UNKNOWN` pending the public-interface court.
+
+## Four-hour conversation synthesis — standing console and coder handoff, 2026-09-18
+
+The recent conversations split two responsibilities that must not be conflated:
+
+1. **GALL-006 qualification:** zcode is a fresh, deterministic consumer/standing console.
+2. **Post-qualification automation:** zcode can become a front door for sending an admitted semantic work order to the durable XaaS/UltraCode execution plane.
+
+### Phase A — required GALL-006 fresh consumer
+
+The clean zcode process must consume the immutable GALL-005 artifact plus its semantic work-order/checkpoint identity through one supported public interface and reconstruct the same bounded standing without:
+
+- producer memory;
+- hidden workspace/runtime state;
+- exploratory LLM reasoning;
+- skill-prompt interpretation as proof;
+- external re-actuation;
+- generic shell-out to the producer's own verifier.
+
+TTL/RDF work-order content must be treated as semantic evidence with exact digest/identity, not flattened into prompt text and then "understood" by a model.
+
+### Phase B — coder-agent execution handoff
+
+After Phase A standing is proven, a separate extension may let zcode submit the admitted work-order IRI/digest and exact subject to XaaS/UltraCode through a supported public plugin/MCP/host/CLI boundary.
+
+The durable execution responsibility remains XaaS:
+
+`Run -> Epoch -> AshOban -> EpochReactor -> ConsequenceFence -> Receipt`.
+
+Observed current evidence:
+
+- XaaS PR #45, head `42a9eb00c7cc3e3a8c780e4f1eb8b2b83f7fc8d2`, proved a scoped unattended single-node cycle;
+- PR #46, head `683f7c972fb9f9078161c4968f993221961c9e0c`, proved partial ggen_igniter manufacture of Run/Epoch/EpochReactor and disclosed unsupported generator residue;
+- PR #51, head `f2b5cd72870d3b9e09582169a58e2d2f509586eb`, carries the current production/delegation repair subject.
+
+Those subjects are context for the handoff, not automatically part of GALL-006 standing. If Phase B is implemented, its exact XaaS subject must be named explicitly.
+
+### zcode is not the hidden executor
+
+The zcode public surface may discover plugins, MCP servers, skills and subagents, but discovery/prompting is not execution authority. The desired future role is:
+
+`semantic ticket -> fresh standing display -> explicit dispatch request -> XaaS durable run -> receipts returned to the semantic graph`.
+
+No Jido/LangGraph/CrewAI dependency is introduced. Generic agent-framework loops remain competitive-intelligence material only.
+
+### Unsupported boundary remains valid
+
+If the bounded interface-discovery court still finds no supported public method capable of deterministic artifact consumption, GALL-006 remains `UNSUPPORTED(public-consumer-interface)`. The new coder-agent vision does not weaken that refusal boundary.
