@@ -308,3 +308,52 @@ Return `UNSUPPORTED(public-consumer-interface)` rather than expanding the produc
 - reconstructing standing would require executing the original consequence again.
 
 A precise unsupported boundary is a successful qualification result for the purpose of identifying the next required public contract; it is not Gate 11 PASS.
+
+## 2026-09-18 exact-head code review
+
+Reviewed source subject: `b751c6548eb3da410a52395dcfb65effa73a119b`.
+
+### Observed public surfaces
+
+The repository does have real process-isolation and extension seams:
+
+- `requestAppServer` starts a separate app-server process, sends one NDJSON request, bounds output, preserves process/protocol errors, and supports cancellation.
+- `pluginProtocolMethods` exposes concrete plugin management/reference methods.
+- `PluginReferenceCatalog` exposes enabled plugin skills/MCP servers/subagents by stable plugin identity.
+- the TUI skill surface resolves exact/unique skill names and then builds a prompt instructing the model to call the Skill tool.
+- runtime patch/tests acknowledge MCP server availability as a real runtime concept.
+- `captureCommand` can start an arbitrary child process, but it is a generic shell/process primitive, not proof of a supported zcode semantic-consumer contract.
+
+These are source/test surfaces observed at the reviewed head; no runtime command was executed in this review.
+
+### Current GALL-006 gap
+
+No reviewed source path consumes a GALL-005 composition artifact, verifies its digests/evidence classes, or reconstructs its bounded standing.
+
+The currently enumerated plugin app-server methods are management/reference operations (`configure`, `describe`, `install`, marketplace operations, `overview`, `referenceCatalog`, `update`, `validate`). None is an explicit artifact-execution/reconstruction method.
+
+The skill path is prompt/LLM mediated. It cannot by itself prove the GALL-006 requirement that the same bounded standing is reconstructed without hidden producer memory or equivalent exploratory cognition.
+
+### Interface decision court
+
+Do not prematurely label the whole runtime unsupported: this code review did not exhaust every capability of the vendored/upstream runtime.
+
+The next checkpoint is a **public-interface discovery court**:
+
+1. identify one supported zcode public plugin/MCP/skill/host/CLI method that can receive an immutable GALL-005 artifact or path/digest and return deterministic verification evidence;
+2. prove it works in a fresh zcode process with the producer terminated;
+3. bind exact artifact bytes/digests and preserve the upstream evidence-class ceilings;
+4. prove zero external re-actuation;
+5. prove no LLM/exploratory fallback is required for the verification itself.
+
+If no such public method exists after that bounded discovery, set:
+
+`UNSUPPORTED(public-consumer-interface)`.
+
+Do not fake closure by using `captureCommand` to shell out to the producer's verifier while calling that "zcode reconstruction."
+
+### Review standing
+
+- separate app-server transport / plugin discovery seams: `PARTIAL_ALIVE` by source inspection;
+- deterministic GALL artifact consumer: `UNKNOWN`;
+- GALL-006 fresh-consumer seal: `UNKNOWN` pending the public-interface court.
