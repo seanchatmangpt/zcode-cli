@@ -130,3 +130,23 @@ TypeScript modules.
 Herdr, Orca, and other terminal orchestrators can therefore share the same
 `zcode` process contract while keeping their own installation and lifecycle
 policies outside the CLI implementation.
+
+## GALL fresh-consumer verification
+
+The public non-interactive command below is contract-version-1 compatible and
+does not load the private extracted runtime:
+
+```text
+zcode gall verify --bundle <GALL-005-directory> --json [--out receipt.json]
+```
+
+It consumes exactly the released GALL-005 five-file bundle, independently
+recomputes its composition and artifact digests, preserves the upstream
+standing ceiling, and emits a GALL-006 Gate-11 fresh-consumer receipt with
+`external_do_count: 0`. It does not open a model session, invoke a tool,
+perform an external consequence, or import `vendor/` modules.
+
+A missing, stale, or tampered artifact is a typed refusal (non-zero exit). The
+command never searches HOME, session history, or workspace state for omitted
+evidence. This makes it suitable for a genuinely fresh host process.
+
