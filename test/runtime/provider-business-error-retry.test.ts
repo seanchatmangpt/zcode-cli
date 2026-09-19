@@ -120,7 +120,7 @@ async function runZaiBusinessErrorFixture(options: {
   temporaryDirectories.push(home);
   const workspace = join(home, "workspace");
   await mkdir(workspace, { recursive: true });
-  const config = await Bun.file(new URL("../../config.example.json", import.meta.url)).json() as {
+  const config = await Bun.file(new URL("../../setting.example.json", import.meta.url)).json() as {
     features: Record<string, unknown>;
     logging: Record<string, unknown>;
     mcp: { servers: Record<string, unknown> };
@@ -131,7 +131,9 @@ async function runZaiBusinessErrorFixture(options: {
     skills: Record<string, unknown>;
     storage: Record<string, unknown>;
   };
-  const defaultZai = config.provider.zai as { models: Record<string, unknown> };
+  // The shared-configuration example no longer ships a provider block; the
+  // fixture catalog mirrors the zai coding-plan model line inline.
+  config.provider = {};
   config.provider.zai = {
     kind: "openai-compatible",
     name: "Zai business-error fixture",
@@ -141,7 +143,11 @@ async function runZaiBusinessErrorFixture(options: {
       baseURL: `http://127.0.0.1:${server.port}/v1`
     },
     headers: {},
-    models: defaultZai.models
+    models: {
+      "glm-5.2": { name: "GLM-5.2" },
+      "glm-5.3": { name: "GLM-5.3" },
+      "glm-5.3-flash": { name: "GLM-5.3-Flash" }
+    }
   };
   config.model = { main: "zai/glm-5.2", lite: "zai/glm-5.2" };
   config.storage = {
@@ -156,7 +162,7 @@ async function runZaiBusinessErrorFixture(options: {
   config.logging = { level: "error", format: "text" };
   const configDirectory = join(home, ".zcode", "cli");
   await mkdir(configDirectory, { recursive: true });
-  await writeFile(join(configDirectory, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+  await writeFile(join(configDirectory, "setting.json"), `${JSON.stringify(config, null, 2)}\n`);
   const runtimeArgs = [
     "--import", join(root, "test", "fixtures", "runtime-keepalive.mjs"),
     "vendor/zcode.cjs",

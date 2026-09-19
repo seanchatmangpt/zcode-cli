@@ -43,7 +43,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node node_modules/.bin/tsdown",
+    "build": "tsdown",
     "build:launcher": "node node_modules/.bin/tsdown --filter launcher",
     "build:tui": "node node_modules/.bin/tsdown --filter tui",
     "bench:tui-memory": "bun --expose-gc scripts/bench-tui-memory.ts",

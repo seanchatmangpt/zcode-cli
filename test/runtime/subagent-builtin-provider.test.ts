@@ -105,10 +105,20 @@ async function runHeadlessAgent(agentsState: Record<string, unknown> | undefined
   temporaryDirectories.push(home);
   const workspace = join(home, "workspace");
   await mkdir(workspace, { recursive: true });
-  const config = await Bun.file(new URL("../../config.example.json", import.meta.url)).json() as Record<string, unknown> & {
-    provider: Record<string, unknown>;
+  const config = await Bun.file(new URL("../../setting.example.json", import.meta.url)).json() as Record<string, unknown>;
+  // The shared-configuration example no longer ships a provider block; the
+  // fixture catalog mirrors the zai coding-plan model line inline.
+  const zaiModels = {
+    "glm-5.3": { name: "GLM-5.3" },
+    "glm-5.3-flash": {
+      name: "GLM-5.3-Flash",
+      limit: { context: 1_000_000, output: 128_000 },
+      modalities: { input: ["text", "image", "video"], output: ["text"] }
+    },
+    "glm-5.2": { name: "GLM-5.2" },
+    "glm-5.1": { name: "GLM-5.1" },
+    "glm-5-turbo": { name: "GLM-5-Turbo" }
   };
-  const defaultZai = config.provider.zai as { models: Record<string, unknown> };
   config.provider = {
     zai: {
       kind: "openai-compatible",
@@ -119,7 +129,7 @@ async function runHeadlessAgent(agentsState: Record<string, unknown> | undefined
         baseURL: `http://127.0.0.1:${server.port}/v1`
       },
       headers: {},
-      models: defaultZai.models
+      models: zaiModels
     }
   };
   config.model = { main: "zai/glm-5.3-flash", lite: "zai/glm-5.3-flash" };
@@ -135,7 +145,7 @@ async function runHeadlessAgent(agentsState: Record<string, unknown> | undefined
   config.logging = { level: "error", format: "text" };
   const configDirectory = join(home, ".zcode", "cli");
   await mkdir(configDirectory, { recursive: true });
-  await writeFile(join(configDirectory, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+  await writeFile(join(configDirectory, "setting.json"), `${JSON.stringify(config, null, 2)}\n`);
   if (agentsState) {
     await mkdir(join(home, ".zcode", "v2"), { recursive: true });
     await writeFile(join(home, ".zcode", "v2", "agents-state.json"), `${JSON.stringify(agentsState, null, 2)}\n`);
