@@ -26,6 +26,7 @@ import {
   type OfficialLoginPayload
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
+import { runGallCommand } from "./gall-cli.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -466,6 +467,9 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(args: string[]): Promise<number> {
+  const gallCommand = await runGallCommand(args);
+  if (gallCommand !== undefined) return gallCommand;
+
   if (!existsSync(runtimePath)) {
     console.error(
       "ZCode runtime is missing. Reinstall the package or run `bun run sync:local` in the source checkout."
