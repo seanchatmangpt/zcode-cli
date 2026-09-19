@@ -452,6 +452,34 @@ export function patchRuntimeAgentAutoBackground(runtime: string): string {
 export function patchRuntimeBuiltinProviderAliases(runtime: string): string {
   const marker = "$zBuiltinProviderAlias";
   if (runtime.includes(marker)) return runtime;
+  // Shipped 3.12.3: personal providers live in the ProviderRegistry class
+  // keyed by their config id (e.g. "zai"), so the desktop builtin ids
+  // ("builtin:zai-coding-plan") resolve by teaching the registry's
+  // getProvider/getModel to fall back to the family key. The old
+  // registry-builder anchor below no longer exists in that runtime.
+  const providerLookup = /getProvider\(([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\}/u.exec(runtime);
+  const modelLookup = /getModel\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\?\.get\(([A-Za-z_$][\w$]*)\)\}/u.exec(runtime);
+  if (providerLookup && modelLookup
+    && providerLookup[3] === providerLookup[1] && modelLookup[4] === modelLookup[1] && modelLookup[5] === modelLookup[2]) {
+    const [providerAnchor, providerArg, providerField] = providerLookup;
+    const [modelAnchor, modelProviderArg, modelIdArg, modelField] = modelLookup;
+    // 3.12.3 natively rewrites builtin ids to account coding-plan ids
+    // (builtin:zai-coding-plan -> account:zai-individual-coding-plan) before
+    // the registry is consulted, so the fallback resolves both the raw
+    // builtin ids and the account-plan shapes onto the family key ("zai").
+    const familyResolve = (target: string): string => (
+      `(()=>{if(${target}.startsWith("builtin:")&&${target}.endsWith("-coding-plan"))return ${target}.slice(8,-11);`
+      + `if(${target}.startsWith("account:")){let $zPlan=${target}.slice(8);`
+      + `if($zPlan.endsWith("-individual-coding-plan"))return $zPlan.slice(0,-23);`
+      + `if($zPlan.endsWith("-team-coding-plan"))return $zPlan.slice(0,-17);`
+      + `if($zPlan.endsWith("-start-plan"))return $zPlan.slice(0,-11)}`
+      + `return void 0})()`
+    );
+    const stringGuard = (target: string): string => `typeof ${target}==="string"`;
+    return runtime
+      .replace(providerAnchor, `getProvider(${providerArg}){/*${marker}*/let $zProvider=this.${providerField}.get(${providerArg});if(!$zProvider&&${stringGuard(providerArg)})$zProvider=this.${providerField}.get(${familyResolve(providerArg)});return $zProvider}`)
+      .replace(modelAnchor, `getModel(${modelProviderArg},${modelIdArg}){let $zModel=this.${modelField}.get(${modelProviderArg})?.get(${modelIdArg});if(!$zModel&&${stringGuard(modelProviderArg)}){let $zFamily=${familyResolve(modelProviderArg)};if($zFamily){let $zFamilyModels=this.${modelField}.get($zFamily);if($zFamilyModels)$zModel=$zFamilyModels.get(${modelIdArg})??$zFamilyModels.get(String(${modelIdArg}).toLowerCase())}}return $zModel}`);
+  }
   const id = "[A-Za-z_$][\\w$]*";
   const registryPattern = new RegExp(
     `(function ${id}\\((${id}),${id}=process\\.env,${id}=\\{\\}\\)\\{let (${id})=\\{\\};`
@@ -990,6 +1018,29 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
   const factoryStart = list ? runtime.lastIndexOf("function ", list.index) : -1;
   const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
   const registryList = /listModels:([A-Za-z_$][\w$]*)\(\(\)=>([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry\),"listModels"\)/u.exec(runtime);
+  // Shipped 3.12.3: the TUI bridge is built by method assignment
+  // (B.listModelOptions=async()=>...) and patchRuntimeTuiBridge has already
+  // registered listModelOptions into the adapter options object, so the
+  // capability adds three bridge methods plus two controller entries next to
+  // the native selection validator, then registers the methods the same way.
+  const currentModelOption = /getCurrentModelOption:([A-Za-z_$][\w$]*)\(\(\)=>\{let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.runtime\.getSessionModelSelection\(\);return ([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry,([A-Za-z_$][\w$]*)\)\},"getCurrentModelOption"\)/u.exec(runtime);
+  if (list && option && registryList && currentModelOption
+    && currentModelOption[4] === currentModelOption[2]
+    && currentModelOption[7] === currentModelOption[2]
+    && currentModelOption[6] === currentModelOption[3]
+    && currentModelOption[6] === registryList[3]
+    && runtime.includes('"ProviderRegistryService"')
+    && /refresh\([^)]*="explicit"\)/u.test(runtime)) {
+    const [, bridge, getApp] = list;
+    const [, label, helper, context] = registryList;
+    const validator = currentModelOption[5];
+    const controllerEntries = `reloadModels:${label}(async()=>{await ${context}.providerRegistry.refresh("cli-model-catalog");return ${helper}(${context}.providerRegistry)},"reloadModels"),validateSelection:${label}($zSelection=>{let $zOption=${validator}(${context}.providerRegistry,$zSelection);if(!$zOption)throw new Error("Unknown default model: "+$zSelection.providerId+"/"+$zSelection.modelId);return $zOption},"validateSelection"),`;
+    const bridgeMethods = `,${bridge}.reloadModelOptions=async()=>await(await ${getApp}()).reloadModels(),${bridge}.readDefaultModel=async()=>{let $zSelection=await(await ${getApp}()).modelSelectionConfigRepository.read();return $zSelection?$zSelection.providerId+"/"+$zSelection.modelId:void 0},${bridge}.setDefaultModel=async $zModel=>{let $zApp=await ${getApp}(),$zIndex=$zModel.indexOf("/");if($zIndex<=0)throw new Error("Unknown default model: "+$zModel);let $zSelection={providerId:$zModel.slice(0,$zIndex),modelId:$zModel.slice($zIndex+1)},$zOption=$zApp.validateSelection($zSelection);await $zApp.modelSelectionConfigRepository.saveConfiguredDefault({providerId:$zSelection.providerId,modelId:$zSelection.modelId,options:$zOption.options});return await $zApp.runtime.setSessionModelSelection({providerId:$zSelection.providerId,modelId:$zSelection.modelId,options:$zOption.options})}`;
+    return runtime
+      .replace(registryList[0], controllerEntries + registryList[0])
+      .replace(list[0], list[0] + bridgeMethods)
+      .replace(option[0], `readDefaultModel:${option[1]}.readDefaultModel,setDefaultModel:${option[1]}.setDefaultModel,reloadModelOptions:${option[1]}.reloadModelOptions,${option[0]}`);
+  }
   if (list && option && registryList) {
     const [, bridge, getApp] = list;
     const [, label, , context] = registryList;
@@ -1015,10 +1066,19 @@ export function patchRuntimeSharedConfig(runtime: string): string {
   const initializer = (index: number): string | undefined => [...runtime.slice(0, index).matchAll(/([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\(\(\)=>\{/gu)].at(-1)?.[1];
   const initImporter = importer && initializer(importer.index), initRepository = repository && initializer(repository.index);
   const main = /async function [A-Za-z_$][\w$]*\(\)\{let [A-Za-z_$][\w$]*=process\.argv\.slice\(2\);/u.exec(runtime);
-  const loader = /([A-Za-z_$][\w$]*)=\(0,[A-Za-z_$][\w$]*\.readFileSync\)\(([A-Za-z_$][\w$]*),"utf-8"\),([A-Za-z_$][\w$]*)=JSON\.parse\(\1\),([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\(\3\);/u.exec(runtime);
-  const validation = loader && new RegExp(`let ([A-Za-z_$][\\w$]*)=([A-Za-z_$][\\w$]*)\\(${escapeRegExpName(loader[3]!)}\\);return\\{config:\\1\\.config`, "u")
+  // 3.12.3 reads the settings file, runs its native plugin migration
+  // (bvi/_vi write-back), then validates the parsed object before returning.
+  // Requiring "utf-8" (not "utf8") keeps this anchor on the settings loader
+  // and away from unrelated readFileSync+JSON.parse sites. The parse operand
+  // is matched without a \\1 backreference and compared in code: JSC's YARR
+  // engine mis-compiles backreferences on multi-MB runtimes depending on
+  // which regexes compiled before them.
+  const loaderMatch = /([A-Za-z_$][\w$]*)=\(0,([A-Za-z_$][\w$]*)\.readFileSync\)\(([A-Za-z_$][\w$]*),"utf-8"\),([A-Za-z_$][\w$]*)=JSON\.parse\(([A-Za-z_$][\w$]*)\)/u.exec(runtime);
+  const loader = loaderMatch && loaderMatch[5] === loaderMatch[1] ? loaderMatch : undefined;
+  const validation = loader && new RegExp(`let ([A-Za-z_$][\\w$]*)=([A-Za-z_$][\\w$]*)\\(([A-Za-z_$][\\w$]*)\\);return\\{config:([A-Za-z_$][\\w$]*)\\.config`, "u")
     .exec(runtime.slice(loader.index, loader.index + 1000));
-  if (!file || !importer || !repository || !initImporter || !initRepository || !main || !loader || !validation) {
+  const validationValid = validation && validation[4] === validation[1] ? validation : undefined;
+  if (!file || !importer || !repository || !initImporter || !initRepository || !main || !loader || !validationValid) {
     throw new Error("ZCode runtime is incompatible with shared configuration (settings/migration anchors missing).");
   }
   const bridge = 'require(require("node:path").join(__dirname,"cli-config.cjs"))';
@@ -1026,7 +1086,7 @@ export function patchRuntimeSharedConfig(runtime: string): string {
     .replace(file[0], `${file[1]}="setting.json",${file[2]}="~/.zcode/cli"`)
     // Merge shared preferences after native file migrations have run, so a
     // plugin migration cannot accidentally persist inherited Desktop values.
-    .replace(validation[0], validation[0].replace(`${validation[2]}(${loader[3]})`, `${validation[2]}(${bridge}.mergeDesktopSettings(${loader[3]},${loader[2]},process.env))`))
+    .replace(validationValid![0], validationValid![0].replace(`${validationValid![2]}(${validationValid![3]})`, `${validationValid![2]}(${bridge}.mergeDesktopSettings(${validationValid![3]},${loader![3]},process.env))`))
     .replace(main[0], `${main[0]}if(process.env.ZCODE_CLI_MIGRATE_CONFIG==="1"){try{${initRepository}();${initImporter}();await ${bridge}.migrateLegacyProviders({Repository:${repository[1]},importLegacy:${importer[1]},env:process.env})}catch($zError){process.stderr.write(($zError instanceof Error?$zError.message:"CLI configuration migration failed")+"\\n"),process.exitCode=1}return}`);
 }
 
@@ -1611,12 +1671,19 @@ export function patchRuntimeLoginModelDefaults(runtime: string): string {
 export function hasRuntimeRegistryLoginModelDefaults(runtime: string): boolean {
   const resolveProvider = /[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*),"resolveStandaloneCodingPlanProvider"\)/u.exec(runtime)?.[1];
   if (!resolveProvider) return false;
-  const persistence = new RegExp(`async function [A-Za-z_$][\\w$]*\\(e\\)\\{let ([A-Za-z_$][\\w$]*)=await ${escapeRegExpName(resolveProvider)}\\(e\\.providerId,e\\.env\\),([A-Za-z_$][\\w$]*)=\\1\\.providerId,([A-Za-z_$][\\w$]*)=\\1\\.modelId,`, "u").exec(runtime);
+  // The \\1 backreferences of the original anchor are unfolded into extra
+  // capture groups compared in code: JSC's YARR engine mis-compiles
+  // backreferences on multi-MB runtimes depending on which regexes compiled
+  // before them.
+  const persistenceMatch = new RegExp(`async function [A-Za-z_$][\\w$]*\\(e\\)\\{let ([A-Za-z_$][\\w$]*)=await ${escapeRegExpName(resolveProvider)}\\(e\\.providerId,e\\.env\\),([A-Za-z_$][\\w$]*)=([A-Za-z_$][\\w$]*)\\.providerId,([A-Za-z_$][\\w$]*)=([A-Za-z_$][\\w$]*)\\.modelId,`, "u").exec(runtime);
+  const persistence = persistenceMatch && persistenceMatch[3] === persistenceMatch[1] && persistenceMatch[5] === persistenceMatch[1]
+    ? persistenceMatch
+    : undefined;
   return !!persistence
     && runtime.includes('"readStandaloneCodingPlanCatalog"')
     && /\.builtinModelIds\?\.find\([A-Za-z_$][\w$]*=>[A-Za-z_$][\w$]*\.trim\(\)\)\?\.trim\(\)/u.test(runtime)
     && runtime.includes('mode==="individual-coding-plan"')
-    && runtime.includes(`.saveConfiguredDefault({providerId:${persistence[2]},modelId:${persistence[3]}})`)
+    && runtime.includes(`.saveConfiguredDefault({providerId:${persistence[2]},modelId:${persistence[4]}})`)
     && runtime.includes('"persistStandaloneCodingPlanConnection"');
 }
 
