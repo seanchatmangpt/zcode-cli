@@ -170,7 +170,7 @@ try {
     model?: { main?: string };
     provider?: { zai?: { options?: { apiKey?: string } } };
   };
-  if (initialConfig.model?.main !== "zai/glm-5.2"
+  if (initialConfig.model?.main !== "zai/glm-5.3"
     || initialConfig.provider?.zai?.options?.apiKey !== undefined) {
     throw new Error("The launcher created an invalid initial config.json.");
   }
@@ -207,7 +207,7 @@ try {
   );
   await waitFor(
     "API key turn completion",
-    /(?:Configured Z\.AI Coding Plan|已配置 Z\.AI Coding Plan)[\s\S]*◈ zai\/glm-5\.2/i,
+    /(?:Configured Z\.AI Coding Plan|已配置 Z\.AI Coding Plan)[\s\S]*◈ zai\/glm-5\.3/i,
     apiKeySetupStart
   );
   await sendAndWait("/login\r", "reopened login setup picker", /Set Up Coding Plan|配置 Coding Plan/i);
@@ -224,7 +224,7 @@ try {
   );
   await waitFor(
     "BigModel API key turn completion",
-    /(?:Configured BigModel Coding Plan|已配置 BigModel Coding Plan)[\s\S]*◈ bigmodel\/glm-5\.2/i,
+    /(?:Configured BigModel Coding Plan|已配置 BigModel Coding Plan)[\s\S]*◈ bigmodel\/glm-5\.3/i,
     bigmodelSetupStart
   );
   await sendAndWait("/status\r", "status details", /Runtime version\s+\d+/i);
@@ -302,7 +302,7 @@ if (plain.includes(smokeApiKey)) {
   throw new Error(`The API key leaked into terminal output.\n${plain.slice(-4_000)}`);
 }
 if (!configured.includes(smokeApiKey)
-  || !configured.includes('"main": "bigmodel/glm-5.2"')
+  || !configured.includes('"main": "bigmodel/glm-5.3"')
   || !configured.includes('"lite": "bigmodel/glm-4.7"')) {
   throw new Error("The official runtime did not persist the Coding Plan configuration.");
 }
