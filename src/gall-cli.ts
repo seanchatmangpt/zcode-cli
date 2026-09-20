@@ -192,7 +192,21 @@ export function verifyPortableGallArtifact(path: string): GallFreshConsumerRecei
   }
 
   const compositionDigest = requiredString(artifact, "composition_digest");
+  if (!sha256Pattern.test(compositionDigest)) {
+    throw new Error("GALL artifact composition_digest must be sha256:<64hex>");
+  }
+  const workOrderDigest = artifact.work_order_digest;
+  if (typeof workOrderDigest === "string" && workOrderDigest.length > 0
+    && !sha256Pattern.test(workOrderDigest)) {
+    throw new Error("GALL artifact work_order_digest must be sha256:<64hex> when present");
+  }
   const sourceStanding = requiredString(artifact, "standing");
+  if (sourceStanding !== "PARTIAL_ALIVE" && sourceStanding !== "ALIVE") {
+    throw new Error(`unsupported upstream standing ${sourceStanding}`);
+  }
+  if (artifact.authority !== "none") {
+    throw new Error("portable GALL artifact must carry authority=none");
+  }
   const base = {
     schema: "zcode.gall.fresh-consumer/v26.9.18" as const,
     public_interface: "zcode gall verify" as const,
@@ -202,7 +216,7 @@ export function verifyPortableGallArtifact(path: string): GallFreshConsumerRecei
     gate_11: "PASS" as const,
     upstream_gate_12: "PORTABLE_GALL_005_ARTIFACT",
     external_do_count: 0 as const,
-    consumed_artifact_digests: { [resolve(path)]: sha256Text(source) }
+    consumed_artifact_digests: { "gall-005-portable.json": sha256Text(source) }
   };
 
   return { ...base, consumer_receipt_digest: sha256Json(base as unknown as Json) };
