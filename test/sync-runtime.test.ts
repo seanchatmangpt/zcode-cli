@@ -431,24 +431,25 @@ describe("runtime synchronization", () => {
     };
 
     expect(patched).toContain(
-      'gni="zai/glm-5.2",_ni="zai/glm-5-turbo",vni="bigmodel/glm-5.2",yni="bigmodel/glm-4.7"'
+      'gni="zai/glm-5.3",_ni="zai/glm-5.3-flash",vni="bigmodel/glm-5.3",yni="bigmodel/glm-4.7"'
     );
-    expect(patched).toContain('kCt="glm-5.2",SCt="glm-4.7"');
+    expect(patched).toContain('kCt="glm-5.3",SCt="glm-5.3-flash"');
     expect(patched).toContain('["glm-5-turbo"]:{...u["glm-5-turbo"],name:"GLM-5-Turbo"}');
     expect(patched).not.toContain('gni="zai/glm-5.1"');
+    expect(patched).not.toContain('gni="zai/glm-5.2"');
     expect(patched).not.toContain('"GLM-5.1"');
 
     const zai = updateConfig({}, "zai", "zai-key");
-    expect(zai.model).toEqual({ main: "zai/glm-5.2", lite: "zai/glm-5-turbo" });
+    expect(zai.model).toEqual({ main: "zai/glm-5.3", lite: "zai/glm-5.3-flash" });
     expect(Object.keys(zai.provider.zai!.models).sort()).toEqual([
-      "glm-4.7",
       "glm-5-turbo",
-      "glm-5.2"
+      "glm-5.3",
+      "glm-5.3-flash"
     ]);
 
     const bigmodel = updateConfig({}, "bigmodel", "bigmodel-key");
-    expect(bigmodel.model).toEqual({ main: "bigmodel/glm-5.2", lite: "bigmodel/glm-4.7" });
-    expect(bigmodel.provider.bigmodel!.models["glm-4.7"]).toBeDefined();
+    expect(bigmodel.model).toEqual({ main: "bigmodel/glm-5.3", lite: "bigmodel/glm-4.7" });
+    expect(bigmodel.provider.bigmodel!.models["glm-5.3-flash"]).toBeDefined();
     expect(updateConfig(
       { model: { lite: "zai/custom-lite" } },
       "bigmodel",
