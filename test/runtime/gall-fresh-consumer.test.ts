@@ -20,8 +20,11 @@ function digest(value: Json): string {
   return "sha256:" + createHash("sha256").update(canonical(value)).digest("hex");
 }
 
-function withDigest<T extends Record<string, Json>>(value: T, field: string): T {
-  return { ...value, [field]: digest(value) };
+function withDigest<T extends Record<string, Json>, K extends string>(
+  value: T,
+  field: K
+): T & Record<K, string> {
+  return { ...value, [field]: digest(value) } as T & Record<K, string>;
 }
 
 function bundle(root: string): { composition: string } {
@@ -221,7 +224,7 @@ describe("GALL-006 fresh consumer", () => {
         work_order_digest: ""
       }))
     };
-    const artifact = { ...base, artifact_digest: digest(base) };
+    const artifact: Record<string, Json> = { ...base, artifact_digest: digest(base) };
     artifact.standing = "ALIVE";
     writeFileSync(artifactPath, JSON.stringify(artifact));
 

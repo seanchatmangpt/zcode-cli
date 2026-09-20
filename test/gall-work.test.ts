@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseGallWorkLease } from "../src/gall-work.ts";
+import { parseGallWorkLease, type GallWorkLease } from "../src/gall-work.ts";
 
-const lease = {
+const lease: GallWorkLease = {
   schema: "gall.work-lease/1",
   work_order_iri: "urn:gall:work-order:xaas:001",
   checkpoint_iri: "urn:gall:checkpoint:xaas:001",
