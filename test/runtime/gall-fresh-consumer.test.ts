@@ -172,7 +172,7 @@ describe("GALL-006 fresh consumer", () => {
     const base: Record<string, Json> = {
       schema: "https://autofde.dev/gall/composition/v1",
       release_id: "v26.9.18",
-      composition_digest: "deadbeef",
+      composition_digest: "sha256:" + "d".repeat(64),
       work_order_digest: "sha256:" + "f".repeat(64),
       standing: "PARTIAL_ALIVE",
       authority: "none",
@@ -207,7 +207,7 @@ describe("GALL-006 fresh consumer", () => {
     const base: Record<string, Json> = {
       schema: "https://autofde.dev/gall/composition/v1",
       release_id: "v26.9.18",
-      composition_digest: "deadbeef",
+      composition_digest: "sha256:" + "d".repeat(64),
       work_order_digest: "",
       standing: "PARTIAL_ALIVE",
       authority: "none",
@@ -232,3 +232,41 @@ describe("GALL-006 fresh consumer", () => {
     expect(refusal.external_do_count).toBe(0);
   });
 });
+
+
+  test("portable receipt identity is independent of artifact filesystem location", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-gall006-path-stable-"));
+    const home = join(root, "fresh-home");
+    mkdirSync(home);
+    const base: Record<string, Json> = {
+      schema: "https://autofde.dev/gall/composition/v1",
+      release_id: "v26.9.18",
+      composition_digest: "sha256:" + "d".repeat(64),
+      work_order_digest: "sha256:" + "f".repeat(64),
+      standing: "PARTIAL_ALIVE",
+      authority: "none",
+      checkpoints: [1, 2, 3, 4].map((index) => ({
+        checkpoint_id: `GALL-${String(index).padStart(3, "0")}`,
+        repository: `repo-${index}`,
+        exact_sha: String(index).repeat(40),
+        receipt_digest: "sha256:" + String(index).repeat(64),
+        standing: "PARTIAL_ALIVE",
+        evidence_class: "local_test",
+        work_order_digest: "sha256:" + String(index).repeat(64)
+      }))
+    };
+    const artifact = JSON.stringify({ ...base, artifact_digest: digest(base) });
+    const left = join(root, "left.json");
+    const rightDir = join(root, "nested");
+    mkdirSync(rightDir);
+    const right = join(rightDir, "right.json");
+    writeFileSync(left, artifact);
+    writeFileSync(right, artifact);
+
+    const first = await execute(["gall", "verify", "--artifact", left, "--json"], home);
+    const second = await execute(["gall", "verify", "--artifact", right, "--json"], home);
+    expect(first.code).toBe(0);
+    expect(second.code).toBe(0);
+    expect(JSON.parse(first.stdout).consumer_receipt_digest)
+      .toBe(JSON.parse(second.stdout).consumer_receipt_digest);
+  });
