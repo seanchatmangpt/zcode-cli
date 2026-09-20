@@ -3,8 +3,11 @@ import { isAbsolute, resolve } from "node:path";
 
 export interface GallWorkLease {
   schema: "gall.work-lease/1";
+  work_order_iri: string;
   checkpoint_iri: string;
   graph_digest: string;
+  repository_identity: string;
+  base_sha: string;
   epoch_id: string;
   worker_id: string;
   worktree: string;
@@ -16,6 +19,8 @@ export interface GallWorkInvocation {
 }
 
 const sha256Digest = /^sha256:[0-9a-f]{64}$/u;
+const gitSha = /^[0-9a-f]{40}$/u;
+const repositoryIdentity = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const workerId = /^[A-Za-z0-9._:-]{1,128}$/u;
 
@@ -38,22 +43,31 @@ export function parseGallWorkLease(value: unknown): GallWorkLease {
     throw new Error("Unsupported GALL work lease schema.");
   }
 
+  const work_order_iri = nonEmptyString(input.work_order_iri, "work_order_iri");
   const checkpoint_iri = nonEmptyString(input.checkpoint_iri, "checkpoint_iri");
   const graph_digest = nonEmptyString(input.graph_digest, "graph_digest");
+  const repository_identity = nonEmptyString(input.repository_identity, "repository_identity");
+  const base_sha = nonEmptyString(input.base_sha, "base_sha");
   const epoch_id = nonEmptyString(input.epoch_id, "epoch_id");
   const selectedWorker = nonEmptyString(input.worker_id, "worker_id");
   const worktree = nonEmptyString(input.worktree, "worktree");
 
+  if (!work_order_iri.includes(":")) throw new Error("work_order_iri must be an absolute IRI.");
   if (!checkpoint_iri.includes(":")) throw new Error("checkpoint_iri must be an absolute IRI.");
   if (!sha256Digest.test(graph_digest)) throw new Error("graph_digest must be sha256:<64 lowercase hex>.");
+  if (!repositoryIdentity.test(repository_identity)) throw new Error("repository_identity must be owner/name.");
+  if (!gitSha.test(base_sha)) throw new Error("base_sha must be an exact 40-hex commit SHA.");
   if (!uuid.test(epoch_id)) throw new Error("epoch_id must be a UUID.");
   if (!workerId.test(selectedWorker)) throw new Error("worker_id contains unsupported characters.");
   if (!isAbsolute(worktree)) throw new Error("worktree must be an absolute path.");
 
   return {
     schema: "gall.work-lease/1",
+    work_order_iri,
     checkpoint_iri,
     graph_digest,
+    repository_identity,
+    base_sha,
     epoch_id,
     worker_id: selectedWorker,
     worktree: resolve(worktree)
@@ -82,8 +96,11 @@ export async function gallWorkInvocation(args: string[]): Promise<GallWorkInvoca
     env: {
       XAAS_WORKER: "1",
       XAAS_LEASE_CWD: lease.worktree,
+      GALL_WORK_ORDER_IRI: lease.work_order_iri,
       GALL_CHECKPOINT_IRI: lease.checkpoint_iri,
-      GALL_GRAPH_DIGEST: lease.graph_digest
+      GALL_GRAPH_DIGEST: lease.graph_digest,
+      GALL_REPOSITORY_IDENTITY: lease.repository_identity,
+      GALL_BASE_SHA: lease.base_sha
     }
   };
 }
