@@ -10,6 +10,7 @@ on:
       - "src/launcher.ts"
       - "test/gall-work.test.ts"
       - "test/runtime/gall-fresh-consumer.test.ts"
+      - "test/runtime/gall-work-e2e.test.ts"
       - ".github/workflows/gall-006-worker-integration.yml"
   workflow_dispatch:
 
@@ -35,5 +36,5 @@ jobs:
         with:
           bun-version: 1.3.12
       - run: bun install --frozen-lockfile
-      - name: Execute fresh-consumer and typed-worker courts
-        run: bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts
+      - name: Execute fresh-consumer, typed-worker, and mocked-lifecycle courts
+        run: bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts test/runtime/gall-work-e2e.test.ts
