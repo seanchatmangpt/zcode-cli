@@ -1,0 +1,16 @@
+{
+  "schema": "semantic-jira/execution-descriptor/v1",
+  "work_order_id": "ZOCEL-012",
+  "subject": "zcode-cli:worktree-hygiene",
+  "repository": "seanchatmangpt/zcode-cli",
+  "base_sha": "1aceb47e935200c6f67960fa2b6125d1a24fae85",
+  "definition_digest": "sha256:88aac8f16771252a82bea354628a19f4dc7b44da1c3e7d2c67108bdb5e5fd756",
+  "snapshot_digest": "sha256:f9776e8f80c0c121b26b6d7c57c1c39d539b71b6b5c1a6c6d0e7e88022de5f40",
+  "graph_digest": "sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199",
+  "provider": "zcode",
+  "worker_identity": "zcode-agent",
+  "verifier_identity": "exact-head-court",
+  "replay_identity": "semantic-jira:v26.9.21:ZOCEL-012",
+  "authority": "NONE",
+  "package": {"actions":[{"authority":"NONE","kind":"bounded_transition","work_order_id":"ZOCEL-012"}],"admission":{"admitted":true,"standing":"UNKNOWN","work_order_digest":"sha256:f9776e8f80c0c121b26b6d7c57c1c39d539b71b6b5c1a6c6d0e7e88022de5f40"},"attributes":[],"bindings":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","repository":"seanchatmangpt/zcode-cli"}],"graph_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","measurements":[],"native_facets":{},"ontology_versions":{},"policies":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","rule":"base_must_not_move"},{"rule":"worker_not_verifier","verifier":"exact-head-court","worker":"zcode-agent"}],"projections":[{"authority":"NONE","kind":"ard","standing":"CANDIDATE"},{"authority":"NONE","kind":"executive","standing":"CANDIDATE"},{"authority":"NONE","kind":"fond","standing":"CANDIDATE"},{"authority":"NONE","kind":"hddl","standing":"CANDIDATE"},{"authority":"NONE","kind":"jira","standing":"CANDIDATE"},{"authority":"NONE","kind":"machine","standing":"CANDIDATE"},{"authority":"NONE","kind":"prd","standing":"CANDIDATE"},{"authority":"NONE","kind":"receipt","standing":"CANDIDATE"},{"authority":"NONE","kind":"replay","standing":"CANDIDATE"},{"authority":"NONE","kind":"sa2a","standing":"CANDIDATE"},{"authority":"NONE","kind":"verification","standing":"CANDIDATE"},{"authority":"NONE","kind":"vision","standing":"CANDIDATE"},{"authority":"NONE","kind":"wbpr","standing":"CANDIDATE"},{"authority":"NONE","kind":"worker","standing":"CANDIDATE"}],"provenance":{"replay_identity":"semantic-jira:v26.9.21:ZOCEL-012"},"public_facets":[],"relationships":[],"resource_budget":{},"schema_version":1,"shape_digest":"sha256:1b2809567832de16671c827ed0f9941893644ddac2ab6a0cda462c4b33615e98","source_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","subject_id":"zcode-cli:worktree-hygiene","temporal":null}
+}

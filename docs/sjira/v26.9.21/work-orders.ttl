@@ -1,0 +1,1208 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for ZOCEL work orders v26.9.21: finish the definition of done for the
+# zcode-cli agent loop through OCEL v2. Vocabulary is the semantic-jira-pack ontology;
+# evidence and projection nodes below are verbatim copies of that pack's definitions.
+# Generated tickets are projections of this graph; edit this file, never a ticket.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Action a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:ProjectionSpec a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+sj:source-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Source evidence" ;
+    dcterms:description "Exact canonical-source identity evidence." .
+sj:generated-artifact-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Generated artifact evidence" ;
+    dcterms:description "Evidence binding a consequence to semantic source and generator." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:generated-artifact-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Generated artifact evidence" ;
+    dcterms:description "Evidence binding a consequence to semantic source and generator." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:telemetry-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Telemetry evidence" ;
+    dcterms:description "Observational telemetry evidence; never normative law by itself." .
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:process-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Process evidence" ;
+    dcterms:description "Observed process evidence kept separate from normative specification." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:authority-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Authority evidence" ;
+    dcterms:description "Prepared authority evidence for a consequential transition." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:publication-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Publication evidence" ;
+    dcterms:description "Publication evidence distinct from implementation and verification." .
+
+
+sj:projection-jira a sj:ProjectionSpec ;
+    rdfs:label "Jira/Markdown ticket" ;
+    dcterms:description "Deterministic jira/markdown ticket projection; authority is NONE." ;
+    sj:projectionType "jira" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-wbpr a sj:ProjectionSpec ;
+    rdfs:label "Working-backwards plan" ;
+    dcterms:description "Deterministic working-backwards plan projection; authority is NONE." ;
+    sj:projectionType "wbpr" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-prd a sj:ProjectionSpec ;
+    rdfs:label "Product requirements document" ;
+    dcterms:description "Deterministic product requirements document projection; authority is NONE." ;
+    sj:projectionType "prd" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-ard a sj:ProjectionSpec ;
+    rdfs:label "Architecture requirements document" ;
+    dcterms:description "Deterministic architecture requirements document projection; authority is NONE." ;
+    sj:projectionType "ard" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-vision a sj:ProjectionSpec ;
+    rdfs:label "Vision document" ;
+    dcterms:description "Deterministic vision document projection; authority is NONE." ;
+    sj:projectionType "vision" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-fond a sj:ProjectionSpec ;
+    rdfs:label "FOND planning projection" ;
+    dcterms:description "Deterministic fond planning projection projection; authority is NONE." ;
+    sj:projectionType "fond" ;
+    sj:extension "pddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-hddl a sj:ProjectionSpec ;
+    rdfs:label "HDDL task/method projection" ;
+    dcterms:description "Deterministic hddl task/method projection projection; authority is NONE." ;
+    sj:projectionType "hddl" ;
+    sj:extension "hddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-sa2a a sj:ProjectionSpec ;
+    rdfs:label "SA2A work/execution package" ;
+    dcterms:description "Deterministic sa2a work/execution package projection; authority is NONE." ;
+    sj:projectionType "sa2a" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-worker a sj:ProjectionSpec ;
+    rdfs:label "Bounded worker input envelope" ;
+    dcterms:description "Deterministic bounded worker input envelope projection; authority is NONE." ;
+    sj:projectionType "worker" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-verification a sj:ProjectionSpec ;
+    rdfs:label "Verification plan" ;
+    dcterms:description "Deterministic verification plan projection; authority is NONE." ;
+    sj:projectionType "verification" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-executive a sj:ProjectionSpec ;
+    rdfs:label "Executive status view" ;
+    dcterms:description "Deterministic executive status view projection; authority is NONE." ;
+    sj:projectionType "executive" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-machine a sj:ProjectionSpec ;
+    rdfs:label "Machine status view" ;
+    dcterms:description "Deterministic machine status view projection; authority is NONE." ;
+    sj:projectionType "machine" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-receipt a sj:ProjectionSpec ;
+    rdfs:label "Receipt requirement summary" ;
+    dcterms:description "Deterministic receipt requirement summary projection; authority is NONE." ;
+    sj:projectionType "receipt" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+sj:projection-replay a sj:ProjectionSpec ;
+    rdfs:label "Replay manifest" ;
+    dcterms:description "Deterministic replay manifest projection; authority is NONE." ;
+    sj:projectionType "replay" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+# ---- ZOCEL-001 ----
+sj:zocel-001
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-001: Land the OCEL consumer branch with a real observed run" ;
+    dcterms:identifier "ZOCEL-001" ;
+    dcterms:title "Land the OCEL consumer branch with a real observed run" ;
+    dcterms:description "Land feat/zcode-ocel-consumer so the zcode agent loop emits a sealed OCEL 2.0 log and receipt from a real session, verified by the generated verifier and replayed through the generated transition table. A run with no log is NOT_RUN per the gymact ocel-standing rule." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:feat/zcode-ocel-consumer" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-001" ;
+    sj:pathScope "src", "scripts", "test", "ontology" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zocel-001 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:process-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zocel-001-1, sj:acc-zocel-001-2, sj:acc-zocel-001-3, sj:acc-zocel-001-4, sj:acc-zocel-001-5, sj:acc-zocel-001-6 ;
+    sj:falsifier sj:fal-zocel-001-1, sj:fal-zocel-001-2, sj:fal-zocel-001-3 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-001 ;
+    sj:nextCheckpoint sj:cp-zocel-001 .
+
+sj:court-zocel-001 a sj:Court ;
+    rdfs:label "ZOCEL-001 exact-subject court" ;
+    dcterms:description "Independent court for Land the OCEL consumer branch with a real observed run: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-001-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Static gates pass" ;
+    dcterms:description "In /Users/sac/wt/zcode-ocel-consumer, 'bun run typecheck' exits 0, 'bun test test/ocel-*.test.ts' reports 0 fail, and 'bun scripts/gen-ocel.ts --check' prints no STALE line and exits 0." .
+sj:acc-zocel-001-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Real run emits log and receipt" ;
+    dcterms:description "'ZCODE_OCEL=1 zcode -p <prompt> --output-format stream-json' exits 0 and produces <session>.jsonocel and <session>.receipt.json on disk; absence of either is NOT_RUN, never ALIVE." .
+sj:acc-zocel-001-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Log validates against OCEL 2.0 schema" ;
+    dcterms:description "The produced .jsonocel validates against an OCEL 2.0 jsonschema with zero errors." .
+sj:acc-zocel-001-4 a sj:AcceptanceCriterion ;
+    rdfs:label "Receipt chain verifies" ;
+    dcterms:description "The generated verifier chain-verifies the receipt over the real log and exits 0." .
+sj:acc-zocel-001-5 a sj:AcceptanceCriterion ;
+    rdfs:label "Replay is conformant" ;
+    dcterms:description "Replaying the real log through the generated st: transition table yields zero non-conformant transitions." .
+sj:acc-zocel-001-6 a sj:AcceptanceCriterion ;
+    rdfs:label "Seal-twice refused and tamper detected" ;
+    dcterms:description "Sealing the same session a second time is refused with a typed error, and flipping one byte of the log makes chain verification fail." .
+
+sj:fal-zocel-001-1 a sj:Falsifier ;
+    rdfs:label "Fixture-only evidence" ;
+    dcterms:description "A passing test suite with no real .jsonocel from a live zcode run falsifies ALIVE; standing stays NOT_RUN." .
+sj:fal-zocel-001-2 a sj:Falsifier ;
+    rdfs:label "Stale generated code" ;
+    dcterms:description "'gen-ocel.ts --check' reporting STALE falsifies the claim that generated verifier and table match the ontology." .
+sj:fal-zocel-001-3 a sj:Falsifier ;
+    rdfs:label "Tamper undetected" ;
+    dcterms:description "A mutated log that still chain-verifies falsifies tamper detection." .
+
+sj:cp-zocel-001 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-001 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-001 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-002 ----
+sj:zocel-002
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-002: Per-language pending/outcome parity with shared golden vectors" ;
+    dcterms:identifier "ZOCEL-002" ;
+    dcterms:title "Per-language pending/outcome parity with shared golden vectors" ;
+    dcterms:description "Prove the TypeScript and Python OCEL implementations agree on pending and outcome event handling by driving both from one shared set of golden chain vectors stored in the consumer." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:ocel-ts-py-parity" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-002" ;
+    sj:pathScope "test", "scripts" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:dependsOn sj:edge-zocel-002-on-001 ;
+    sj:requiresCourt sj:court-zocel-002 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-002-1, sj:acc-zocel-002-2, sj:acc-zocel-002-3 ;
+    sj:falsifier sj:fal-zocel-002-1, sj:fal-zocel-002-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-002 ;
+    sj:nextCheckpoint sj:cp-zocel-002 .
+
+sj:court-zocel-002 a sj:Court ;
+    rdfs:label "ZOCEL-002 exact-subject court" ;
+    dcterms:description "Independent court for Per-language pending/outcome parity with shared golden vectors: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-002-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Golden vectors exist" ;
+    dcterms:description "A single golden chain vector file is committed in the consumer and both language test suites read that same file." .
+sj:acc-zocel-002-2 a sj:AcceptanceCriterion ;
+    rdfs:label "TypeScript parity" ;
+    dcterms:description "'bun test test/ocel-*.test.ts' passes with 0 fail and asserts every golden vector digest byte-for-byte." .
+sj:acc-zocel-002-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Python parity" ;
+    dcterms:description "The Python test run over the same golden vectors exits 0 with every digest equal to the TypeScript digest." .
+
+sj:fal-zocel-002-1 a sj:Falsifier ;
+    rdfs:label "Divergent digest" ;
+    dcterms:description "Any golden vector whose TypeScript and Python chain digests differ falsifies parity." .
+sj:fal-zocel-002-2 a sj:Falsifier ;
+    rdfs:label "Private vectors" ;
+    dcterms:description "A vector duplicated per language rather than shared falsifies the shared-vector requirement." .
+
+sj:edge-zocel-002-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-002 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-002 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-002 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-002 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-002 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-003 ----
+sj:zocel-003
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-003: Strict toolchain gates that fail instead of skip" ;
+    dcterms:identifier "ZOCEL-003" ;
+    dcterms:title "Strict toolchain gates that fail instead of skip" ;
+    dcterms:description "Make OCEL coverage and reuse tests fail rather than skip when required toolchains or bundles are absent, and wire that strictness into the locked sync and release build paths." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:strict-toolchain-gates" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-003" ;
+    sj:pathScope "test", "package.json" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:dependsOn sj:edge-zocel-003-on-001 ;
+    sj:requiresCourt sj:court-zocel-003 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-003-1, sj:acc-zocel-003-2, sj:acc-zocel-003-3 ;
+    sj:falsifier sj:fal-zocel-003-1, sj:fal-zocel-003-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-003 ;
+    sj:nextCheckpoint sj:cp-zocel-003 .
+
+sj:court-zocel-003 a sj:Court ;
+    rdfs:label "ZOCEL-003 exact-subject court" ;
+    dcterms:description "Independent court for Strict toolchain gates that fail instead of skip: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-003-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Toolchain strictness fails" ;
+    dcterms:description "With ZCODE_REQUIRE_TOOLCHAINS=1 and a toolchain hidden from PATH, the make ocel-coverage and ocel-reuse tests exit nonzero instead of reporting skipped." .
+sj:acc-zocel-003-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Bundle strictness fails" ;
+    dcterms:description "With ZCODE_REQUIRE_BUNDLE=1 and the bundle absent, the reuse test exits nonzero instead of skipping." .
+sj:acc-zocel-003-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Wired into release paths" ;
+    dcterms:description "'bun run sync:locked' and 'bun run release:build' set both variables, shown by grep of package.json and the scripts they call." .
+
+sj:fal-zocel-003-1 a sj:Falsifier ;
+    rdfs:label "Silent skip" ;
+    dcterms:description "A run with a missing toolchain that exits 0 with skipped tests falsifies the strict gate." .
+sj:fal-zocel-003-2 a sj:Falsifier ;
+    rdfs:label "Unwired gate" ;
+    dcterms:description "Either variable absent from sync:locked or release:build falsifies wiring." .
+
+sj:edge-zocel-003-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-003 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-003 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-003 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-003 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-003 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-004 ----
+sj:zocel-004
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-004: Confirm merged marketplace packs are ALIVE" ;
+    dcterms:identifier "ZOCEL-004" ;
+    dcterms:title "Confirm merged marketplace packs are ALIVE" ;
+    dcterms:description "Confirm the merged ggen marketplace packs validate and qualify against the recorded baseline, and record the committed-signing-key decision as a human item without blocking the rest of the graph." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "ggen-marketplace:merged-packs-qualification" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-004" ;
+    sj:pathScope "docs/sjira/v26.9.21" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-004 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-004-1, sj:acc-zocel-004-2, sj:acc-zocel-004-3, sj:acc-zocel-004-4, sj:acc-zocel-004-5, sj:acc-zocel-004-6 ;
+    sj:falsifier sj:fal-zocel-004-1, sj:fal-zocel-004-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-004 ;
+    sj:nextCheckpoint sj:cp-zocel-004 .
+
+sj:court-zocel-004 a sj:Court ;
+    rdfs:label "ZOCEL-004 exact-subject court" ;
+    dcterms:description "Independent court for Confirm merged marketplace packs are ALIVE: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-004-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Marketplace validates" ;
+    dcterms:description "'marketplace.py validate' exits 0 and reports packs=319." .
+sj:acc-zocel-004-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Qualify failing set matches baseline" ;
+    dcterms:description "The failing set printed by qualify_packs is identical to the 24 entries in /Users/sac/wt/mp-baseline-failures.txt, checked with diff exiting 0." .
+sj:acc-zocel-004-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Event-sourcing chains ALIVE" ;
+    dcterms:description "'es_chain_qualify.py' reports every pack ALIVE and exits 0." .
+sj:acc-zocel-004-4 a sj:AcceptanceCriterion ;
+    rdfs:label "Pack tests pass" ;
+    dcterms:description "Every pack pytest file exits 0." .
+sj:acc-zocel-004-5 a sj:AcceptanceCriterion ;
+    rdfs:label "Targets sidecar present" ;
+    dcterms:description "A [targets] sidecar exists for the merged packs, shown by ls of the sidecar path." .
+sj:acc-zocel-004-6 a sj:AcceptanceCriterion ;
+    rdfs:label "Signing-key decision recorded" ;
+    dcterms:description "The decision on committed signing keys is recorded as BLOCKED-on-human; no agent removes or rotates keys." .
+
+sj:fal-zocel-004-1 a sj:Falsifier ;
+    rdfs:label "Baseline drift" ;
+    dcterms:description "A failing set that differs from the 24-entry baseline in either direction falsifies the match." .
+sj:fal-zocel-004-2 a sj:Falsifier ;
+    rdfs:label "Pack count drift" ;
+    dcterms:description "packs not equal to 319 falsifies the validate claim." .
+
+sj:cp-zocel-004 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-004 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-004 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-005 ----
+sj:zocel-005
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-005: Coverage gate, conformance replay, and importer cross-validation" ;
+    dcterms:identifier "ZOCEL-005" ;
+    dcterms:title "Coverage gate, conformance replay, and importer cross-validation" ;
+    dcterms:description "Add an OCEL coverage gate and conformance replay, and cross-validate a real run's OCEL log by importing it with an independent process-mining importer." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:ocel-coverage-conformance-import" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-005" ;
+    sj:pathScope "src", "scripts", "test" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:dependsOn sj:edge-zocel-005-on-001 ;
+    sj:requiresCourt sj:court-zocel-005 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:process-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zocel-005-1, sj:acc-zocel-005-2, sj:acc-zocel-005-3 ;
+    sj:falsifier sj:fal-zocel-005-1, sj:fal-zocel-005-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-005 ;
+    sj:nextCheckpoint sj:cp-zocel-005 .
+
+sj:court-zocel-005 a sj:Court ;
+    rdfs:label "ZOCEL-005 exact-subject court" ;
+    dcterms:description "Independent court for Coverage gate, conformance replay, and importer cross-validation: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-005-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Coverage gate enforced" ;
+    dcterms:description "The coverage gate exits 0 when every declared event type appears in the real run log and exits nonzero when one is removed from a copy." .
+sj:acc-zocel-005-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Conformance replay passes" ;
+    dcterms:description "Conformance replay of a real run's log against the generated transition table reports zero deviations." .
+sj:acc-zocel-005-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Importer accepts the log" ;
+    dcterms:description "An import of the same real run's OCEL through wasm4pm or ex4pm exits 0 and reports the same event and object counts as the source log." .
+
+sj:fal-zocel-005-1 a sj:Falsifier ;
+    rdfs:label "Synthetic log only" ;
+    dcterms:description "An importer run over a hand-written log rather than a real run falsifies cross-validation." .
+sj:fal-zocel-005-2 a sj:Falsifier ;
+    rdfs:label "Count mismatch" ;
+    dcterms:description "Event or object counts that differ between source and importer falsify the import claim." .
+
+sj:edge-zocel-005-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-005 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-005 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresRuntime" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-005 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-005 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-005 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-006 ----
+sj:zocel-006
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-006: Consumer residue hardening" ;
+    dcterms:identifier "ZOCEL-006" ;
+    dcterms:title "Consumer residue hardening" ;
+    dcterms:description "Close the residual consumer risks: decide the zod dependency so the zod schemas typecheck, record a contract fixture from a real runtime turn, review the loop ontology, and define how a fresh clone finds the pack root." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:consumer-residue-hardening" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-006" ;
+    sj:pathScope "schemas.zod.ts", "ontology/zcode-loop.ttl" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:dependsOn sj:edge-zocel-006-on-001 ;
+    sj:requiresCourt sj:court-zocel-006 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-006-1, sj:acc-zocel-006-2, sj:acc-zocel-006-3, sj:acc-zocel-006-4 ;
+    sj:falsifier sj:fal-zocel-006-1, sj:fal-zocel-006-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-006 ;
+    sj:nextCheckpoint sj:cp-zocel-006 .
+
+sj:court-zocel-006 a sj:Court ;
+    rdfs:label "ZOCEL-006 exact-subject court" ;
+    dcterms:description "Independent court for Consumer residue hardening: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-006-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Zod decision typechecks" ;
+    dcterms:description "After the zod dependency decision, 'bun run typecheck' exits 0 with schemas.zod.ts included." .
+sj:acc-zocel-006-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Real-turn contract fixture" ;
+    dcterms:description "A contract fixture recorded from a real runtime turn is committed, and its test fails when a recorded event shape is altered in a copy." .
+sj:acc-zocel-006-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Ontology reviewed" ;
+    dcterms:description "ontology/zcode-loop.ttl parses with a real Turtle parser exit 0 and the review outcome is recorded in the ticket receipt." .
+sj:acc-zocel-006-4 a sj:AcceptanceCriterion ;
+    rdfs:label "Fresh-clone pack root" ;
+    dcterms:description "In a fresh clone of the branch, the generator locates the pack root without a path outside the clone, shown by 'bun scripts/gen-ocel.ts --check' exit 0." .
+
+sj:fal-zocel-006-1 a sj:Falsifier ;
+    rdfs:label "Hand-written fixture" ;
+    dcterms:description "A fixture not captured from a real runtime turn falsifies the contract claim." .
+sj:fal-zocel-006-2 a sj:Falsifier ;
+    rdfs:label "Insensitive fixture" ;
+    dcterms:description "A shape change that leaves the fixture test green falsifies fixture sensitivity." .
+
+sj:edge-zocel-006-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-006 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-006 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresRuntime" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-006 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-006 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-006 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-007 ----
+sj:zocel-007
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-007: Land loop-gaps with a real maxTurns proof" ;
+    dcterms:identifier "ZOCEL-007" ;
+    dcterms:title "Land loop-gaps with a real maxTurns proof" ;
+    dcterms:description "Land feat/loop-gaps and prove with a real live loop that maxTurns stops the loop with error_max_turns and that ledger events reach the stream-json output." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:feat/loop-gaps" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-007" ;
+    sj:pathScope "." ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-007 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-007-1, sj:acc-zocel-007-2, sj:acc-zocel-007-3, sj:acc-zocel-007-4, sj:acc-zocel-007-5 ;
+    sj:falsifier sj:fal-zocel-007-1, sj:fal-zocel-007-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-007 ;
+    sj:nextCheckpoint sj:cp-zocel-007 .
+
+sj:court-zocel-007 a sj:Court ;
+    rdfs:label "ZOCEL-007 exact-subject court" ;
+    dcterms:description "Independent court for Land loop-gaps with a real maxTurns proof: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-007-1 a sj:AcceptanceCriterion ;
+    rdfs:label "No new test failures" ;
+    dcterms:description "Full 'bun test' on the branch shows no failure absent from the recorded baseline, compared with diff of failing-test lists." .
+sj:acc-zocel-007-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Sync gates green" ;
+    dcterms:description "'bun run sync:locked' and the sync check both exit 0." .
+sj:acc-zocel-007-3 a sj:AcceptanceCriterion ;
+    rdfs:label "No anchor drift" ;
+    dcterms:description "The runtime patch anchor-drift check exits 0." .
+sj:acc-zocel-007-4 a sj:AcceptanceCriterion ;
+    rdfs:label "maxTurns stops a live loop" ;
+    dcterms:description "A real zcode run with a low maxTurns against a prompt that would continue emits a result with subtype error_max_turns in stream-json and exits nonzero as designed." .
+sj:acc-zocel-007-5 a sj:AcceptanceCriterion ;
+    rdfs:label "Ledger events in stream" ;
+    dcterms:description "The same real run's stream-json output contains ledger events, shown by grep with count above zero." .
+
+sj:fal-zocel-007-1 a sj:Falsifier ;
+    rdfs:label "Unit-only proof" ;
+    dcterms:description "A maxTurns claim supported only by unit tests falsifies the live-loop requirement." .
+sj:fal-zocel-007-2 a sj:Falsifier ;
+    rdfs:label "Silent baseline growth" ;
+    dcterms:description "A new failing test not in the baseline falsifies no-new-failures." .
+
+sj:cp-zocel-007 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-007 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-007 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-008 ----
+sj:zocel-008
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-008: Land snapshot-hardening" ;
+    dcterms:identifier "ZOCEL-008" ;
+    dcterms:title "Land snapshot-hardening" ;
+    dcterms:description "Land feat/snapshot-hardening so the capability snapshot and restore tooling is syntax-clean and its dedicated tests pass without new failures in the unit suite." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:feat/snapshot-hardening" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-008" ;
+    sj:pathScope "." ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-008 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-008-1, sj:acc-zocel-008-2, sj:acc-zocel-008-3 ;
+    sj:falsifier sj:fal-zocel-008-1, sj:fal-zocel-008-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-008 ;
+    sj:nextCheckpoint sj:cp-zocel-008 .
+
+sj:court-zocel-008 a sj:Court ;
+    rdfs:label "ZOCEL-008 exact-subject court" ;
+    dcterms:description "Independent court for Land snapshot-hardening: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-008-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Shell syntax clean" ;
+    dcterms:description "'bash -n' over each snapshot script exits 0." .
+sj:acc-zocel-008-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Snapshot tests pass" ;
+    dcterms:description "'bun test test/capability-snapshot.test.ts' reports 7 pass and 0 fail." .
+sj:acc-zocel-008-3 a sj:AcceptanceCriterion ;
+    rdfs:label "No new suite failures" ;
+    dcterms:description "The full unit suite shows no failure absent from the recorded baseline." .
+
+sj:fal-zocel-008-1 a sj:Falsifier ;
+    rdfs:label "Test count drift" ;
+    dcterms:description "A pass count other than 7 without a recorded reason falsifies the acceptance." .
+sj:fal-zocel-008-2 a sj:Falsifier ;
+    rdfs:label "Baseline regression" ;
+    dcterms:description "A new failing unit test falsifies no-new-failures." .
+
+sj:cp-zocel-008 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-008 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-008 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-009 ----
+sj:zocel-009
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-009: Land the GALL superset branch" ;
+    dcterms:identifier "ZOCEL-009" ;
+    dcterms:title "Land the GALL superset branch" ;
+    dcterms:description "Land w9-sweep/zcode-pr3, the GALL superset ahead of main by 35 and behind by 9, using the trial branch integrate/gall-into-main, without new failures and with a byte-identical gall-work contract fixture." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:w9-sweep/zcode-pr3" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-009" ;
+    sj:pathScope "." ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-009 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-009-1, sj:acc-zocel-009-2, sj:acc-zocel-009-3 ;
+    sj:falsifier sj:fal-zocel-009-1, sj:fal-zocel-009-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-009 ;
+    sj:nextCheckpoint sj:cp-zocel-009 .
+
+sj:court-zocel-009 a sj:Court ;
+    rdfs:label "ZOCEL-009 exact-subject court" ;
+    dcterms:description "Independent court for Land the GALL superset branch: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-009-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Typecheck passes" ;
+    dcterms:description "'bun run typecheck' exits 0 on integrate/gall-into-main." .
+sj:acc-zocel-009-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Full tests no regression" ;
+    dcterms:description "Full 'bun test' and 'bun run test:runtime' show no failure absent from the main baseline." .
+sj:acc-zocel-009-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Contract fixture identical" ;
+    dcterms:description "cmp of the gall-work contract fixture against /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json exits 0." .
+
+sj:fal-zocel-009-1 a sj:Falsifier ;
+    rdfs:label "Fixture drift" ;
+    dcterms:description "cmp reporting any difference falsifies the byte-identical claim." .
+sj:fal-zocel-009-2 a sj:Falsifier ;
+    rdfs:label "Untried merge" ;
+    dcterms:description "A claim without a trial merge run on integrate/gall-into-main falsifies readiness." .
+
+sj:cp-zocel-009 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-009 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-009 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-010 ----
+sj:zocel-010
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-010: Final gate on merged main with exact-head receipt" ;
+    dcterms:identifier "ZOCEL-010" ;
+    dcterms:title "Final gate on merged main with exact-head receipt" ;
+    dcterms:description "Run the final verification gate on merged main and produce a receipt carrying an Exact Head Commit line. Merging to main and any push require human authority and are not performed by an agent." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:main-final-gate" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-010" ;
+    sj:pathScope "." ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:dependsOn sj:edge-zocel-010-on-001, sj:edge-zocel-010-on-002, sj:edge-zocel-010-on-003, sj:edge-zocel-010-on-004, sj:edge-zocel-010-on-005, sj:edge-zocel-010-on-006, sj:edge-zocel-010-on-007, sj:edge-zocel-010-on-008, sj:edge-zocel-010-on-009 ;
+    sj:requiresCourt sj:court-zocel-010 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zocel-010-1, sj:acc-zocel-010-2, sj:acc-zocel-010-3 ;
+    sj:falsifier sj:fal-zocel-010-1, sj:fal-zocel-010-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:human-merge-and-push ;
+    sj:nextCheckpoint sj:cp-zocel-010 .
+
+sj:court-zocel-010 a sj:Court ;
+    rdfs:label "ZOCEL-010 exact-subject court" ;
+    dcterms:description "Independent court for Final gate on merged main with exact-head receipt: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-010-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Full gate passes" ;
+    dcterms:description "On merged main, 'bun run typecheck', 'bun test', 'bun run test:runtime', 'bun run release:build' and the check script each exit 0." .
+sj:acc-zocel-010-2 a sj:AcceptanceCriterion ;
+    rdfs:label "No mocks in new tests" ;
+    dcterms:description "grep for mock, jest.fn and vi.fn across tests added by this work returns zero matches." .
+sj:acc-zocel-010-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Exact-head receipt" ;
+    dcterms:description "A receipt in receipt_qualification format contains an 'Exact Head Commit' line equal to git rev-parse HEAD at gate time." .
+
+sj:fal-zocel-010-1 a sj:Falsifier ;
+    rdfs:label "Stale head" ;
+    dcterms:description "A receipt whose Exact Head Commit differs from HEAD at run time falsifies the receipt." .
+sj:fal-zocel-010-2 a sj:Falsifier ;
+    rdfs:label "Mock present" ;
+    dcterms:description "Any grep match for mock, jest.fn or vi.fn in new tests falsifies Chicago-style discipline." .
+
+sj:edge-zocel-010-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-002 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-002" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-002 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-002 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-003 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-003" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-003 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-003 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-004 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-004" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-004 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresObservation" ;
+    sj:upstreamWorkOrder sj:zocel-004 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-005 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-005" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-005 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-005 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-006 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-006" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-006 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-006 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-007 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-007" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-007 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-007 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-008 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-008" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-008 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-008 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-010-on-009 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-009" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-009 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-009 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-010 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-010 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-010 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-011 ----
+sj:zocel-011
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-011: Retire unverified follow-ups" ;
+    dcterms:identifier "ZOCEL-011" ;
+    dcterms:title "Retire unverified follow-ups" ;
+    dcterms:description "Resolve the UNVERIFIED follow-ups: mark the adapter ALIVE only after an observed real run, add a second real consumer over the xaas Ultracode loop graph with a comparison query, and prove Python reuse." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:ocel-followups" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-011" ;
+    sj:pathScope "ontology", "queries", "scripts", "test" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:dependsOn sj:edge-zocel-011-on-001, sj:edge-zocel-011-on-005 ;
+    sj:requiresCourt sj:court-zocel-011 ;
+    sj:requiresEvidence sj:source-evidence, sj:runtime-evidence, sj:process-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-011-1, sj:acc-zocel-011-2, sj:acc-zocel-011-3, sj:acc-zocel-011-4 ;
+    sj:falsifier sj:fal-zocel-011-1, sj:fal-zocel-011-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-011 ;
+    sj:nextCheckpoint sj:cp-zocel-011 .
+
+sj:court-zocel-011 a sj:Court ;
+    rdfs:label "ZOCEL-011 exact-subject court" ;
+    dcterms:description "Independent court for Retire unverified follow-ups: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-011-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Adapter ALIVE by observation" ;
+    dcterms:description "The adapter is recorded ALIVE only with a real run log whose chain verifies, by the ZOCEL-001 verifier command exit 0." .
+sj:acc-zocel-011-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Second consumer" ;
+    dcterms:description "An OCEL log from the xaas Ultracode loop graph validates against the same OCEL 2.0 schema." .
+sj:acc-zocel-011-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Loop comparison query" ;
+    dcterms:description "queries/compare-loops.rq executes with a real SPARQL engine exit 0 over both consumers' logs and returns at least one row." .
+sj:acc-zocel-011-4 a sj:AcceptanceCriterion ;
+    rdfs:label "Python reuse proof" ;
+    dcterms:description "The Python consumer reuses the generated verifier and its test exits 0 against the shared golden vectors." .
+
+sj:fal-zocel-011-1 a sj:Falsifier ;
+    rdfs:label "Adapter claimed without run" ;
+    dcterms:description "An ALIVE mark with no real run log falsifies the adapter claim." .
+sj:fal-zocel-011-2 a sj:Falsifier ;
+    rdfs:label "Empty comparison" ;
+    dcterms:description "A compare-loops query returning zero rows falsifies comparability." .
+
+sj:edge-zocel-011-on-001 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-011 depends on ZOCEL-001" ;
+    dcterms:description "ZOCEL-011 requires ZOCEL-001 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresRuntime" ;
+    sj:upstreamWorkOrder sj:zocel-001 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:edge-zocel-011-on-005 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-011 depends on ZOCEL-005" ;
+    dcterms:description "ZOCEL-011 requires ZOCEL-005 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresObservation" ;
+    sj:upstreamWorkOrder sj:zocel-005 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:cp-zocel-011 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-011 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-011 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-012 ----
+sj:zocel-012
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-012: Worktree hygiene triage" ;
+    dcterms:identifier "ZOCEL-012" ;
+    dcterms:title "Worktree hygiene triage" ;
+    dcterms:description "Inventory stale worktrees under .claude/worktrees/wf_d1f79f3f-d17-* and /private/tmp/xaas-w*, and produce a keep-or-discard list for human decision. No worktree is removed by an agent." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:subject "zcode-cli:worktree-hygiene" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "OBSERVE" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-012" ;
+    sj:pathScope ".claude/worktrees" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-012 ;
+    sj:requiresEvidence sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-012-1, sj:acc-zocel-012-2, sj:acc-zocel-012-3 ;
+    sj:falsifier sj:fal-zocel-012-1, sj:fal-zocel-012-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:triage-worktrees ;
+    sj:nextCheckpoint sj:cp-zocel-012 .
+
+sj:court-zocel-012 a sj:Court ;
+    rdfs:label "ZOCEL-012 exact-subject court" ;
+    dcterms:description "Independent court for Worktree hygiene triage: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-012-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Inventory complete" ;
+    dcterms:description "'git worktree list' output for each repo is captured and every matching path appears in the triage list." .
+sj:acc-zocel-012-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Dirty state recorded" ;
+    dcterms:description "For each listed worktree 'git status --porcelain' output and unmerged commit count are recorded." .
+sj:acc-zocel-012-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Decision is human" ;
+    dcterms:description "Each entry is marked keep, discard or undecided, and no deletion command has been run, shown by the same worktree list after triage." .
+
+sj:fal-zocel-012-1 a sj:Falsifier ;
+    rdfs:label "Unlisted worktree" ;
+    dcterms:description "A matching worktree absent from the list falsifies completeness." .
+sj:fal-zocel-012-2 a sj:Falsifier ;
+    rdfs:label "Agent deletion" ;
+    dcterms:description "Any worktree removed by an agent falsifies the human-decision boundary." .
+
+sj:cp-zocel-012 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-012 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-012 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zocel-001 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-001" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-001 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-002 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-002" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-002 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-003 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-003" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-003 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-004 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-004" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-004 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-005 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-005" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-005 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-006 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-006" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-006 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-007 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-007" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-007 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-008 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-008" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-008 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:run-court-zocel-009 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-009" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-009 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:human-merge-and-push a sj:Action ;
+    rdfs:label "Next action for ZOCEL-010" ;
+    dcterms:description "Human decision: merge the verified branches to main and push. An agent prepares the receipt only and never merges or pushes." .
+
+sj:run-court-zocel-011 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-011" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-011 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:triage-worktrees a sj:Action ;
+    rdfs:label "Next action for ZOCEL-012" ;
+    dcterms:description "Observe only: list stale worktrees, record status and unmerged commits, and hand the keep-or-discard list to the human." .

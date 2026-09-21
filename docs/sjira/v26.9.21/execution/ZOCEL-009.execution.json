@@ -1,0 +1,16 @@
+{
+  "schema": "semantic-jira/execution-descriptor/v1",
+  "work_order_id": "ZOCEL-009",
+  "subject": "zcode-cli:w9-sweep/zcode-pr3",
+  "repository": "seanchatmangpt/zcode-cli",
+  "base_sha": "1aceb47e935200c6f67960fa2b6125d1a24fae85",
+  "definition_digest": "sha256:7375e8a2cdc5e3c184ae8640c5d44dfce8040ec0493d472dc874602c3a165afe",
+  "snapshot_digest": "sha256:f0a7ce8db7aebebe9b24107fc5cef7c5041d926bfd3645ae9508827ee292b6f2",
+  "graph_digest": "sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199",
+  "provider": "zcode",
+  "worker_identity": "zcode-agent",
+  "verifier_identity": "exact-head-court",
+  "replay_identity": "semantic-jira:v26.9.21:ZOCEL-009",
+  "authority": "NONE",
+  "package": {"actions":[{"authority":"NONE","kind":"bounded_transition","work_order_id":"ZOCEL-009"}],"admission":{"admitted":true,"standing":"UNKNOWN","work_order_digest":"sha256:f0a7ce8db7aebebe9b24107fc5cef7c5041d926bfd3645ae9508827ee292b6f2"},"attributes":[],"bindings":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","repository":"seanchatmangpt/zcode-cli"}],"graph_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","measurements":[],"native_facets":{},"ontology_versions":{},"policies":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","rule":"base_must_not_move"},{"rule":"worker_not_verifier","verifier":"exact-head-court","worker":"zcode-agent"}],"projections":[{"authority":"NONE","kind":"ard","standing":"CANDIDATE"},{"authority":"NONE","kind":"executive","standing":"CANDIDATE"},{"authority":"NONE","kind":"fond","standing":"CANDIDATE"},{"authority":"NONE","kind":"hddl","standing":"CANDIDATE"},{"authority":"NONE","kind":"jira","standing":"CANDIDATE"},{"authority":"NONE","kind":"machine","standing":"CANDIDATE"},{"authority":"NONE","kind":"prd","standing":"CANDIDATE"},{"authority":"NONE","kind":"receipt","standing":"CANDIDATE"},{"authority":"NONE","kind":"replay","standing":"CANDIDATE"},{"authority":"NONE","kind":"sa2a","standing":"CANDIDATE"},{"authority":"NONE","kind":"verification","standing":"CANDIDATE"},{"authority":"NONE","kind":"vision","standing":"CANDIDATE"},{"authority":"NONE","kind":"wbpr","standing":"CANDIDATE"},{"authority":"NONE","kind":"worker","standing":"CANDIDATE"}],"provenance":{"replay_identity":"semantic-jira:v26.9.21:ZOCEL-009"},"public_facets":[],"relationships":[],"resource_budget":{},"schema_version":1,"shape_digest":"sha256:e08120f3379c66a2d2316f91a87a4bcebebfd970d3c16fb004ae3ddab637717c","source_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","subject_id":"zcode-cli:w9-sweep/zcode-pr3","temporal":null}
+}

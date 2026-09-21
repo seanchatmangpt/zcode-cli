@@ -1,0 +1,16 @@
+{
+  "schema": "semantic-jira/execution-descriptor/v1",
+  "work_order_id": "ZOCEL-008",
+  "subject": "zcode-cli:feat/snapshot-hardening",
+  "repository": "seanchatmangpt/zcode-cli",
+  "base_sha": "1aceb47e935200c6f67960fa2b6125d1a24fae85",
+  "definition_digest": "sha256:887c6bc0e58ba1e0b7083145e08a04f7b570a70c84ccc9006a3890c2c97317f7",
+  "snapshot_digest": "sha256:7bb73e98f4b9cd4179efefaf73e3c86385b9d08434a37c9d0690899727e842a2",
+  "graph_digest": "sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199",
+  "provider": "zcode",
+  "worker_identity": "zcode-agent",
+  "verifier_identity": "exact-head-court",
+  "replay_identity": "semantic-jira:v26.9.21:ZOCEL-008",
+  "authority": "NONE",
+  "package": {"actions":[{"authority":"NONE","kind":"bounded_transition","work_order_id":"ZOCEL-008"}],"admission":{"admitted":true,"standing":"UNKNOWN","work_order_digest":"sha256:7bb73e98f4b9cd4179efefaf73e3c86385b9d08434a37c9d0690899727e842a2"},"attributes":[],"bindings":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","repository":"seanchatmangpt/zcode-cli"}],"graph_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","measurements":[],"native_facets":{},"ontology_versions":{},"policies":[{"base_sha":"1aceb47e935200c6f67960fa2b6125d1a24fae85","rule":"base_must_not_move"},{"rule":"worker_not_verifier","verifier":"exact-head-court","worker":"zcode-agent"}],"projections":[{"authority":"NONE","kind":"ard","standing":"CANDIDATE"},{"authority":"NONE","kind":"executive","standing":"CANDIDATE"},{"authority":"NONE","kind":"fond","standing":"CANDIDATE"},{"authority":"NONE","kind":"hddl","standing":"CANDIDATE"},{"authority":"NONE","kind":"jira","standing":"CANDIDATE"},{"authority":"NONE","kind":"machine","standing":"CANDIDATE"},{"authority":"NONE","kind":"prd","standing":"CANDIDATE"},{"authority":"NONE","kind":"receipt","standing":"CANDIDATE"},{"authority":"NONE","kind":"replay","standing":"CANDIDATE"},{"authority":"NONE","kind":"sa2a","standing":"CANDIDATE"},{"authority":"NONE","kind":"verification","standing":"CANDIDATE"},{"authority":"NONE","kind":"vision","standing":"CANDIDATE"},{"authority":"NONE","kind":"wbpr","standing":"CANDIDATE"},{"authority":"NONE","kind":"worker","standing":"CANDIDATE"}],"provenance":{"replay_identity":"semantic-jira:v26.9.21:ZOCEL-008"},"public_facets":[],"relationships":[],"resource_budget":{},"schema_version":1,"shape_digest":"sha256:8e87b3117c6b5fab4d91a68b5093fe8f6873fe9242ec594268c1370637e548c4","source_digest":"sha256:8f2950bf56c5ffc59d136fcc6d8633bfec353203ee0d447208042daf5fb84199","subject_id":"zcode-cli:feat/snapshot-hardening","temporal":null}
+}
