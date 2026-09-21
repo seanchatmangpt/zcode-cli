@@ -566,21 +566,30 @@ export function patchRuntimeGoalFailurePause(runtime: string): string {
 export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
   if (runtime.includes('reason:"error_max_turns"')) return runtime;
 
-  const loopHead = /async function ([A-Za-z_$][\w$]*)\(e\)\{for\(;;\)\{fi\(e\.turnAbortSignal\);let t=e\.turnRequestState\.outputTokenContinuationCount>0,/u;
-  const loopMatch = loopHead.exec(runtime);
   const labelPattern = /a\(([A-Za-z_$][\w$]*),"runRegularTurnLoop"\)/u;
   const label = labelPattern.exec(runtime);
-  if (!loopMatch || !label || loopMatch[1] !== label[1] || countRegExpMatches(runtime, loopHead) !== 1) {
+  if (!label) {
+    throw new Error("ZCode runtime is incompatible with the max turns patch (runRegularTurnLoop registration anchor missing).");
+  }
+  const loopHead = new RegExp(
+    "async function " + label[1].replace(/\$/g, "\\$") + "\\(e\\)\\{for\\(;;\\)\\{([A-Za-z_$][\\w$]*)\\(e\\.turnAbortSignal\\);let [A-Za-z_$][\\w$]*=e\\.turnRequestState\\.outputTokenContinuationCount>0,",
+    "u"
+  );
+  const loopMatch = loopHead.exec(runtime);
+  if (!loopMatch || countRegExpMatches(runtime, loopHead) !== 1) {
     throw new Error("ZCode runtime is incompatible with the max turns patch (runRegularTurnLoop anchor missing).");
   }
-  const errorFactory = /function z4e\(e\)\{return ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.ModelContextExceeded,/u.exec(runtime);
+  const abortCheck = loopMatch[1];
+  // Error factory located structurally: any function returning make(codes.ModelContextExceeded,...)
+  // (stable error-code member), not a hardcoded minified name.
+  const errorFactory = /function [A-Za-z_$][\w$]*\(e\)\{return ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.ModelContextExceeded,/u.exec(runtime);
   if (!errorFactory) {
     throw new Error("ZCode runtime is incompatible with the max turns patch (error factory anchor missing).");
   }
   const [, makeError, codes] = errorFactory;
   const guard = `let $zMax=this.config?.maxTurns;if(typeof $zMax==="number"&&$zMax>0&&e.modelStepCount>=$zMax)throw ${makeError}(${codes}.ModelError,"Reached maximum number of turns ("+$zMax+").",{context:{reason:"error_max_turns",maxTurns:$zMax,modelStepCount:e.modelStepCount},recoverable:!1,retryable:!1});`;
   const head = loopMatch[0];
-  const patched = runtime.replace(head, head.replace("fi(e.turnAbortSignal);", `fi(e.turnAbortSignal);${guard}`));
+  const patched = runtime.replace(head, head.replace(`${abortCheck}(e.turnAbortSignal);`, `${abortCheck}(e.turnAbortSignal);${guard}`));
   if (!patched.includes('reason:"error_max_turns"')) {
     throw new Error("ZCode runtime max turns patch failed postcondition verification.");
   }
