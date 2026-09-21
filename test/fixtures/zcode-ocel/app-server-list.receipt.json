@@ -1,0 +1,43 @@
+{
+  "session": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87",
+  "source": "zcode_app_server",
+  "ocel_file": "app-server-list.jsonocel",
+  "ocel_file_sha256": "1803b5036a6b6db4b7aa76aa56d082f0daae4cd5a1d5c08211461f8f5e7114df",
+  "event_count": 30,
+  "head_hash": "47c70b2e660ef39514a0905490cdafc0d480cd41353031a439333d235d4e07cd",
+  "chain_intact": true,
+  "unpaired": [],
+  "chain": [
+    {
+      "entry_id": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87-e1",
+      "parent_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "phase": "pending",
+      "standing": "unknown",
+      "subject": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87",
+      "action": "record-ocel",
+      "pending_ref": "",
+      "hash": "72d1eb8b249a301ac991521eaa49cfd37109dbbbd8d3342214fe48c1f65a1fb1"
+    },
+    {
+      "entry_id": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87-e2",
+      "parent_hash": "72d1eb8b249a301ac991521eaa49cfd37109dbbbd8d3342214fe48c1f65a1fb1",
+      "phase": "outcome",
+      "standing": "alive",
+      "subject": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87",
+      "action": "record-ocel",
+      "pending_ref": "72d1eb8b249a301ac991521eaa49cfd37109dbbbd8d3342214fe48c1f65a1fb1",
+      "hash": "c0584e1133b5bdff6b740e7c902f2fa93631d455965ed1cc5a218ca8953f4752"
+    },
+    {
+      "entry_id": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87-e3",
+      "parent_hash": "c0584e1133b5bdff6b740e7c902f2fa93631d455965ed1cc5a218ca8953f4752",
+      "phase": "outcome",
+      "standing": "alive",
+      "subject": "sess_bea66e48-97bb-454c-b02f-ba92459d9b87",
+      "action": "seal",
+      "pending_ref": "",
+      "hash": "d19c8a893a8d15bd773b0a9f34b12a52360168c941d7e04071e622e189e5b001",
+      "seal": true
+    }
+  ]
+}
