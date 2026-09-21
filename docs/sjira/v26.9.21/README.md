@@ -4,7 +4,7 @@ Version v26.9.21. Audience: a zcode worker (agent or human) claiming ZOCEL work 
 
 ## Purpose
 
-This folder holds the work orders ZOCEL-001..012 for the zcode OCEL consumer line, and the
+This folder holds the work orders ZOCEL-001..013 for the zcode OCEL consumer line, and the
 rules every ticket inherits. A worker claims one order, builds it in an isolated worktree,
 and closes it with a receipt. Nothing here is proof of work done; a claim needs a run.
 
@@ -14,7 +14,7 @@ and closes it with a receipt. Nothing here is proof of work done; a claim needs 
 docs/sjira/v26.9.21/
   README.md          this guide
   000-survey.md      observed-state receipt (read-only commands actually run)
-  work-orders.ttl    canonical source (present; 12 work orders, 18 dependency edges)
+  work-orders.ttl    canonical source (present; 13 work orders, 19 dependency edges)
   jira prd ard wbpr  generated tickets per order (never hand-edit)
   plan/*.hddl        HDDL plans per order (generated)
   execution/*.json   descriptors, frontier orders only (see HANDWRITTEN.md)
@@ -74,33 +74,43 @@ A work order is on the frontier iff every order it depends on is closed with sta
 at an exact-head receipt. Claim only frontier orders. Claim one order per worktree.
 
 Derived by SPARQL (rdflib) over `work-orders.ttl`: `?w sj:dependsOn ?e . ?e
-sj:upstreamWorkOrder ?u`. Frontier: ZOCEL-001, 004, 007, 008, 009, 012 (no upstream edges).
+sj:upstreamWorkOrder ?u`. Frontier: ZOCEL-001, 004, 007, 008, 009, 012, 013 (no upstream edges).
 
 ```text
 001 -> 002, 003, 005, 006, 010, 011
 002 -> 010     003 -> 010     004 -> 010     005 -> 010, 011
 006 -> 010     007 -> 010     008 -> 010     009 -> 010
-012 (isolated)
+013 -> 010     012 (isolated)
 ```
 
 | id | title | dependsOn | ceiling | descriptor |
 | --- | --- | --- | --- | --- |
-| 001 | Land the OCEL consumer branch with a real observed run | - | CONSTRUCT | yes |
+| 001 | OCEL consumer (merged locally): repeat run, app-server capture | - | CONSTRUCT | yes |
 | 002 | Per-language pending/outcome parity, shared golden vectors | 001 | CONSTRUCT | no |
 | 003 | Strict toolchain gates that fail instead of skip | 001 | CONSTRUCT | no |
 | 004 | Confirm merged marketplace packs are ALIVE | - | CONSTRUCT | yes |
 | 005 | Coverage gate, conformance replay, importer cross-validation | 001 | CONSTRUCT | no |
 | 006 | Consumer residue hardening | 001 | CONSTRUCT | no |
-| 007 | Land loop-gaps with a real maxTurns proof | - | CONSTRUCT | yes |
-| 008 | Land snapshot-hardening | - | CONSTRUCT | yes |
-| 009 | Land the GALL superset branch | - | CONSTRUCT | yes |
-| 010 | Final gate on merged main with exact-head receipt | 001-009 | CONSTRUCT | no |
+| 007 | Loop-gaps (merged locally): real maxTurns proof remains | - | CONSTRUCT | yes |
+| 008 | Snapshot-hardening (merged locally): verification remains | - | CONSTRUCT | yes |
+| 009 | GALL superset: trial merge, human review of resolutions | - | CONSTRUCT | yes |
+| 010 | Final gate on merged main with exact-head receipt | 001-009, 013 | CONSTRUCT | no |
 | 011 | Retire unverified follow-ups | 001, 005 | CONSTRUCT | no |
 | 012 | Worktree hygiene triage | - | OBSERVE | yes |
+| 013 | Quarantine or fix pre-existing failing tests for release:build | - | CONSTRUCT | yes |
 
 Edge types: 001 to 002/003/010 requiresVerifier; 001 to 005/006/011 requiresRuntime;
-004 and 005-to-011 requiresObservation; other 010 edges requiresVerifier. Every edge
-requires standing ALIVE. Descriptors live in `execution/` for the six frontier orders.
+004 and 005-to-011 requiresObservation; other 010 edges (incl. 013) requiresVerifier.
+Every edge requires standing ALIVE. Descriptors live in `execution/` for the seven frontier
+orders.
+
+## State on main (2026-09-21)
+
+- zcode-cli main 5e20ab3 holds merges of consumer, loop-gaps, snapshot-hardening; not pushed.
+- OCEL stream-json run observed once (13 events, chain intact); app-server tap not exercised.
+- Baseline on main: typecheck 0; about 10 tests fail before any work order (ZOCEL-013);
+  release:build exit 1 for that reason. Standing of every order stays UNKNOWN.
+- GALL trial integrate/gall-into-main b01634f in /Users/sac/wt/integrate-gall, not merged.
 
 ## Common definition of done (every ticket inherits)
 
