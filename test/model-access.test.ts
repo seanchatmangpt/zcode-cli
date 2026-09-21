@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readConfiguredModelAccess, userConfigPath, userConfigPathHint } from "../src/model-access.ts";
+import { ensureUserConfig, readConfiguredModelAccess, userConfigPath, userConfigPathHint } from "../src/model-access.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -20,6 +20,23 @@ async function temporaryHome(): Promise<string> {
 }
 
 describe("configured model access", () => {
+  test("bootstraps the canonical GLM 5.3 model split without credentials", async () => {
+    const home = await temporaryHome();
+    const env = { HOME: home, USERPROFILE: home };
+    const result = await ensureUserConfig(env);
+    const config = await Bun.file(result.configPath).json() as {
+      model?: { main?: string; lite?: string };
+      provider?: { zai?: { options?: { apiKey?: string } } };
+    };
+
+    expect(result.created).toBe(true);
+    expect(config.model).toEqual({
+      main: "zai/glm-5.3",
+      lite: "zai/glm-5.3-flash"
+    });
+    expect(config.provider?.zai?.options?.apiKey).toBeUndefined();
+  });
+
   test("formats the config path hint for each supported platform", () => {
     expect(userConfigPathHint("linux")).toBe("~/.zcode/cli/config.json");
     expect(userConfigPathHint("darwin")).toBe("~/.zcode/cli/config.json");
