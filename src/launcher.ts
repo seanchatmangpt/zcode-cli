@@ -32,6 +32,7 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
+import { extractMaxTurns } from "./max-turns.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -470,7 +471,11 @@ async function completeOfficialZaiLogin(
   }
 }
 
-export async function main(args: string[]): Promise<number> {
+export async function main(rawArgs: string[]): Promise<number> {
+  const maxTurns = extractMaxTurns(rawArgs);
+  if (maxTurns.error) { console.error(`Error: ${maxTurns.error}`); return 2; }
+  if (maxTurns.maxTurns !== undefined) process.env.ZCODE_MAX_TURNS = String(maxTurns.maxTurns);
+  const args = maxTurns.args;
   if (!existsSync(runtimePath)) {
     console.error(
       "ZCode runtime is missing. Reinstall the package or run `bun run sync:local` in the source checkout."

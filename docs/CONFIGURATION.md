@@ -513,3 +513,11 @@ servers needing real secrets today.
   registration.
 - `test/runtime/launcher.test.ts` — canonical, currently-passing source for
   the local-marketplace-plus-plugin-install shape used above.
+
+## Turn cap (`--max-turns`)
+
+`zcode --max-turns N ...` (or `ZCODE_MAX_TURNS=N` in the environment, which also reaches `zcode app-server`)
+caps model steps per turn. On reaching N the turn fails with `error_max_turns`
+("Reached maximum number of turns (N)."). The launcher lowers the flag to the env var; the
+sync-runtime max-turns patch reads `config.maxTurns ?? ZCODE_MAX_TURNS` inside `runRegularTurnLoop`.
+Live driver: `node scripts/max-turns-live.mjs <N> <out.jsonl>`.
