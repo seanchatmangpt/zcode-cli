@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -260,8 +260,16 @@ if (await Bun.file(setupPendingPath).exists()) {
 const leakedFiles: string[] = [];
 for (const path of await filesBelow(temporaryHome)) {
   if (path === configPath) continue;
-  const content = Buffer.from(await Bun.file(path).arrayBuffer());
-  if (content.includes(smokeApiKey)) leakedFiles.push(path);
+  try {
+    const content = await readFile(path);
+    if (content.includes(smokeApiKey)) leakedFiles.push(path);
+  } catch (error) {
+    // Runtime-owned SQLite WAL/SHM sidecars can disappear after the child
+    // exits but before this post-exit leak scan reads them. A vanished file
+    // is not persistent leakage; every file that still exists must be read.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+    throw error;
+  }
 }
 await rm(temporaryHome, { recursive: true, force: true });
 output += decoder.decode();
