@@ -51,7 +51,7 @@
     "bench:tui-thinking": "bun scripts/bench-tui-thinking.ts",
     "dev": "bun run sync:local && ZCODE_NODE=node bun bin/zcode.ts",
     "sync": "bun run build && bun scripts/sync-runtime.ts",
-    "sync:locked": "bun run build && bun scripts/sync-runtime.ts --lock zcode-runtime.lock.json",
+    "sync:locked": "bun run build && bun scripts/sync-runtime.ts --lock zcode-runtime.lock.json && ZCODE_REQUIRE_BUNDLE=1 bun test test/sync-runtime-anchor-drift.test.ts test/sync-runtime-loop-gaps.test.ts",
     "sync:local": "bun run build && bun scripts/sync-runtime.ts --app $HOME/Applications/ZCode.app",
     "check": "bun run build && bun scripts/check-runtime.ts",
     "check:oauth-callback": "bun scripts/smoke-oauth-callback.ts",
