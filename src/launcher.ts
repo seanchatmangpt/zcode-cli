@@ -27,7 +27,7 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import { runGallCommand } from "./gall-cli.ts";
-import { gallWorkInvocation } from "./gall-work.ts";
+import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -471,6 +471,20 @@ export async function main(args: string[]): Promise<number> {
   const gallCommand = await runGallCommand(args);
   if (gallCommand !== undefined) return gallCommand;
 
+  try {
+    // Native gall-work lifecycle (claim -> persist -> construct -> close).
+    // It runs before the config bootstrap so a dispatcher-launched worker
+    // stays hermetic, and it manages its own runtime turn for the construct
+    // stage. There is no `/xaas claim_next` prompt fallback: a failure here
+    // is a typed non-zero exit, never a re-dispatch as a prompt.
+    if (isGallWorkInvocation(args)) {
+      return await runGallWork(args.slice(1));
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+
   if (!existsSync(runtimePath)) {
     console.error(
       "ZCode runtime is missing. Reinstall the package or run `bun run sync:local` in the source checkout."
@@ -504,23 +518,6 @@ export async function main(args: string[]): Promise<number> {
   }
 
   const node = resolveNodeExecutable();
-
-  try {
-    const gallWork = await gallWorkInvocation(args);
-    if (gallWork) {
-      const env = { ...process.env, ...gallWork.env };
-      const diagnostic = await promptPreflight(gallWork.args, env);
-      if (diagnostic) {
-        console.error(diagnostic);
-        return 1;
-      }
-      const runtimeArgs = withDefaultBrowserUse(gallWork.args);
-      return await runRuntime(node, runtimeArgs, gallWork.env);
-    }
-  } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    return 1;
-  }
 
   const pluginAbortController = new AbortController();
   const cancelPluginCommand = (signal: NodeJS.Signals) => () => pluginAbortController.abort(signal);
