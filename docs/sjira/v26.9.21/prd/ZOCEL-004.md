@@ -7,7 +7,7 @@ Confirm the merged ggen marketplace packs validate and qualify against the recor
 ## Product boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** ggen-marketplace:merged-packs-qualification
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -61,13 +61,13 @@ Each requirement below is an acceptance criterion node in the canonical graph.
 
 - **Marketplace validates** — cd /Users/sac/ggen-marketplace && python3 scripts/marketplace.py validate; echo rc=$?. Expected: rc=0 and output contains 'packs=319'. Earns: MARKETPLACE_VALID.
 
-- **Qualify failing set matches baseline** — cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
+- **Qualify failing set matches baseline** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
 
 - **Event-sourcing chains ALIVE** — cd /Users/sac/ggen-marketplace && python3 scripts/es_chain_qualify.py; echo rc=$?. Expected: rc=0 and every pack line reads ALIVE, none other. Earns: ES_CHAIN_ALIVE.
 
 - **Pack tests pass** — cd /Users/sac/ggen-marketplace && python3 -m pytest -q $(ls packs/*/test*.py packs/*/tests/*.py 2>/dev/null) for the merged packs; echo rc=$?. Expected: rc=0, 0 failed. Earns: PACK_TESTS_PASS.
 
-- **Targets sidecar present** — ls -l the [targets] sidecar file of the merged packs under /Users/sac/ggen-marketplace/packs/ (ls -l /Users/sac/ggen-marketplace/packs/*/targets.toml exits 0 and lists a nonempty file for each merged pack named in the ZOCEL-004 receipt); absence => FAIL. Earns: SIDECAR_PRESENT.
+- **Targets sidecar present** — for f in /Users/sac/ggen-marketplace/packs/*/targets.toml; do test -s "$f" || echo EMPTY $f; done; echo rc=$?. Expected: no EMPTY lines and rc=0, so every targets.toml sidecar is nonempty. Earns: SIDECAR_PRESENT.
 
 - **Signing-key decision recorded** — The ZOCEL-004 receipt contains the literal line 'signing-keys: BLOCKED-on-human' and cd /Users/sac/ggen-marketplace && git diff --stat -- '*.key' '*.pem' '*.sk' prints nothing (exit 0, no key touched). Earns: BLOCKED (human decision), never ALIVE.
 

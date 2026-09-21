@@ -7,7 +7,7 @@ Resolve the UNVERIFIED follow-ups: mark the adapter ALIVE only after an observed
 ## Work order boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:ocel-followups
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Adapter ALIVE by observation
 
-- **Requirement:** **Adapter ALIVE by observation** — cd /Users/sac/wt/zcode-ocel-consumer && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
+- **Requirement:** **Adapter ALIVE by observation** — cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Loop comparison query
 
-- **Requirement:** **Loop comparison query** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -c "import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE.
+- **Requirement:** **Loop comparison query** — test -s /Users/sac/dev/zcode-cli/queries/compare-loops.rq || echo NOT_RUN (query authored by this work order; it does not exist on main or in pi-ocel-tap). cd /Users/sac/dev/zcode-cli && python3 -c "import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 
@@ -77,7 +77,7 @@ per-requirement edges.
 
 ### WBS 4 — Python reuse proof
 
-- **Requirement:** **Python reuse proof** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE.
+- **Requirement:** **Python reuse proof** — test -d /Users/sac/dev/zcode-cli/test/py || echo NOT_RUN (created under ZOCEL-002). cd /Users/sac/dev/zcode-cli && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 

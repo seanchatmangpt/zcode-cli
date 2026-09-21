@@ -44,7 +44,7 @@
   (:init
     (workorder ZOCEL-005)
     (standing ZOCEL-005 UNKNOWN)
-    (base-sha ZOCEL-005 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-005 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-005 CONSTRUCT)
     (exact-subject ZOCEL-005 "zcode-cli:ocel-coverage-conformance-import")
     (repository ZOCEL-005 "seanchatmangpt/zcode-cli")

@@ -7,7 +7,7 @@ Confirm the merged ggen marketplace packs validate and qualify against the recor
 ## Work order boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** ggen-marketplace:merged-packs-qualification
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Qualify failing set matches baseline
 
-- **Requirement:** **Qualify failing set matches baseline** — cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
+- **Requirement:** **Qualify failing set matches baseline** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
 
 - **Falsifier:** **Baseline drift** — A failing set that differs from the 24-entry baseline in either direction falsifies the match.
 
@@ -93,7 +93,7 @@ per-requirement edges.
 
 ### WBS 5 — Targets sidecar present
 
-- **Requirement:** **Targets sidecar present** — ls -l the [targets] sidecar file of the merged packs under /Users/sac/ggen-marketplace/packs/ (ls -l /Users/sac/ggen-marketplace/packs/*/targets.toml exits 0 and lists a nonempty file for each merged pack named in the ZOCEL-004 receipt); absence => FAIL. Earns: SIDECAR_PRESENT.
+- **Requirement:** **Targets sidecar present** — for f in /Users/sac/ggen-marketplace/packs/*/targets.toml; do test -s "$f" || echo EMPTY $f; done; echo rc=$?. Expected: no EMPTY lines and rc=0, so every targets.toml sidecar is nonempty. Earns: SIDECAR_PRESENT.
 
 - **Falsifier:** **Baseline drift** — A failing set that differs from the 24-entry baseline in either direction falsifies the match.
 

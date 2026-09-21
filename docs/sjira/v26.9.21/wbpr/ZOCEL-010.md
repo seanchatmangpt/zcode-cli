@@ -7,7 +7,7 @@ Run the final verification gate on merged main and produce a receipt carrying an
 ## Work order boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:main-final-gate
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Exact-head receipt
 
-- **Requirement:** **Exact-head receipt** — cd /Users/sac/dev/zcode-cli && grep -F "Exact Head Commit: $(git rev-parse HEAD)" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT.
+- **Requirement:** **Exact-head receipt** — Receipt file docs/receipts/zocel-010.md does not exist yet and is written by the human-approved receipt step; absent => NOT_RUN. cd /Users/sac/dev/zcode-cli && grep -F "Exact Head Commit: $(git rev-parse HEAD)" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT.
 
 - **Falsifier:** **Stale head** — A receipt whose Exact Head Commit differs from HEAD at run time falsifies the receipt.
 

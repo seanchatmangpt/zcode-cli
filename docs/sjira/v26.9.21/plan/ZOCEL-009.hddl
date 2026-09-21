@@ -17,7 +17,7 @@
     ZOCEL-009 - workorder
     court-zocel-009 - court
     local-execution-evidence receipt-evidence source-evidence - evidence
-    fal-zocel-009-1 fal-zocel-009-2 - falsifier
+    fal-zocel-009-1 fal-zocel-009-2 fal-zocel-009-3 - falsifier
     cp-zocel-009 - checkpoint)
   (:task (promote ZOCEL-009 ALIVE))
   (:method decompose-promote-ZOCEL-009
@@ -34,13 +34,14 @@
       ;; falsifiers to discharge - sj:falsifier - stable-key order
       (discharge-falsifier ZOCEL-009 fal-zocel-009-1) ;; Fixture drift
       (discharge-falsifier ZOCEL-009 fal-zocel-009-2) ;; Untried merge
+      (discharge-falsifier ZOCEL-009 fal-zocel-009-3) ;; Unreviewed resolutions
       ;; terminal checkpoint - sj:nextCheckpoint
       (reach-checkpoint ZOCEL-009 cp-zocel-009) ;; ZOCEL-009 checkpoint
       ))
   (:init
     (workorder ZOCEL-009)
     (standing ZOCEL-009 UNKNOWN)
-    (base-sha ZOCEL-009 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-009 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-009 CONSTRUCT)
     (exact-subject ZOCEL-009 "zcode-cli:w9-sweep/zcode-pr3")
     (repository ZOCEL-009 "seanchatmangpt/zcode-cli")

@@ -7,7 +7,7 @@ Prove the TypeScript and Python OCEL implementations agree on pending and outcom
 ## Decision boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:ocel-ts-py-parity
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** IMPLEMENTED_UNVERIFIED
@@ -23,7 +23,7 @@ graph_hash.
 ## Decision D-1: the boundary
 
 **Decision:** `zcode-cli:ocel-ts-py-parity` is decided on repository `seanchatmangpt/zcode-cli` at exact
-base SHA `1aceb47e935200c6f67960fa2b6125d1a24fae85`; recorded standing `UNKNOWN`.
+base SHA `5e20ab3c9dff97edd35deee6759c5e5961ee1a05`; recorded standing `UNKNOWN`.
 
 **Consequences:** the consequences of this decision are confined to its declared
 path scope:
@@ -92,9 +92,9 @@ canonical graph; observing one falsifies this decision.
 **Verification:** each acceptance criterion below is a node in the canonical graph
 that must hold for this decision to stand.
 
-- **Golden vectors exist** — cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/ocel-golden-chain.json exits 0, and grep -l ocel-golden-chain.json test/ocel-*.test.ts /Users/sac/wt/zocel-runs/py/*.py lists both a TypeScript and a Python reader of that one path. Missing file or single reader => FAIL. Earns: SHARED_VECTOR.
+- **Golden vectors exist** — Files created by this work order; absent => NOT_RUN. cd /Users/sac/dev/zcode-cli && test -s test/fixtures/ocel-golden-chain.json exits 0, and grep -l ocel-golden-chain.json test/ocel-*.test.ts /Users/sac/wt/zocel-runs/py/*.py lists both a TypeScript and a Python reader of that one path. Missing file or single reader => FAIL. Earns: SHARED_VECTOR.
 
-- **TypeScript parity** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-generated.test.ts test/ocel-conformance.test.ts exits 0 with 0 fail, each golden vector digest asserted equal to the literal in test/fixtures/ocel-golden-chain.json. Earns: TS_PARITY.
+- **TypeScript parity** — cd /Users/sac/dev/zcode-cli && bun test test/ocel-generated.test.ts test/ocel-conformance.test.ts exits 0 with 0 fail, each golden vector digest asserted equal to the literal in test/fixtures/ocel-golden-chain.json. Earns: TS_PARITY.
 
-- **Python parity** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/fixtures/../py 2>&1 | tail -3 exits 0 with '0 failed', and for every vector id in test/fixtures/ocel-golden-chain.json the Python digest string equals the TypeScript digest string (diff of the two digest lists exits 0). Earns: PY_PARITY.
+- **Python parity** — cd /Users/sac/dev/zcode-cli && python3 -m pytest -q test/py 2>&1 | tail -3 exits 0 with '0 failed' (test/py is created by this work order; absent => NOT_RUN), and for every vector id in test/fixtures/ocel-golden-chain.json the Python digest string equals the TypeScript digest string (diff of the two digest lists exits 0). Earns: PY_PARITY.
 

@@ -7,7 +7,7 @@ Resolve the UNVERIFIED follow-ups: mark the adapter ALIVE only after an observed
 ## Decision boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:ocel-followups
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -23,7 +23,7 @@ graph_hash.
 ## Decision D-1: the boundary
 
 **Decision:** `zcode-cli:ocel-followups` is decided on repository `seanchatmangpt/zcode-cli` at exact
-base SHA `1aceb47e935200c6f67960fa2b6125d1a24fae85`; recorded standing `UNKNOWN`.
+base SHA `5e20ab3c9dff97edd35deee6759c5e5961ee1a05`; recorded standing `UNKNOWN`.
 
 **Consequences:** the consequences of this decision are confined to its declared
 path scope:
@@ -100,11 +100,11 @@ canonical graph; observing one falsifies this decision.
 **Verification:** each acceptance criterion below is a node in the canonical graph
 that must hold for this decision to stand.
 
-- **Adapter ALIVE by observation** — cd /Users/sac/wt/zcode-ocel-consumer && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
+- **Adapter ALIVE by observation** — cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
 
 - **Second consumer** — python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" the xaas Ultracode loop-graph OCEL file (find /Users/sac/xaas -name '*.jsonocel' -o -name '*ocel*.json' | head -1); expected: exit 0, no output. No such file => BLOCKED. Earns: SECOND_CONSUMER_VALID.
 
-- **Loop comparison query** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -c "import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE.
+- **Loop comparison query** — test -s /Users/sac/dev/zcode-cli/queries/compare-loops.rq || echo NOT_RUN (query authored by this work order; it does not exist on main or in pi-ocel-tap). cd /Users/sac/dev/zcode-cli && python3 -c "import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE.
 
-- **Python reuse proof** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE.
+- **Python reuse proof** — test -d /Users/sac/dev/zcode-cli/test/py || echo NOT_RUN (created under ZOCEL-002). cd /Users/sac/dev/zcode-cli && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE.
 

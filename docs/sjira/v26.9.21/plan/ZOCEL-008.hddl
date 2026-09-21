@@ -40,7 +40,7 @@
   (:init
     (workorder ZOCEL-008)
     (standing ZOCEL-008 UNKNOWN)
-    (base-sha ZOCEL-008 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-008 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-008 CONSTRUCT)
     (exact-subject ZOCEL-008 "zcode-cli:feat/snapshot-hardening")
     (repository ZOCEL-008 "seanchatmangpt/zcode-cli")

@@ -7,7 +7,7 @@ Run the final verification gate on merged main and produce a receipt carrying an
 ## Identity and evidence boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:main-final-gate
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -41,6 +41,8 @@ graph_hash.
 
 - **ZOCEL-010 depends on ZOCEL-009** — ZOCEL-010 requires ZOCEL-009 at standing ALIVE before it may start; standing is not inherited.
 
+- **ZOCEL-010 depends on ZOCEL-013** — ZOCEL-010 requires ZOCEL-013 at standing ALIVE before it may start; standing is not inherited.
+
 
 
 ## Required court
@@ -65,7 +67,7 @@ graph_hash.
 
 - **No mocks in new tests** — cd /Users/sac/dev/zcode-cli && git diff --name-only $(git merge-base origin/main HEAD)..HEAD -- 'test/*' | xargs grep -nE 'mock|jest\.fn|vi\.fn'; echo rc=$?. Expected: no output, grep rc=1. Earns: NO_MOCKS.
 
-- **Exact-head receipt** — cd /Users/sac/dev/zcode-cli && grep -F "Exact Head Commit: $(git rev-parse HEAD)" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT.
+- **Exact-head receipt** — Receipt file docs/receipts/zocel-010.md does not exist yet and is written by the human-approved receipt step; absent => NOT_RUN. cd /Users/sac/dev/zcode-cli && grep -F "Exact Head Commit: $(git rev-parse HEAD)" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT.
 
 
 ## Falsifiers

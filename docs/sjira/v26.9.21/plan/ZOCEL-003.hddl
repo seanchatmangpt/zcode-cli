@@ -41,7 +41,7 @@
   (:init
     (workorder ZOCEL-003)
     (standing ZOCEL-003 UNKNOWN)
-    (base-sha ZOCEL-003 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-003 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-003 CONSTRUCT)
     (exact-subject ZOCEL-003 "zcode-cli:strict-toolchain-gates")
     (repository ZOCEL-003 "seanchatmangpt/zcode-cli")

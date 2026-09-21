@@ -7,7 +7,7 @@ Inventory stale worktrees under .claude/worktrees/wf_d1f79f3f-d17-* and /private
 ## Work order boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:worktree-hygiene
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** SPECIFIED
@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Inventory complete
 
-- **Requirement:** **Inventory complete** — for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE.
+- **Requirement:** **Inventory complete** — mkdir -p /Users/sac/wt/zocel-runs && for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE.
 
 - **Falsifier:** **Unlisted worktree** — A matching worktree absent from the list falsifies completeness.
 

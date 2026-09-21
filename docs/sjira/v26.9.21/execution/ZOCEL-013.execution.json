@@ -1,0 +1,16 @@
+{
+  "schema": "semantic-jira/execution-descriptor/v1",
+  "work_order_id": "ZOCEL-013",
+  "subject": "zcode-cli:main-baseline-failures",
+  "repository": "seanchatmangpt/zcode-cli",
+  "base_sha": "5e20ab3c9dff97edd35deee6759c5e5961ee1a05",
+  "definition_digest": "sha256:6e7802e526cd2897731184141124d33cce3ba8604d41f34c55d5470580391f19",
+  "snapshot_digest": "sha256:4244c6c99c01c1f84877496fc4d2f96bc6f924078651a92e8a93deafaf74255a",
+  "graph_digest": "sha256:a4ab8765e8541726ba3ea4658be3ee6fed57d1a5166ec54fae8a18cf66e89d15",
+  "provider": "zcode",
+  "worker_identity": "zcode-agent",
+  "verifier_identity": "exact-head-court",
+  "replay_identity": "semantic-jira:v26.9.21:ZOCEL-013",
+  "authority": "NONE",
+  "package": {"actions":[{"authority":"NONE","kind":"bounded_transition","work_order_id":"ZOCEL-013"}],"admission":{"admitted":true,"standing":"UNKNOWN","work_order_digest":"sha256:4244c6c99c01c1f84877496fc4d2f96bc6f924078651a92e8a93deafaf74255a"},"attributes":[],"bindings":[{"base_sha":"5e20ab3c9dff97edd35deee6759c5e5961ee1a05","repository":"seanchatmangpt/zcode-cli"}],"graph_digest":"sha256:a4ab8765e8541726ba3ea4658be3ee6fed57d1a5166ec54fae8a18cf66e89d15","measurements":[],"native_facets":{},"ontology_versions":{},"policies":[{"base_sha":"5e20ab3c9dff97edd35deee6759c5e5961ee1a05","rule":"base_must_not_move"},{"rule":"worker_not_verifier","verifier":"exact-head-court","worker":"zcode-agent"}],"projections":[{"authority":"NONE","kind":"ard","standing":"CANDIDATE"},{"authority":"NONE","kind":"executive","standing":"CANDIDATE"},{"authority":"NONE","kind":"fond","standing":"CANDIDATE"},{"authority":"NONE","kind":"hddl","standing":"CANDIDATE"},{"authority":"NONE","kind":"jira","standing":"CANDIDATE"},{"authority":"NONE","kind":"machine","standing":"CANDIDATE"},{"authority":"NONE","kind":"prd","standing":"CANDIDATE"},{"authority":"NONE","kind":"receipt","standing":"CANDIDATE"},{"authority":"NONE","kind":"replay","standing":"CANDIDATE"},{"authority":"NONE","kind":"sa2a","standing":"CANDIDATE"},{"authority":"NONE","kind":"verification","standing":"CANDIDATE"},{"authority":"NONE","kind":"vision","standing":"CANDIDATE"},{"authority":"NONE","kind":"wbpr","standing":"CANDIDATE"},{"authority":"NONE","kind":"worker","standing":"CANDIDATE"}],"provenance":{"replay_identity":"semantic-jira:v26.9.21:ZOCEL-013"},"public_facets":[],"relationships":[],"resource_budget":{},"schema_version":1,"shape_digest":"sha256:1743820494c2cd2a486560ac3494affefe87ee994b7d233df2d163bff3d1436b","source_digest":"sha256:a4ab8765e8541726ba3ea4658be3ee6fed57d1a5166ec54fae8a18cf66e89d15","subject_id":"zcode-cli:main-baseline-failures","temporal":null}
+}

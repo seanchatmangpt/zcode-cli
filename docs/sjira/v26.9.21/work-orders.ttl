@@ -409,9 +409,9 @@ sj:zocel-001
     rdfs:label "ZOCEL-001: Land the OCEL consumer branch with a real observed run" ;
     dcterms:identifier "ZOCEL-001" ;
     dcterms:title "Land the OCEL consumer branch with a real observed run" ;
-    dcterms:description "Land feat/zcode-ocel-consumer so the zcode agent loop emits a sealed OCEL 2.0 log and receipt from a real session, verified by the generated verifier and replayed through the generated transition table. A run with no log is NOT_RUN per the gymact ocel-standing rule." ;
+    dcterms:description "Verification remainder for feat/zcode-ocel-consumer, merged into local main (5e20ab3, not pushed). Observed once: ZCODE_OCEL=1 with --output-format stream-json emitted a 13-event .jsonocel and .receipt.json with an intact verifyChain. Standing stays UNKNOWN until a court receipt exists. Remaining: repeatable exact-head court run, and the app-server source, which was not exercised. Without --output-format stream-json the tap emits nothing." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:feat/zcode-ocel-consumer" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -435,22 +435,22 @@ sj:court-zocel-001 a sj:Court ;
 
 sj:acc-zocel-001-1 a sj:AcceptanceCriterion ;
     rdfs:label "Static gates pass" ;
-    dcterms:description "In /Users/sac/wt/zcode-ocel-consumer, 'bun run typecheck' exits 0, 'bun test test/ocel-*.test.ts' reports 0 fail, and 'bun scripts/gen-ocel.ts --check' prints no STALE line and exits 0." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli (main) && git rev-parse HEAD equals the pinned baseSha, then 'bun run typecheck' exits 0, 'bun test test/ocel-*.test.ts' reports 0 fail, and 'bun scripts/gen-ocel.ts --check' prints no STALE line and exits 0." .
 sj:acc-zocel-001-2 a sj:AcceptanceCriterion ;
     rdfs:label "Real run emits log and receipt" ;
-    dcterms:description "Run: mkdir -p /Users/sac/wt/zocel-runs && touch /Users/sac/wt/zocel-runs/.mark && cd /Users/sac/wt/zcode-ocel-consumer && ZCODE_OCEL=1 zcode -p 'List the files in the current directory and then stop.' --output-format stream-json. Expected: exit 0 and one new *.jsonocel plus a sibling *.receipt.json found by: LOG=$(find ~/.zcode /Users/sac/wt/zocel-runs -name '*.jsonocel' -newer /Users/sac/wt/zocel-runs/.mark | head -1); test -s \"$LOG\" && test -s \"${LOG%.jsonocel}.receipt.json\" exits 0. No log or no receipt => standing NOT_RUN, never ALIVE. Earns: OBSERVED (real-run evidence) for the emit claim." .
+    dcterms:description "Run: mkdir -p /Users/sac/wt/zocel-runs && touch /Users/sac/wt/zocel-runs/.mark && cd /Users/sac/dev/zcode-cli && ZCODE_OCEL=1 ZCODE_OCEL_DIR=/Users/sac/wt/zocel-runs/001 node bin/zcode.js -p 'Reply with exactly: PONG' --output-format stream-json. Expected: exit 0 and one *.jsonocel plus a sibling *.receipt.json found by: LOG=$(find /Users/sac/wt/zocel-runs/001 -name '*.jsonocel' -newer /Users/sac/wt/zocel-runs/.mark | head -1); test -s \"$LOG\" && test -s \"${LOG%.jsonocel}.receipt.json\" exits 0. No log or no receipt => standing NOT_RUN, never ALIVE. Earns: OBSERVED (real-run evidence) for the stream-json emit claim." .
 sj:acc-zocel-001-3 a sj:AcceptanceCriterion ;
     rdfs:label "Log validates against OCEL 2.0 schema" ;
     dcterms:description "After acc-zocel-001-2 (LOG set as there): python3 -c \"import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))\" \"$LOG\" exits 0 and prints nothing (zero validation errors). No LOG => NOT_RUN. Earns: SCHEMA_VALID for the log; ALIVE only with acc-zocel-001-4..6." .
 sj:acc-zocel-001-4 a sj:AcceptanceCriterion ;
     rdfs:label "Receipt chain verifies" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun scripts/gen-ocel.ts --check exits 0, then the generated verifier under src/ (path printed by gen-ocel.ts) run over \"$LOG\" and \"${LOG%.jsonocel}.receipt.json\" exits 0 and prints a chain-verified line. Nonzero exit or no LOG => NOT_RUN/FAIL. Earns: CHAIN_VERIFIED." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun scripts/gen-ocel.ts --check exits 0, then the generated verifier under src/ (path printed by gen-ocel.ts) run over \"$LOG\" and \"${LOG%.jsonocel}.receipt.json\" exits 0 and prints a chain-verified line. Nonzero exit or no LOG => NOT_RUN/FAIL. Earns: CHAIN_VERIFIED." .
 sj:acc-zocel-001-5 a sj:AcceptanceCriterion ;
-    rdfs:label "Replay is conformant" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-conformance.test.ts exits 0 with 0 fail, and replay of \"$LOG\" through the generated st: transition table reports 0 non-conformant transitions. No LOG => NOT_RUN. Earns: CONFORMANT for that session." .
+    rdfs:label "App-server tap capture" ;
+    dcterms:description "App-server source capture, not yet exercised: mkdir -p /Users/sac/wt/zocel-runs/001-app && cd /Users/sac/dev/zcode-cli && drive 'ZCODE_OCEL=1 ZCODE_OCEL_DIR=/Users/sac/wt/zocel-runs/001-app node bin/zcode.js app-server' over stdio with one real prompt turn, then find /Users/sac/wt/zocel-runs/001-app -name '*.jsonocel' lists one file with a sibling *.receipt.json that verifyChain accepts. No file => NOT_RUN. Earns: APP_SERVER_TAP_OBSERVED." .
 sj:acc-zocel-001-6 a sj:AcceptanceCriterion ;
     rdfs:label "Seal-twice refused and tamper detected" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-generated.test.ts exits 0 with 0 fail, covering: a second seal of the same session returns a typed error (not exit 0 silently), and copying \"$LOG\" to /Users/sac/wt/zocel-runs/tamper.jsonocel, flipping one byte with printf '\\\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc, makes the verifier exit nonzero. Earns: TAMPER_EVIDENT." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test test/ocel-generated.test.ts exits 0 with 0 fail, covering: a second seal of the same session returns a typed error (not exit 0 silently), and copying \"$LOG\" to /Users/sac/wt/zocel-runs/tamper.jsonocel, flipping one byte with printf '\\\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc, makes the verifier exit nonzero. Earns: TAMPER_EVIDENT." .
 
 sj:fal-zocel-001-1 a sj:Falsifier ;
     rdfs:label "Fixture-only evidence" ;
@@ -474,7 +474,7 @@ sj:zocel-002
     dcterms:title "Per-language pending/outcome parity with shared golden vectors" ;
     dcterms:description "Prove the TypeScript and Python OCEL implementations agree on pending and outcome event handling by driving both from one shared set of golden chain vectors stored in the consumer." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:ocel-ts-py-parity" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -499,13 +499,13 @@ sj:court-zocel-002 a sj:Court ;
 
 sj:acc-zocel-002-1 a sj:AcceptanceCriterion ;
     rdfs:label "Golden vectors exist" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/ocel-golden-chain.json exits 0, and grep -l ocel-golden-chain.json test/ocel-*.test.ts /Users/sac/wt/zocel-runs/py/*.py lists both a TypeScript and a Python reader of that one path. Missing file or single reader => FAIL. Earns: SHARED_VECTOR." .
+    dcterms:description "Files created by this work order; absent => NOT_RUN. cd /Users/sac/dev/zcode-cli && test -s test/fixtures/ocel-golden-chain.json exits 0, and grep -l ocel-golden-chain.json test/ocel-*.test.ts /Users/sac/wt/zocel-runs/py/*.py lists both a TypeScript and a Python reader of that one path. Missing file or single reader => FAIL. Earns: SHARED_VECTOR." .
 sj:acc-zocel-002-2 a sj:AcceptanceCriterion ;
     rdfs:label "TypeScript parity" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-generated.test.ts test/ocel-conformance.test.ts exits 0 with 0 fail, each golden vector digest asserted equal to the literal in test/fixtures/ocel-golden-chain.json. Earns: TS_PARITY." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun test test/ocel-generated.test.ts test/ocel-conformance.test.ts exits 0 with 0 fail, each golden vector digest asserted equal to the literal in test/fixtures/ocel-golden-chain.json. Earns: TS_PARITY." .
 sj:acc-zocel-002-3 a sj:AcceptanceCriterion ;
     rdfs:label "Python parity" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/fixtures/../py 2>&1 | tail -3 exits 0 with '0 failed', and for every vector id in test/fixtures/ocel-golden-chain.json the Python digest string equals the TypeScript digest string (diff of the two digest lists exits 0). Earns: PY_PARITY." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && python3 -m pytest -q test/py 2>&1 | tail -3 exits 0 with '0 failed' (test/py is created by this work order; absent => NOT_RUN), and for every vector id in test/fixtures/ocel-golden-chain.json the Python digest string equals the TypeScript digest string (diff of the two digest lists exits 0). Earns: PY_PARITY." .
 
 sj:fal-zocel-002-1 a sj:Falsifier ;
     rdfs:label "Divergent digest" ;
@@ -533,7 +533,7 @@ sj:zocel-003
     dcterms:title "Strict toolchain gates that fail instead of skip" ;
     dcterms:description "Make OCEL coverage and reuse tests fail rather than skip when required toolchains or bundles are absent, and wire that strictness into the locked sync and release build paths." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:strict-toolchain-gates" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -558,13 +558,13 @@ sj:court-zocel-003 a sj:Court ;
 
 sj:acc-zocel-003-1 a sj:AcceptanceCriterion ;
     rdfs:label "Toolchain strictness fails" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && env -i PATH=/usr/bin:/bin HOME=$HOME ZCODE_REQUIRE_TOOLCHAINS=1 /Users/sac/.bun/bin/bun test test/ocel-coverage.test.ts test/ocel-reuse.test.ts; echo rc=$?. Expected: rc nonzero and no 'skip' line counted as pass. rc=0 with skipped => FAIL. Earns: STRICT_TOOLCHAIN_GATE." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && env -i PATH=/usr/bin:/bin HOME=$HOME ZCODE_REQUIRE_TOOLCHAINS=1 /Users/sac/.bun/bin/bun test test/ocel-coverage.test.ts test/ocel-reuse.test.ts; echo rc=$?. Expected: rc nonzero and no 'skip' line counted as pass. rc=0 with skipped => FAIL. Earns: STRICT_TOOLCHAIN_GATE." .
 sj:acc-zocel-003-2 a sj:AcceptanceCriterion ;
     rdfs:label "Bundle strictness fails" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && ZCODE_REQUIRE_BUNDLE=1 bun test test/ocel-reuse.test.ts with the bundle output directory absent; echo rc=$?. Expected: rc nonzero, not skipped. Earns: STRICT_BUNDLE_GATE." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && ZCODE_REQUIRE_BUNDLE=1 bun test test/ocel-reuse.test.ts with the bundle output directory absent; echo rc=$?. Expected: rc nonzero, not skipped. Earns: STRICT_BUNDLE_GATE." .
 sj:acc-zocel-003-3 a sj:AcceptanceCriterion ;
     rdfs:label "Wired into release paths" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && grep -c ZCODE_REQUIRE_TOOLCHAINS package.json scripts/build-release.ts scripts/sync-runtime.ts and grep -c ZCODE_REQUIRE_BUNDLE on the same files: sum of each variable across the files reachable from sync:locked and release:build is >= 1, exit 0 from grep -q for both variables per script chain. Earns: GATE_WIRED." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && grep -c ZCODE_REQUIRE_TOOLCHAINS package.json scripts/build-release.ts scripts/sync-runtime.ts and grep -c ZCODE_REQUIRE_BUNDLE on the same files: sum of each variable across the files reachable from sync:locked and release:build is >= 1, exit 0 from grep -q for both variables per script chain. Earns: GATE_WIRED." .
 
 sj:fal-zocel-003-1 a sj:Falsifier ;
     rdfs:label "Silent skip" ;
@@ -592,7 +592,7 @@ sj:zocel-004
     dcterms:title "Confirm merged marketplace packs are ALIVE" ;
     dcterms:description "Confirm the merged ggen marketplace packs validate and qualify against the recorded baseline, and record the committed-signing-key decision as a human item without blocking the rest of the graph." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "ggen-marketplace:merged-packs-qualification" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;
@@ -619,7 +619,7 @@ sj:acc-zocel-004-1 a sj:AcceptanceCriterion ;
     dcterms:description "cd /Users/sac/ggen-marketplace && python3 scripts/marketplace.py validate; echo rc=$?. Expected: rc=0 and output contains 'packs=319'. Earns: MARKETPLACE_VALID." .
 sj:acc-zocel-004-2 a sj:AcceptanceCriterion ;
     rdfs:label "Qualify failing set matches baseline" ;
-    dcterms:description "cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH." .
 sj:acc-zocel-004-3 a sj:AcceptanceCriterion ;
     rdfs:label "Event-sourcing chains ALIVE" ;
     dcterms:description "cd /Users/sac/ggen-marketplace && python3 scripts/es_chain_qualify.py; echo rc=$?. Expected: rc=0 and every pack line reads ALIVE, none other. Earns: ES_CHAIN_ALIVE." .
@@ -628,7 +628,7 @@ sj:acc-zocel-004-4 a sj:AcceptanceCriterion ;
     dcterms:description "cd /Users/sac/ggen-marketplace && python3 -m pytest -q $(ls packs/*/test*.py packs/*/tests/*.py 2>/dev/null) for the merged packs; echo rc=$?. Expected: rc=0, 0 failed. Earns: PACK_TESTS_PASS." .
 sj:acc-zocel-004-5 a sj:AcceptanceCriterion ;
     rdfs:label "Targets sidecar present" ;
-    dcterms:description "ls -l the [targets] sidecar file of the merged packs under /Users/sac/ggen-marketplace/packs/ (ls -l /Users/sac/ggen-marketplace/packs/*/targets.toml exits 0 and lists a nonempty file for each merged pack named in the ZOCEL-004 receipt); absence => FAIL. Earns: SIDECAR_PRESENT." .
+    dcterms:description "for f in /Users/sac/ggen-marketplace/packs/*/targets.toml; do test -s \"$f\" || echo EMPTY $f; done; echo rc=$?. Expected: no EMPTY lines and rc=0, so every targets.toml sidecar is nonempty. Earns: SIDECAR_PRESENT." .
 sj:acc-zocel-004-6 a sj:AcceptanceCriterion ;
     rdfs:label "Signing-key decision recorded" ;
     dcterms:description "The ZOCEL-004 receipt contains the literal line 'signing-keys: BLOCKED-on-human' and cd /Users/sac/ggen-marketplace && git diff --stat -- '*.key' '*.pem' '*.sk' prints nothing (exit 0, no key touched). Earns: BLOCKED (human decision), never ALIVE." .
@@ -652,7 +652,7 @@ sj:zocel-005
     dcterms:title "Coverage gate, conformance replay, and importer cross-validation" ;
     dcterms:description "Add an OCEL coverage gate and conformance replay, and cross-validate a real run's OCEL log by importing it with an independent process-mining importer." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:ocel-coverage-conformance-import" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -677,13 +677,13 @@ sj:court-zocel-005 a sj:Court ;
 
 sj:acc-zocel-005-1 a sj:AcceptanceCriterion ;
     rdfs:label "Coverage gate enforced" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-coverage.test.ts exits 0 over the real log \"$LOG\"; then delete one declared event type's lines from a copy /Users/sac/wt/zocel-runs/cov-copy.jsonocel and rerun against the copy: exit nonzero. Both outcomes required. Earns: COVERAGE_ENFORCED." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test test/ocel-coverage.test.ts exits 0 over the real log \"$LOG\"; then delete one declared event type's lines from a copy /Users/sac/wt/zocel-runs/cov-copy.jsonocel and rerun against the copy: exit nonzero. Both outcomes required. Earns: COVERAGE_ENFORCED." .
 sj:acc-zocel-005-2 a sj:AcceptanceCriterion ;
     rdfs:label "Conformance replay passes" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-conformance.test.ts exits 0 and replay of \"$LOG\" prints 'deviations: 0' (zero deviations). No real LOG => NOT_RUN. Earns: REPLAY_CONFORMANT." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun test test/ocel-conformance.test.ts exits 0 and replay of \"$LOG\" prints 'deviations: 0' (zero deviations). No real LOG => NOT_RUN. Earns: REPLAY_CONFORMANT." .
 sj:acc-zocel-005-3 a sj:AcceptanceCriterion ;
     rdfs:label "Importer accepts the log" ;
-    dcterms:description "Import \"$LOG\" with the wasm4pm or ex4pm importer CLI (whichever is installed, ls /Users/sac/wasm4pm /Users/sac/ex4pm) ; expected exit 0 and printed event and object counts equal to jq '.events|length' and jq '.objects|length' of \"$LOG\". Neither importer installed => BLOCKED, not ALIVE. Earns: IMPORT_CROSS_VALIDATED." .
+    dcterms:description "LOG=$(ls -t /Users/sac/wt/zocel-runs/*/*.jsonocel | head -1); import \"$LOG\" with the ex4pm importer CLI (ls /Users/sac/ex4pm exists; /Users/sac/wasm4pm is absent, use it only if it appears); expected exit 0 and printed event and object counts equal to jq '.events|length' and jq '.objects|length' of \"$LOG\". No LOG or no importer => BLOCKED, not ALIVE. Earns: IMPORT_CROSS_VALIDATED." .
 
 sj:fal-zocel-005-1 a sj:Falsifier ;
     rdfs:label "Synthetic log only" ;
@@ -711,7 +711,7 @@ sj:zocel-006
     dcterms:title "Consumer residue hardening" ;
     dcterms:description "Close the residual consumer risks: decide the zod dependency so the zod schemas typecheck, record a contract fixture from a real runtime turn, review the loop ontology, and define how a fresh clone finds the pack root." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:consumer-residue-hardening" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -736,16 +736,16 @@ sj:court-zocel-006 a sj:Court ;
 
 sj:acc-zocel-006-1 a sj:AcceptanceCriterion ;
     rdfs:label "Zod decision typechecks" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun run typecheck; echo rc=$?. Expected: rc=0 with the zod decision recorded (zod in package.json dependencies or schemas.zod.ts removed). Earns: TYPECHECK_OK." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun run typecheck; echo rc=$?. Expected: rc=0 with the zod decision recorded (zod in package.json dependencies or schemas.zod.ts removed). Earns: TYPECHECK_OK." .
 sj:acc-zocel-006-2 a sj:AcceptanceCriterion ;
     rdfs:label "Real-turn contract fixture" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/runtime-turn.contract.json && bun test test/ocel-launcher.test.ts exits 0; then in a copy of the fixture rename one event field with sed -i.bak 's/\"type\"/\"kind\"/' and rerun the test against the copy: exit nonzero. Both required. Earns: CONTRACT_SENSITIVE." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && test -s test/fixtures/runtime-turn.contract.json && bun test test/ocel-launcher.test.ts exits 0; then in a copy of the fixture rename one event field with sed -i.bak 's/\"type\"/\"kind\"/' and rerun the test against the copy: exit nonzero. Both required. Earns: CONTRACT_SENSITIVE." .
 sj:acc-zocel-006-3 a sj:AcceptanceCriterion ;
     rdfs:label "Ontology reviewed" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && python3 -c \"import rdflib;g=rdflib.Graph();g.parse('ontology/zcode-loop.ttl');print(len(g))\"; echo rc=$?. Expected: rc=0 and a triple count > 0, plus a review-outcome line in the ZOCEL-006 receipt. Earns: ONTOLOGY_PARSES." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && python3 -c \"import rdflib;g=rdflib.Graph();g.parse('ontology/zcode-loop.ttl');print(len(g))\"; echo rc=$?. Expected: rc=0 and a triple count > 0, plus a review-outcome line in the ZOCEL-006 receipt. Earns: ONTOLOGY_PARSES." .
 sj:acc-zocel-006-4 a sj:AcceptanceCriterion ;
     rdfs:label "Fresh-clone pack root" ;
-    dcterms:description "rm -rf /Users/sac/wt/zocel-runs/fresh && git clone --branch $(git -C /Users/sac/wt/zcode-ocel-consumer branch --show-current) /Users/sac/wt/zcode-ocel-consumer /Users/sac/wt/zocel-runs/fresh && cd /Users/sac/wt/zocel-runs/fresh && bun install && bun scripts/gen-ocel.ts --check; echo rc=$?. Expected: rc=0 with no STALE line. Earns: PACK_ROOT_PORTABLE." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && rm -rf /Users/sac/wt/zocel-runs/fresh && git clone --branch $(git -C /Users/sac/wt/zcode-ocel-consumer branch --show-current) /Users/sac/wt/zcode-ocel-consumer /Users/sac/wt/zocel-runs/fresh && cd /Users/sac/wt/zocel-runs/fresh && bun install && bun scripts/gen-ocel.ts --check; echo rc=$?. Expected: rc=0 with no STALE line. Earns: PACK_ROOT_PORTABLE." .
 
 sj:fal-zocel-006-1 a sj:Falsifier ;
     rdfs:label "Hand-written fixture" ;
@@ -771,9 +771,9 @@ sj:zocel-007
     rdfs:label "ZOCEL-007: Land loop-gaps with a real maxTurns proof" ;
     dcterms:identifier "ZOCEL-007" ;
     dcterms:title "Land loop-gaps with a real maxTurns proof" ;
-    dcterms:description "Land feat/loop-gaps and prove with a real live loop that maxTurns stops the loop with error_max_turns and that ledger events reach the stream-json output." ;
+    dcterms:description "Verification remainder for feat/loop-gaps, merged into local main (5e20ab3, not pushed). Remaining: a real live-loop proof that maxTurns stops the loop with error_max_turns and that ledger events reach the stream-json output. The legacy --max-turns flag is absent from node bin/zcode.js --help, so the proof drives the app-server config path. Standing stays UNKNOWN until a receipt exists." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:feat/loop-gaps" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -797,19 +797,19 @@ sj:court-zocel-007 a sj:Court ;
 
 sj:acc-zocel-007-1 a sj:AcceptanceCriterion ;
     rdfs:label "No new test failures" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test 2>&1 | grep -E '^\\(fail\\)' | sort -u > /Users/sac/wt/zocel-runs/fail-now.txt; diff /Users/sac/wt/zocel-runs/fail-now.txt /Users/sac/wt/zocel-runs/fail-baseline.txt | grep '^<'; expected: no '<' lines (nothing failing that the baseline lacks). Earns: NO_NEW_FAILURES." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test 2>&1 | grep -E '^\\(fail\\)' | sort -u > /Users/sac/wt/zocel-runs/fail-now.txt; comm -23 /Users/sac/wt/zocel-runs/fail-now.txt /Users/sac/wt/zocel-runs/main-fail-baseline.txt (baseline recorded from main 5e20ab3 under ZOCEL-013). Expected: prints nothing, meaning no failure absent from the baseline. Missing baseline file => NOT_RUN. Earns: NO_NEW_FAILURES." .
 sj:acc-zocel-007-2 a sj:AcceptanceCriterion ;
     rdfs:label "Sync gates green" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun run sync:locked; echo rc=$? and bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json; echo rc=$?. Expected: both rc=0. Earns: SYNC_GREEN." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun run sync:locked; echo rc=$? and bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json; echo rc=$?. Expected: both rc=0. Earns: SYNC_GREEN." .
 sj:acc-zocel-007-3 a sj:AcceptanceCriterion ;
     rdfs:label "No anchor drift" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && bun test test/runtime/*.test.ts (the runtime patch-anchor tests); echo rc=$?. Expected: rc=0, 0 fail. Earns: ANCHORS_HOLD." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun test test/sync-runtime-anchor-drift.test.ts test/sync-runtime-loop-gaps.test.ts; echo rc=$?. Expected: rc=0, 0 fail. The test/runtime directory holds the launcher and provider tests, not the patch-anchor tests. Earns: ANCHORS_HOLD." .
 sj:acc-zocel-007-4 a sj:AcceptanceCriterion ;
     rdfs:label "maxTurns stops a live loop" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && zcode -p 'Count from 1 to 1000, one number per turn, using a tool call each turn.' --max-turns 2 --output-format stream-json > /Users/sac/wt/zocel-runs/maxturns.jsonl; echo rc=$?. Expected: rc nonzero and grep -c '\"subtype\":\"error_max_turns\"' /Users/sac/wt/zocel-runs/maxturns.jsonl prints >= 1. No log => NOT_RUN. Earns: OBSERVED_LIVE_STOP." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && node bin/zcode.js --help | grep -c max-turns prints 0 (no CLI flag), so drive 'node bin/zcode.js app-server' over stdio with a turn config maxTurns of 2 and a prompt that needs a tool call each turn, capturing stream output to /Users/sac/wt/zocel-runs/maxturns.jsonl. Expected: grep -c error_max_turns /Users/sac/wt/zocel-runs/maxturns.jsonl prints 1 or more. No capture => NOT_RUN. Earns: OBSERVED_LIVE_STOP." .
 sj:acc-zocel-007-5 a sj:AcceptanceCriterion ;
     rdfs:label "Ledger events in stream" ;
-    dcterms:description "grep -ci ledger /Users/sac/wt/zocel-runs/maxturns.jsonl prints a count > 0 (same run as acc-zocel-007-4); count 0 or missing file => FAIL/NOT_RUN. Earns: LEDGER_OBSERVED." .
+    dcterms:description "grep -ci ledger /Users/sac/wt/zocel-runs/maxturns.jsonl prints a count above 0 (same run as acc-zocel-007-4); count 0 or missing file => FAIL/NOT_RUN. Earns: LEDGER_OBSERVED." .
 
 sj:fal-zocel-007-1 a sj:Falsifier ;
     rdfs:label "Unit-only proof" ;
@@ -828,9 +828,9 @@ sj:zocel-008
     rdfs:label "ZOCEL-008: Land snapshot-hardening" ;
     dcterms:identifier "ZOCEL-008" ;
     dcterms:title "Land snapshot-hardening" ;
-    dcterms:description "Land feat/snapshot-hardening so the capability snapshot and restore tooling is syntax-clean and its dedicated tests pass without new failures in the unit suite." ;
+    dcterms:description "Verification remainder for feat/snapshot-hardening, merged into local main (5e20ab3, not pushed). Remaining: repeatable capability snapshot syntax and test check on main and no failure beyond the recorded baseline. Standing stays UNKNOWN until a receipt exists." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:feat/snapshot-hardening" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -854,13 +854,13 @@ sj:court-zocel-008 a sj:Court ;
 
 sj:acc-zocel-008-1 a sj:AcceptanceCriterion ;
     rdfs:label "Shell syntax clean" ;
-    dcterms:description "cd /Users/sac/wt/snapshot-hardening && for f in scripts/*snapshot*.sh scripts/capability-snapshot.sh; do bash -n \"$f\" || echo BAD $f; done; echo rc=$?. Expected: no BAD lines, rc=0. Earns: SHELL_SYNTAX_OK." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bash -n scripts/capability-snapshot.sh; echo rc=$?. Expected: no output, rc=0. Earns: SHELL_SYNTAX_OK." .
 sj:acc-zocel-008-2 a sj:AcceptanceCriterion ;
     rdfs:label "Snapshot tests pass" ;
-    dcterms:description "cd /Users/sac/wt/snapshot-hardening && bun test test/capability-snapshot.test.ts; expected output contains ' 7 pass' and ' 0 fail', exit 0. Earns: SNAPSHOT_TESTS_PASS." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun test test/capability-snapshot.test.ts; expected output contains ' 7 pass' and ' 0 fail', exit 0. Earns: SNAPSHOT_TESTS_PASS." .
 sj:acc-zocel-008-3 a sj:AcceptanceCriterion ;
     rdfs:label "No new suite failures" ;
-    dcterms:description "cd /Users/sac/wt/snapshot-hardening && bun test 2>&1 | grep -E '^\\(fail\\)' | sort -u > /Users/sac/wt/zocel-runs/snap-fail.txt; diff against the recorded baseline /Users/sac/wt/zocel-runs/snap-baseline.txt: no '<' lines. Earns: NO_NEW_FAILURES." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test 2>&1 | grep -E '^\\(fail\\)' | sort -u > /Users/sac/wt/zocel-runs/snap-fail.txt; comm -23 /Users/sac/wt/zocel-runs/snap-fail.txt /Users/sac/wt/zocel-runs/main-fail-baseline.txt. Expected: prints nothing (no failure absent from the ZOCEL-013 baseline). Earns: NO_NEW_FAILURES." .
 
 sj:fal-zocel-008-1 a sj:Falsifier ;
     rdfs:label "Test count drift" ;
@@ -881,7 +881,7 @@ sj:zocel-009
     dcterms:title "Land the GALL superset branch" ;
     dcterms:description "Land w9-sweep/zcode-pr3, the GALL superset ahead of main by 35 and behind by 9, using the trial branch integrate/gall-into-main, without new failures and with a byte-identical gall-work contract fixture." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:w9-sweep/zcode-pr3" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "IMPLEMENTED_UNVERIFIED" ;
@@ -893,10 +893,10 @@ sj:zocel-009
     sj:requiresReceiptClass "verification" ;
     sj:requiresCourt sj:court-zocel-009 ;
     sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
-    sj:acceptance sj:acc-zocel-009-1, sj:acc-zocel-009-2, sj:acc-zocel-009-3 ;
-    sj:falsifier sj:fal-zocel-009-1, sj:fal-zocel-009-2 ;
+    sj:acceptance sj:acc-zocel-009-1, sj:acc-zocel-009-2, sj:acc-zocel-009-3, sj:acc-zocel-009-4 ;
+    sj:falsifier sj:fal-zocel-009-1, sj:fal-zocel-009-2, sj:fal-zocel-009-3 ;
     sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
-    sj:nextAction sj:run-court-zocel-009 ;
+    sj:nextAction sj:human-review-gall-resolutions ;
     sj:nextCheckpoint sj:cp-zocel-009 .
 
 sj:court-zocel-009 a sj:Court ;
@@ -905,17 +905,23 @@ sj:court-zocel-009 a sj:Court ;
 
 sj:acc-zocel-009-1 a sj:AcceptanceCriterion ;
     rdfs:label "Typecheck passes" ;
-    dcterms:description "cd /Users/sac/dev/zcode-cli && git checkout integrate/gall-into-main in a worktree at /Users/sac/wt/gall-integrate and run bun run typecheck; echo rc=$?. Expected: rc=0. Earns: TYPECHECK_OK." .
+    dcterms:description "cd /Users/sac/wt/integrate-gall (worktree of integrate/gall-into-main at b01634f) && bun run typecheck; echo rc=$?. Expected: rc=0. Earns: TYPECHECK_OK." .
 sj:acc-zocel-009-2 a sj:AcceptanceCriterion ;
     rdfs:label "Full tests no regression" ;
-    dcterms:description "cd /Users/sac/wt/gall-integrate && bun test and bun run test:runtime; each compared by diff of '(fail)' lists with the main baseline /Users/sac/wt/zocel-runs/main-fail-baseline.txt: no '<' lines and exit codes not worse than baseline. Earns: NO_REGRESSION." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/wt/integrate-gall && bun test and bun run test:runtime each piped through grep -E '^\\(fail\\)' | sort -u into /Users/sac/wt/zocel-runs/gall-fail-unit.txt and /Users/sac/wt/zocel-runs/gall-fail-runtime.txt; comm -23 of each against /Users/sac/wt/zocel-runs/main-fail-baseline.txt prints nothing, and exit codes are not worse than main. Earns: NO_REGRESSION." .
+sj:acc-zocel-009-4 a sj:AcceptanceCriterion ;
+    rdfs:label "Human reviews conflict resolutions" ;
+    dcterms:description "The 14 conflicted-file resolutions recorded in the workflow journal /Users/sac/.claude/projects/-Users-sac-dev-zcode-cli/5e08af3f-6ce9-46ec-b12c-cb19f61b5a07/subagents/workflows/wf_72b574d3-9b6/journal.jsonl (main provider-registry and setting.json layout kept, branch GLM-5.3 bootstrap and model-catalog-refresh work dropped) are copied to /Users/sac/wt/zocel-runs/gall-resolutions.md, and that file contains a line starting reviewed-by: naming the human reviewer; grep -c '^reviewed-by:' /Users/sac/wt/zocel-runs/gall-resolutions.md prints 1. Absent or unreviewed => BLOCKED on human, never ALIVE. Earns: RESOLUTIONS_HUMAN_REVIEWED." .
 sj:acc-zocel-009-3 a sj:AcceptanceCriterion ;
     rdfs:label "Contract fixture identical" ;
-    dcterms:description "cmp /Users/sac/wt/gall-integrate/test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json; echo rc=$?. Expected: rc=0 with no output. Earns: FIXTURE_IDENTICAL." .
+    dcterms:description "cmp /Users/sac/wt/integrate-gall/test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json; echo rc=$?. Expected: rc=0 with no output. Earns: FIXTURE_IDENTICAL." .
 
 sj:fal-zocel-009-1 a sj:Falsifier ;
     rdfs:label "Fixture drift" ;
     dcterms:description "cmp reporting any difference falsifies the byte-identical claim." .
+sj:fal-zocel-009-3 a sj:Falsifier ;
+    rdfs:label "Unreviewed resolutions" ;
+    dcterms:description "A merge of w9-sweep/zcode-pr3 into main without a reviewed-by line on the recorded conflict resolutions falsifies readiness." .
 sj:fal-zocel-009-2 a sj:Falsifier ;
     rdfs:label "Untried merge" ;
     dcterms:description "A claim without a trial merge run on integrate/gall-into-main falsifies readiness." .
@@ -932,7 +938,7 @@ sj:zocel-010
     dcterms:title "Final gate on merged main with exact-head receipt" ;
     dcterms:description "Run the final verification gate on merged main and produce a receipt carrying an Exact Head Commit line. Merging to main and any push require human authority and are not performed by an agent." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:main-final-gate" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;
@@ -942,7 +948,7 @@ sj:zocel-010
     sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-010" ;
     sj:pathScope "." ;
     sj:requiresReceiptClass "verification", "replay" ;
-    sj:dependsOn sj:edge-zocel-010-on-001, sj:edge-zocel-010-on-002, sj:edge-zocel-010-on-003, sj:edge-zocel-010-on-004, sj:edge-zocel-010-on-005, sj:edge-zocel-010-on-006, sj:edge-zocel-010-on-007, sj:edge-zocel-010-on-008, sj:edge-zocel-010-on-009 ;
+    sj:dependsOn sj:edge-zocel-010-on-001, sj:edge-zocel-010-on-002, sj:edge-zocel-010-on-003, sj:edge-zocel-010-on-004, sj:edge-zocel-010-on-005, sj:edge-zocel-010-on-006, sj:edge-zocel-010-on-007, sj:edge-zocel-010-on-008, sj:edge-zocel-010-on-009, sj:edge-zocel-010-on-013 ;
     sj:requiresCourt sj:court-zocel-010 ;
     sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence, sj:replay-evidence ;
     sj:acceptance sj:acc-zocel-010-1, sj:acc-zocel-010-2, sj:acc-zocel-010-3 ;
@@ -963,7 +969,7 @@ sj:acc-zocel-010-2 a sj:AcceptanceCriterion ;
     dcterms:description "cd /Users/sac/dev/zcode-cli && git diff --name-only $(git merge-base origin/main HEAD)..HEAD -- 'test/*' | xargs grep -nE 'mock|jest\\.fn|vi\\.fn'; echo rc=$?. Expected: no output, grep rc=1. Earns: NO_MOCKS." .
 sj:acc-zocel-010-3 a sj:AcceptanceCriterion ;
     rdfs:label "Exact-head receipt" ;
-    dcterms:description "cd /Users/sac/dev/zcode-cli && grep -F \"Exact Head Commit: $(git rev-parse HEAD)\" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT." .
+    dcterms:description "Receipt file docs/receipts/zocel-010.md does not exist yet and is written by the human-approved receipt step; absent => NOT_RUN. cd /Users/sac/dev/zcode-cli && grep -F \"Exact Head Commit: $(git rev-parse HEAD)\" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT." .
 
 sj:fal-zocel-010-1 a sj:Falsifier ;
     rdfs:label "Stale head" ;
@@ -1047,7 +1053,7 @@ sj:zocel-011
     dcterms:title "Retire unverified follow-ups" ;
     dcterms:description "Resolve the UNVERIFIED follow-ups: mark the adapter ALIVE only after an observed real run, add a second real consumer over the xaas Ultracode loop graph with a comparison query, and prove Python reuse." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:ocel-followups" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;
@@ -1072,16 +1078,16 @@ sj:court-zocel-011 a sj:Court ;
 
 sj:acc-zocel-011-1 a sj:AcceptanceCriterion ;
     rdfs:label "Adapter ALIVE by observation" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real \"$LOG\"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE." .
+    dcterms:description "cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real \"$LOG\"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE." .
 sj:acc-zocel-011-2 a sj:AcceptanceCriterion ;
     rdfs:label "Second consumer" ;
     dcterms:description "python3 -c \"import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))\" the xaas Ultracode loop-graph OCEL file (find /Users/sac/xaas -name '*.jsonocel' -o -name '*ocel*.json' | head -1); expected: exit 0, no output. No such file => BLOCKED. Earns: SECOND_CONSUMER_VALID." .
 sj:acc-zocel-011-3 a sj:AcceptanceCriterion ;
     rdfs:label "Loop comparison query" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && python3 -c \"import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))\" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE." .
+    dcterms:description "test -s /Users/sac/dev/zcode-cli/queries/compare-loops.rq || echo NOT_RUN (query authored by this work order; it does not exist on main or in pi-ocel-tap). cd /Users/sac/dev/zcode-cli && python3 -c \"import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))\" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE." .
 sj:acc-zocel-011-4 a sj:AcceptanceCriterion ;
     rdfs:label "Python reuse proof" ;
-    dcterms:description "cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE." .
+    dcterms:description "test -d /Users/sac/dev/zcode-cli/test/py || echo NOT_RUN (created under ZOCEL-002). cd /Users/sac/dev/zcode-cli && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE." .
 
 sj:fal-zocel-011-1 a sj:Falsifier ;
     rdfs:label "Adapter claimed without run" ;
@@ -1116,7 +1122,7 @@ sj:zocel-012
     dcterms:title "Worktree hygiene triage" ;
     dcterms:description "Inventory stale worktrees under .claude/worktrees/wf_d1f79f3f-d17-* and /private/tmp/xaas-w*, and produce a keep-or-discard list for human decision. No worktree is removed by an agent." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "1aceb47e935200c6f67960fa2b6125d1a24fae85" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
     sj:subject "zcode-cli:worktree-hygiene" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;
@@ -1140,7 +1146,7 @@ sj:court-zocel-012 a sj:Court ;
 
 sj:acc-zocel-012-1 a sj:AcceptanceCriterion ;
     rdfs:label "Inventory complete" ;
-    dcterms:description "for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE." .
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE." .
 sj:acc-zocel-012-2 a sj:AcceptanceCriterion ;
     rdfs:label "Dirty state recorded" ;
     dcterms:description "For each path in triage.txt: git -C $path status --porcelain and git -C $path rev-list --count origin/main..HEAD are recorded on that entry; a triage line without both fields => FAIL. Earns: DIRTY_STATE_RECORDED." .
@@ -1158,6 +1164,65 @@ sj:fal-zocel-012-2 a sj:Falsifier ;
 sj:cp-zocel-012 a sj:Checkpoint ;
     rdfs:label "ZOCEL-012 checkpoint" ;
     dcterms:description "Closed when the ZOCEL-012 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-013 ----
+sj:zocel-013
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-013: Quarantine or fix the pre-existing failing tests so release:build can pass" ;
+    dcterms:identifier "ZOCEL-013" ;
+    dcterms:title "Quarantine or fix the pre-existing failing tests so release:build can pass" ;
+    dcterms:description "Main has about 10 pre-existing failing tests (subagent-builtin-provider override, launcher keyless prompt, execution-state-tui x2, prompt-preflight x3, model-catalog-tui registry reload, TUI notifications x2), so test:all and therefore release:build exit 1. Fix them, or record a human-approved baseline-exclusion list." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "5e20ab3c9dff97edd35deee6759c5e5961ee1a05" ;
+    sj:subject "zcode-cli:main-baseline-failures" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.21:ZOCEL-013" ;
+    sj:pathScope "test", "src", "scripts" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-013 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-013-1, sj:acc-zocel-013-2 ;
+    sj:falsifier sj:fal-zocel-013-1, sj:fal-zocel-013-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-013 ;
+    sj:nextCheckpoint sj:cp-zocel-013 .
+
+sj:court-zocel-013 a sj:Court ;
+    rdfs:label "ZOCEL-013 exact-subject court" ;
+    dcterms:description "Independent court for Quarantine or fix the pre-existing failing tests so release:build can pass: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-013-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Release build passes or baseline approved" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun run release:build; echo rc=$?. Expected: rc=0, OR a recorded human-approved baseline-exclusion list at /Users/sac/wt/zocel-runs/main-fail-baseline.txt whose last line starts approved-by: naming the human (grep -c '^approved-by:' prints 1). Neither => FAIL. Earns: RELEASE_BUILD_PASS or BASELINE_APPROVED." .
+sj:acc-zocel-013-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Failures subset of baseline" ;
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test 2>&1 | grep -E '^\\(fail\\)' | sort -u > /Users/sac/wt/zocel-runs/now-fail.txt; comm -23 /Users/sac/wt/zocel-runs/now-fail.txt /Users/sac/wt/zocel-runs/main-fail-baseline.txt. Expected: prints nothing (every failure is listed in the baseline). Earns: SUBSET_OF_BASELINE." .
+
+sj:fal-zocel-013-1 a sj:Falsifier ;
+    rdfs:label "Failure absent from baseline" ;
+    dcterms:description "Any failing test in the run that is absent from the baseline list falsifies the subset claim." .
+sj:fal-zocel-013-2 a sj:Falsifier ;
+    rdfs:label "Unapproved exclusion" ;
+    dcterms:description "A baseline-exclusion list without a human approved-by line falsifies the baseline route." .
+
+sj:cp-zocel-013 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-013 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-013 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:edge-zocel-010-on-013 a sj:DependencyEdge ;
+    rdfs:label "ZOCEL-010 depends on ZOCEL-013" ;
+    dcterms:description "ZOCEL-010 requires ZOCEL-013 at standing ALIVE before it may start; standing is not inherited." ;
+    sj:dependencyType "requiresVerifier" ;
+    sj:upstreamWorkOrder sj:zocel-013 ;
+    sj:requiredStanding "ALIVE" .
+
+sj:run-court-zocel-013 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-013" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-013 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
 
 sj:run-court-zocel-001 a sj:Action ;
     rdfs:label "Next action for ZOCEL-001" ;
@@ -1194,6 +1259,10 @@ sj:run-court-zocel-008 a sj:Action ;
 sj:run-court-zocel-009 a sj:Action ;
     rdfs:label "Next action for ZOCEL-009" ;
     dcterms:description "Run the acceptance commands of ZOCEL-009 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+sj:human-review-gall-resolutions a sj:Action ;
+    rdfs:label "Next action for ZOCEL-009" ;
+    dcterms:description "Human decision: review the 14 recorded conflict resolutions of the trial merge integrate/gall-into-main (b01634f) before any merge to main. An agent records the resolutions and never merges." .
 
 sj:human-merge-and-push a sj:Action ;
     rdfs:label "Next action for ZOCEL-010" ;

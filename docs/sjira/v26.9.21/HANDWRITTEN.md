@@ -27,14 +27,23 @@ with `GgenIgniter.SemanticJira.Descriptor.build/4` (provider zcode, authority NO
 and rendered with `Descriptor.render/1` into `execution/<id>.execution.json`.
 
 Descriptors exist only for frontier work orders (standing UNKNOWN, dependencies
-satisfied): ZOCEL-001, 004, 007, 008, 009, 012. The rest were refused by the
+satisfied): ZOCEL-001, 004, 007, 008, 009, 012, 013. The rest were refused by the
 descriptor builder with `not_on_frontier: dependencies_unsatisfied`:
 ZOCEL-002, 003, 005, 006, 010, 011. This is correct behavior, not a defect.
 
 ## Commands executed
 
 - SHACL court: `GgenIgniter.SemanticJira.Shacl.run/2` over `work-orders.ttl` with the
-  pack shapes: all 13 shapes pass.
+  pack shapes: all 13 shapes pass (result line: `SHACL ok: 13/13 shapes pass`).
 - Generation: `mix ggen_igniter.sync --engine sparql --ontology work-orders.ttl
   --pack semantic-jira-pack:{jira,prd,ard,wbpr,plan} --out <tmp>/<kind>/<%= id %>.<ext>
-  --manifest-dir <tmp> --verify-cwd ~/ggen_igniter`: exit 0, 12 files each.
+  --manifest-dir <tmp> --verify-cwd ~/ggen_igniter`: exit 0, 13 files each.
+
+## Descriptor digest note
+
+Descriptors were rebuilt from a read-only RDF mapping of `work-orders.ttl` (identifier local
+names for courts, acceptance, falsifiers; `sha256` of the ttl bytes as graph and source
+digest). The frontier it derives matches the prior descriptor set on the previous graph, and
+graph_digest reproduced byte-for-byte on it, but `snapshot_digest` did not reproduce the
+committed value (the original work-order map builder was not recovered). UNSUPPORTED
+(generator-capability): a pack-side loader from `work-orders.ttl` to work-order maps.

@@ -7,7 +7,7 @@ Close the residual consumer risks: decide the zod dependency so the zod schemas 
 ## Work order boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:consumer-residue-hardening
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** IMPLEMENTED_UNVERIFIED
@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Zod decision typechecks
 
-- **Requirement:** **Zod decision typechecks** — cd /Users/sac/wt/zcode-ocel-consumer && bun run typecheck; echo rc=$?. Expected: rc=0 with the zod decision recorded (zod in package.json dependencies or schemas.zod.ts removed). Earns: TYPECHECK_OK.
+- **Requirement:** **Zod decision typechecks** — cd /Users/sac/dev/zcode-cli && bun run typecheck; echo rc=$?. Expected: rc=0 with the zod decision recorded (zod in package.json dependencies or schemas.zod.ts removed). Earns: TYPECHECK_OK.
 
 - **Falsifier:** **Hand-written fixture** — A fixture not captured from a real runtime turn falsifies the contract claim.
 
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Real-turn contract fixture
 
-- **Requirement:** **Real-turn contract fixture** — cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/runtime-turn.contract.json && bun test test/ocel-launcher.test.ts exits 0; then in a copy of the fixture rename one event field with sed -i.bak 's/"type"/"kind"/' and rerun the test against the copy: exit nonzero. Both required. Earns: CONTRACT_SENSITIVE.
+- **Requirement:** **Real-turn contract fixture** — cd /Users/sac/dev/zcode-cli && test -s test/fixtures/runtime-turn.contract.json && bun test test/ocel-launcher.test.ts exits 0; then in a copy of the fixture rename one event field with sed -i.bak 's/"type"/"kind"/' and rerun the test against the copy: exit nonzero. Both required. Earns: CONTRACT_SENSITIVE.
 
 - **Falsifier:** **Hand-written fixture** — A fixture not captured from a real runtime turn falsifies the contract claim.
 
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Ontology reviewed
 
-- **Requirement:** **Ontology reviewed** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -c "import rdflib;g=rdflib.Graph();g.parse('ontology/zcode-loop.ttl');print(len(g))"; echo rc=$?. Expected: rc=0 and a triple count > 0, plus a review-outcome line in the ZOCEL-006 receipt. Earns: ONTOLOGY_PARSES.
+- **Requirement:** **Ontology reviewed** — cd /Users/sac/dev/zcode-cli && python3 -c "import rdflib;g=rdflib.Graph();g.parse('ontology/zcode-loop.ttl');print(len(g))"; echo rc=$?. Expected: rc=0 and a triple count > 0, plus a review-outcome line in the ZOCEL-006 receipt. Earns: ONTOLOGY_PARSES.
 
 - **Falsifier:** **Hand-written fixture** — A fixture not captured from a real runtime turn falsifies the contract claim.
 
@@ -77,7 +77,7 @@ per-requirement edges.
 
 ### WBS 4 — Fresh-clone pack root
 
-- **Requirement:** **Fresh-clone pack root** — rm -rf /Users/sac/wt/zocel-runs/fresh && git clone --branch $(git -C /Users/sac/wt/zcode-ocel-consumer branch --show-current) /Users/sac/wt/zcode-ocel-consumer /Users/sac/wt/zocel-runs/fresh && cd /Users/sac/wt/zocel-runs/fresh && bun install && bun scripts/gen-ocel.ts --check; echo rc=$?. Expected: rc=0 with no STALE line. Earns: PACK_ROOT_PORTABLE.
+- **Requirement:** **Fresh-clone pack root** — mkdir -p /Users/sac/wt/zocel-runs && rm -rf /Users/sac/wt/zocel-runs/fresh && git clone --branch $(git -C /Users/sac/wt/zcode-ocel-consumer branch --show-current) /Users/sac/wt/zcode-ocel-consumer /Users/sac/wt/zocel-runs/fresh && cd /Users/sac/wt/zocel-runs/fresh && bun install && bun scripts/gen-ocel.ts --check; echo rc=$?. Expected: rc=0 with no STALE line. Earns: PACK_ROOT_PORTABLE.
 
 - **Falsifier:** **Hand-written fixture** — A fixture not captured from a real runtime turn falsifies the contract claim.
 

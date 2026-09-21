@@ -39,7 +39,7 @@
   (:init
     (workorder ZOCEL-012)
     (standing ZOCEL-012 UNKNOWN)
-    (base-sha ZOCEL-012 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-012 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-012 OBSERVE)
     (exact-subject ZOCEL-012 "zcode-cli:worktree-hygiene")
     (repository ZOCEL-012 "seanchatmangpt/zcode-cli")

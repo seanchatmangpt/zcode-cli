@@ -7,7 +7,7 @@ Land w9-sweep/zcode-pr3, the GALL superset ahead of main by 35 and behind by 9, 
 ## Identity and evidence boundary
 
 - **Repository:** seanchatmangpt/zcode-cli
-- **Base SHA:** 1aceb47e935200c6f67960fa2b6125d1a24fae85
+- **Base SHA:** 5e20ab3c9dff97edd35deee6759c5e5961ee1a05
 - **Exact subject:** zcode-cli:w9-sweep/zcode-pr3
 - **Standing:** UNKNOWN
 - **Evidence ceiling:** IMPLEMENTED_UNVERIFIED
@@ -41,11 +41,13 @@ graph_hash.
 
 ## Acceptance
 
-- **Typecheck passes** — cd /Users/sac/dev/zcode-cli && git checkout integrate/gall-into-main in a worktree at /Users/sac/wt/gall-integrate and run bun run typecheck; echo rc=$?. Expected: rc=0. Earns: TYPECHECK_OK.
+- **Typecheck passes** — cd /Users/sac/wt/integrate-gall (worktree of integrate/gall-into-main at b01634f) && bun run typecheck; echo rc=$?. Expected: rc=0. Earns: TYPECHECK_OK.
 
-- **Full tests no regression** — cd /Users/sac/wt/gall-integrate && bun test and bun run test:runtime; each compared by diff of '(fail)' lists with the main baseline /Users/sac/wt/zocel-runs/main-fail-baseline.txt: no '<' lines and exit codes not worse than baseline. Earns: NO_REGRESSION.
+- **Full tests no regression** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/wt/integrate-gall && bun test and bun run test:runtime each piped through grep -E '^\(fail\)' | sort -u into /Users/sac/wt/zocel-runs/gall-fail-unit.txt and /Users/sac/wt/zocel-runs/gall-fail-runtime.txt; comm -23 of each against /Users/sac/wt/zocel-runs/main-fail-baseline.txt prints nothing, and exit codes are not worse than main. Earns: NO_REGRESSION.
 
-- **Contract fixture identical** — cmp /Users/sac/wt/gall-integrate/test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json; echo rc=$?. Expected: rc=0 with no output. Earns: FIXTURE_IDENTICAL.
+- **Contract fixture identical** — cmp /Users/sac/wt/integrate-gall/test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json; echo rc=$?. Expected: rc=0 with no output. Earns: FIXTURE_IDENTICAL.
+
+- **Human reviews conflict resolutions** — The 14 conflicted-file resolutions recorded in the workflow journal /Users/sac/.claude/projects/-Users-sac-dev-zcode-cli/5e08af3f-6ce9-46ec-b12c-cb19f61b5a07/subagents/workflows/wf_72b574d3-9b6/journal.jsonl (main provider-registry and setting.json layout kept, branch GLM-5.3 bootstrap and model-catalog-refresh work dropped) are copied to /Users/sac/wt/zocel-runs/gall-resolutions.md, and that file contains a line starting reviewed-by: naming the human reviewer; grep -c '^reviewed-by:' /Users/sac/wt/zocel-runs/gall-resolutions.md prints 1. Absent or unreviewed => BLOCKED on human, never ALIVE. Earns: RESOLUTIONS_HUMAN_REVIEWED.
 
 
 ## Falsifiers
@@ -53,6 +55,8 @@ graph_hash.
 - **Fixture drift** — cmp reporting any difference falsifies the byte-identical claim.
 
 - **Untried merge** — A claim without a trial merge run on integrate/gall-into-main falsifies readiness.
+
+- **Unreviewed resolutions** — A merge of w9-sweep/zcode-pr3 into main without a reviewed-by line on the recorded conflict resolutions falsifies readiness.
 
 
 ## Promotion rule
@@ -66,7 +70,7 @@ Standing may advance only from an independent exact-head court receipt binding c
 
 ## Next action
 
-- **Next action for ZOCEL-009** — Run the acceptance commands of ZOCEL-009 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis.
+- **Next action for ZOCEL-009** — Human decision: review the 14 recorded conflict resolutions of the trial merge integrate/gall-into-main (b01634f) before any merge to main. An agent records the resolutions and never merges.
 
 
 ## Projections

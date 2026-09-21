@@ -45,7 +45,7 @@
   (:init
     (workorder ZOCEL-001)
     (standing ZOCEL-001 UNKNOWN)
-    (base-sha ZOCEL-001 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-001 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-001 CONSTRUCT)
     (exact-subject ZOCEL-001 "zcode-cli:feat/zcode-ocel-consumer")
     (repository ZOCEL-001 "seanchatmangpt/zcode-cli")

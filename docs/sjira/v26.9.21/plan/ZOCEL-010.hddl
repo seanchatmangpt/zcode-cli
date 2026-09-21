@@ -19,7 +19,7 @@
     local-execution-evidence receipt-evidence replay-evidence source-evidence - evidence
     fal-zocel-010-1 fal-zocel-010-2 - falsifier
     cp-zocel-010 - checkpoint
-    edge-zocel-010-on-001 edge-zocel-010-on-002 edge-zocel-010-on-003 edge-zocel-010-on-004 edge-zocel-010-on-005 edge-zocel-010-on-006 edge-zocel-010-on-007 edge-zocel-010-on-008 edge-zocel-010-on-009 - dependency-edge)
+    edge-zocel-010-on-001 edge-zocel-010-on-002 edge-zocel-010-on-003 edge-zocel-010-on-004 edge-zocel-010-on-005 edge-zocel-010-on-006 edge-zocel-010-on-007 edge-zocel-010-on-008 edge-zocel-010-on-009 edge-zocel-010-on-013 - dependency-edge)
   (:task (promote ZOCEL-010 ALIVE))
   (:method decompose-promote-ZOCEL-010
     :task (promote ZOCEL-010 ALIVE)
@@ -43,7 +43,7 @@
   (:init
     (workorder ZOCEL-010)
     (standing ZOCEL-010 UNKNOWN)
-    (base-sha ZOCEL-010 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-010 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-010 CONSTRUCT)
     (exact-subject ZOCEL-010 "zcode-cli:main-final-gate")
     (repository ZOCEL-010 "seanchatmangpt/zcode-cli")
@@ -57,6 +57,7 @@
     (depends-on ZOCEL-010 edge-zocel-010-on-006)
     (depends-on ZOCEL-010 edge-zocel-010-on-007)
     (depends-on ZOCEL-010 edge-zocel-010-on-008)
-    (depends-on ZOCEL-010 edge-zocel-010-on-009))
+    (depends-on ZOCEL-010 edge-zocel-010-on-009)
+    (depends-on ZOCEL-010 edge-zocel-010-on-013))
   ;; Declared goal, not observed standing: ALIVE with the receipt crown.
   (:goal (and (standing ZOCEL-010 ALIVE) (has-receipt ZOCEL-010))))

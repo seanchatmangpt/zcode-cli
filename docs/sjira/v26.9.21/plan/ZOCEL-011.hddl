@@ -43,7 +43,7 @@
   (:init
     (workorder ZOCEL-011)
     (standing ZOCEL-011 UNKNOWN)
-    (base-sha ZOCEL-011 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-011 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-011 CONSTRUCT)
     (exact-subject ZOCEL-011 "zcode-cli:ocel-followups")
     (repository ZOCEL-011 "seanchatmangpt/zcode-cli")

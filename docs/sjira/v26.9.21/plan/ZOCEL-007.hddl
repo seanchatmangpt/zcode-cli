@@ -41,7 +41,7 @@
   (:init
     (workorder ZOCEL-007)
     (standing ZOCEL-007 UNKNOWN)
-    (base-sha ZOCEL-007 1aceb47e935200c6f67960fa2b6125d1a24fae85)
+    (base-sha ZOCEL-007 5e20ab3c9dff97edd35deee6759c5e5961ee1a05)
     (authority-ceiling ZOCEL-007 CONSTRUCT)
     (exact-subject ZOCEL-007 "zcode-cli:feat/loop-gaps")
     (repository ZOCEL-007 "seanchatmangpt/zcode-cli")
