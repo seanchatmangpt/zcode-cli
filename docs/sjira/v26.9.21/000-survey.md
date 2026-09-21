@@ -20,7 +20,7 @@ read-only, run 2026-09-21.
 | .claude/worktrees/wf_d1f79f3f-d17-1 | 8be279d | worktree-wf_d1f79f3f-d17-1 | clean |
 | .claude/worktrees/wf_d1f79f3f-d17-3 | 36597d6 | worktree-wf_d1f79f3f-d17-3 | clean |
 | .claude/worktrees/wf_d1f79f3f-d17-4 | 68a325a | worktree-wf_d1f79f3f-d17-4 | clean |
-| .claude/worktrees/wf_d1f79f3f-d17-5 | 8be279d | worktree-wf_d1f79f3f-d17-5 | M sync-runtime.ts; ?? 3 |
+| .../wf_d1f79f3f-d17-5 | 8be279d | worktree-wf_d1f79f3f-d17-5 | M sync-runtime.ts; ?? 3 |
 | /Users/sac/wt/loop-gaps | ab0ed18 | feat/loop-gaps | ?? node_modules |
 | /Users/sac/wt/snapshot-hardening | 09b940a | feat/snapshot-hardening | clean |
 | /Users/sac/wt/zcode-3 | 0d66a9d | gall/dfcm-006-worker-integration | clean |
