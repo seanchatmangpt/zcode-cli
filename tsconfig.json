@@ -9,5 +9,6 @@
     "target": "ES2023",
     "types": ["bun-types"]
   },
-  "include": ["bin/**/*.ts", "src/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "tsdown.config.ts"]
+  "include": ["bin/**/*.ts", "src/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "tsdown.config.ts"],
+  "exclude": ["src/generated/zod"]
 }

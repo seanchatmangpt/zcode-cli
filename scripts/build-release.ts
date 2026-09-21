@@ -15,6 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 async function run(args: string[]): Promise<void> {
   const child = Bun.spawn([process.execPath, ...args], {
     cwd: root,
+    env: { ...process.env, ZCODE_REQUIRE_TOOLCHAINS: "1" },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit"

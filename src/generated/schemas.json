@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "OcelEventRecord": {
+      "title": "OcelEventRecord",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "time": { "type": "string" },
+        "type": { "type": "string" }
+
+      },
+      "required": ["id", "time", "type"]
+    },
+    "ReceiptEntry": {
+      "title": "ReceiptEntry",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": { "type": "string" },
+        "entry_id": { "type": "string" },
+        "hash": { "type": "string" },
+        "parent_hash": { "type": "string" },
+        "pending_ref": { "type": "string" },
+        "phase": { "type": "string" },
+        "standing": { "type": "string" },
+        "subject": { "type": "string" }
+
+      },
+      "required": ["action", "entry_id", "hash", "parent_hash", "pending_ref", "phase", "standing", "subject"]
+    }
+  }
+}

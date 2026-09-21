@@ -31,6 +31,7 @@ import {
   type OfficialLoginPayload
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
+import { startOcelTap } from "./ocel-tap.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -385,11 +386,22 @@ async function runRuntime(
   extraEnv: NodeJS.ProcessEnv = {}
 ): Promise<number> {
   const tuiInvocation = isTuiRuntimeInvocation(args);
+  // ZCODE_OCEL=1: tee the runtime's stream-json / app-server output into the OCEL tap (src/ocel-tap.ts).
+  const ocel = startOcelTap(args, process.env);
   const child = spawnChild(node, [runtimePath, ...args], {
     cwd: process.cwd(),
     env: runtimeEnvironment(extraEnv),
-    stdio: tuiInvocation ? ["inherit", "inherit", "pipe"] : "inherit"
+    stdio: ocel ? ["inherit", "pipe", "inherit"] : tuiInvocation ? ["inherit", "inherit", "pipe"] : "inherit"
   });
+  const ocelDrained = ocel && child.stdout
+    ? new Promise<void>((resolve) => {
+      child.stdout!.on("data", (chunk: Buffer | string) => {
+        process.stdout.write(chunk);
+        ocel.write(chunk.toString());
+      });
+      child.stdout!.once("close", () => resolve());
+    })
+    : undefined;
   const diagnosticState: TuiRuntimeDiagnosticState = {
     bytes: 0,
     initialized: false,
@@ -417,6 +429,15 @@ async function runRuntime(
     );
     if (tuiInvocation && code !== 0 && !forwardedSignal) {
       process.stderr.write(tuiRuntimeFailureMessage(code, diagnosticState));
+    }
+    if (ocel && ocelDrained) {
+      await ocelDrained;
+      try {
+        const written = ocel.finish();
+        process.stderr.write(`OCEL: ${written.events} events -> ${written.ocelPath}\n`);
+      } catch (error) {
+        process.stderr.write(`OCEL tap failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
     }
     return code;
   } finally {
