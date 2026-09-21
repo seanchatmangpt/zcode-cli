@@ -557,6 +557,47 @@ export function patchRuntimeGoalFailurePause(runtime: string): string {
   );
 }
 
+/**
+ * Enforce config.maxTurns inside runRegularTurnLoop. Upstream accepts the
+ * option but never checks it in the main loop; once the model step count
+ * reaches the cap the loop throws a non-retryable error whose context reason
+ * is "error_max_turns" so consumers can map it to a max-turns result.
+ */
+export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
+  if (runtime.includes('reason:"error_max_turns"')) return runtime;
+
+  const loopHead = /async function ([A-Za-z_$][\w$]*)\(e\)\{for\(;;\)\{fi\(e\.turnAbortSignal\);let t=e\.turnRequestState\.outputTokenContinuationCount>0,/u;
+  const loopMatch = loopHead.exec(runtime);
+  const labelPattern = /a\(([A-Za-z_$][\w$]*),"runRegularTurnLoop"\)/u;
+  const label = labelPattern.exec(runtime);
+  if (!loopMatch || !label || loopMatch[1] !== label[1] || countRegExpMatches(runtime, loopHead) !== 1) {
+    throw new Error("ZCode runtime is incompatible with the max turns patch (runRegularTurnLoop anchor missing).");
+  }
+  const errorFactory = /function z4e\(e\)\{return ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.ModelContextExceeded,/u.exec(runtime);
+  if (!errorFactory) {
+    throw new Error("ZCode runtime is incompatible with the max turns patch (error factory anchor missing).");
+  }
+  const [, makeError, codes] = errorFactory;
+  const guard = `let $zMax=this.config?.maxTurns;if(typeof $zMax==="number"&&$zMax>0&&e.modelStepCount>=$zMax)throw ${makeError}(${codes}.ModelError,"Reached maximum number of turns ("+$zMax+").",{context:{reason:"error_max_turns",maxTurns:$zMax,modelStepCount:e.modelStepCount},recoverable:!1,retryable:!1});`;
+  const head = loopMatch[0];
+  const patched = runtime.replace(head, head.replace("fi(e.turnAbortSignal);", `fi(e.turnAbortSignal);${guard}`));
+  if (!patched.includes('reason:"error_max_turns"')) {
+    throw new Error("ZCode runtime max turns patch failed postcondition verification.");
+  }
+  return patched;
+}
+
+/** Let StreamingToolLedgerUpdated events reach external consumers. */
+export function patchRuntimeStreamingLedgerForwarding(runtime: string): string {
+
+  const pattern = /(function [A-Za-z_$][\w$]*\(e\)\{)if\(e\.type===([A-Za-z_$][\w$]*)\.StreamingToolLedgerUpdated\)return!1;(if\(e\.type!==\2\.ModelStreaming\)return!0;)/u;
+  if (!pattern.test(runtime)) {
+    if (/function [A-Za-z_$][\w$]*\(e\)\{if\(e\.type!==([A-Za-z_$][\w$]*)\.ModelStreaming\)return!0;/u.test(runtime)) return runtime;
+    throw new Error("ZCode runtime is incompatible with the streaming ledger forwarding patch.");
+  }
+  return runtime.replace(pattern, "$1$3");
+}
+
 export function patchRuntimeTuiBridge(runtime: string): string {
   // Upstream's login gate only checks account subscriptions. API-key providers
   // imported into the registry must remain usable without a separate OAuth login.
@@ -1797,6 +1838,16 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     requirement: "required",
     apply: patchRuntimeZaiDesktopOAuth,
     verify: (runtime) => runtime.includes('ZCODE_CLI_OAUTH_CALLBACK_STDIN==="1"')
+  },
+  {
+    id: "max-turns-enforcement",
+    requirement: "required",
+    apply: patchRuntimeMaxTurnsEnforcement
+  },
+  {
+    id: "streaming-ledger-forwarding",
+    requirement: "required",
+    apply: patchRuntimeStreamingLedgerForwarding
   },
   {
     id: "login-model-defaults",
