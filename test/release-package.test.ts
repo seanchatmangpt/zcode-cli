@@ -70,7 +70,7 @@ describe("release package", () => {
     expect(packageJson.scripts["release:build"]).toBe("bun scripts/build-release.ts");
     expect(packageJson.scripts["release:pack"]).toBe("bun scripts/pack-release.ts");
     expect(packageJson.scripts.prepack).toBe("bun scripts/check-package.ts --prepack");
-    expect(packageJson.scripts.build).toBe("tsdown");
+    expect(packageJson.scripts.build).toBe("node node_modules/.bin/tsdown");
     expect(packageJson.scripts["build:launcher"]).toContain("--filter launcher");
     expect(packageJson.scripts["build:tui"]).toContain("--filter tui");
     expect(packageJson.scripts.test).toBe("bun run test:unit");
