@@ -141,7 +141,7 @@ describe("desktop migration apply", () => {
     expect(provider.models["glm-5.2"].name).toBe("GLM-5.2");
     expect(Object.keys(provider.models)).toContain("glm-5.1");
     expect(provider.options.apiKey).toBeUndefined();
-    expect(migrated.model.main).toBe("zai/glm-5.3-flash");
+    expect(migrated.model.main).toBe("zai/glm-5.3");
     expect(migrated.model.lite).toBe("zai/glm-5.3-flash");
     for (const selected of [migrated.model.main, migrated.model.lite]) {
       const modelId = selected.split("/")[1]!;
@@ -149,7 +149,7 @@ describe("desktop migration apply", () => {
     }
 
     const backup = JSON.parse(await readFile(result.backupPath!, "utf8"));
-    expect(backup.model.main).toBe("zai/glm-5.3-flash");
+    expect(backup.model.main).toBe("zai/glm-5.3");
   });
 
   test("is idempotent and keeps an existing CLI apiKey", async () => {
