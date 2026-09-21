@@ -195,12 +195,15 @@ async function runHeadlessAgent(agentsState: Record<string, unknown> | undefined
   };
 }
 
+// 3.12.3 persists built-in subagent overrides as full model selections
+// (`builtInModelSelectionOverrides`); the legacy `builtInModelOverrides` string
+// form carries no reasoning level, which the 3.12.3 registry requires.
+const builtinSelection = { providerId: "account:zai-individual-coding-plan", modelId: "GLM-5.3", options: { reasoningLevel: "high" } };
 const desktopOverride = {
-  builtInModelOverrides: {
-    "general-purpose": "custom:builtin%3Azai-coding-plan:GLM-5.3-Flash",
-    Explore: "custom:builtin%3Azai-coding-plan:GLM-5.3-Flash"
+  builtInModelSelectionOverrides: {
+    "general-purpose": builtinSelection,
+    Explore: builtinSelection
   },
-  builtInThoughtLevelOverrides: {},
   disabledAgentIds: []
 };
 
@@ -212,8 +215,10 @@ test("a desktop builtin subagent model override resolves to the configured zai p
   expect(run.stdout + run.stderr).not.toContain("Model provider is not configured");
   expect(result?.response).toContain("SUBAGENT_RETURNED_PONG");
   // The subagent's own model request reached the configured endpoint carrying
-  // the desktop override's model id, not the config's `model.lite`.
-  expect(run.fixtureRequests).toContain("REQUEST role=subagent model=GLM-5.3-Flash");
+  // the desktop override's model (resolved to the registry's canonical id
+  // `glm-5.3`), not the config's `model.lite` (`glm-5.3-flash`).
+  expect(run.fixtureRequests).toContain("REQUEST role=subagent model=glm-5.3");
+  expect(run.fixtureRequests.some((line) => line.startsWith("REQUEST role=subagent model=glm-5.3-flash"))).toBe(false);
 }, 60_000);
 
 test("without a desktop override the subagent uses the configured lite model", async () => {

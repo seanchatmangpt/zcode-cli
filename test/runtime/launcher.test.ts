@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readRuntimeVersion } from "../../src/launcher.ts";
+import { hermeticTempRoot, blankedAmbientCredentials } from "../fixtures/hermetic-env.ts";
 
 let home = "";
 const node = Bun.which("node");
@@ -45,13 +46,14 @@ async function run(args: string[], input = "", environment: Record<string, strin
 
 describe("launcher/runtime integration", () => {
   test("rejects a keyless prompt before starting the runtime or creating a session", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "zcode-keyless-prompt-"));
+    // Hermetic: no ancestor .env under the real home and no ambient credentials.
+    const directory = await mkdtemp(join(hermeticTempRoot(), "zcode-keyless-prompt-"));
     const fakeNode = join(directory, "fake-node");
     await writeFile(fakeNode, "#!/bin/sh\nprintf 'RUNTIME_STARTED'\nexit 99\n");
     await chmod(fakeNode, 0o755);
     try {
       const result = await run(["--cwd", directory, "--prompt", "offline test"], "", {
-        HOME: directory, USERPROFILE: directory, ZCODE_NODE: fakeNode, ANTHROPIC_API_KEY: ""
+        ...blankedAmbientCredentials(), HOME: directory, USERPROFILE: directory, ZCODE_NODE: fakeNode, ANTHROPIC_API_KEY: ""
       });
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("No model request was sent");

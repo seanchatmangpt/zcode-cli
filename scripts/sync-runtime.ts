@@ -457,8 +457,8 @@ export function patchRuntimeBuiltinProviderAliases(runtime: string): string {
   // ("builtin:zai-coding-plan") resolve by teaching the registry's
   // getProvider/getModel to fall back to the family key. The old
   // registry-builder anchor below no longer exists in that runtime.
-  const providerLookup = /getProvider\(([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\}/u.exec(runtime);
-  const modelLookup = /getModel\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\?\.get\(([A-Za-z_$][\w$]*)\)\}/u.exec(runtime);
+  const providerLookup = execWarmed(runtime, /getProvider\(([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\}/u);
+  const modelLookup = execWarmed(runtime, /getModel\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)\{return this\.(#[A-Za-z_$][\w$]*)\.get\(([A-Za-z_$][\w$]*)\)\?\.get\(([A-Za-z_$][\w$]*)\)\}/u);
   if (providerLookup && modelLookup
     && providerLookup[3] === providerLookup[1] && modelLookup[4] === modelLookup[1] && modelLookup[5] === modelLookup[2]) {
     const [providerAnchor, providerArg, providerField] = providerLookup;
@@ -476,7 +476,20 @@ export function patchRuntimeBuiltinProviderAliases(runtime: string): string {
       + `return void 0})()`
     );
     const stringGuard = (target: string): string => `typeof ${target}==="string"`;
+    // validateSelection checks the raw provider map before it ever reaches
+    // getProvider, so a desktop builtin/account id is rejected as
+    // "provider-not-found" unless that check goes through the alias fallback too.
+    const selectionCheck = execWarmed(
+      runtime,
+      /validateSelection\(([A-Za-z_$][\w$]*)\)\{if\(!this\.(#[A-Za-z_$][\w$]*)\.has\(([A-Za-z_$][\w$]*)\.providerId\)\)return\{ok:!1,code:"provider-not-found"/u
+    );
+    if (!selectionCheck || selectionCheck[2] !== providerField || selectionCheck[3] !== selectionCheck[1]) {
+      throw new Error("ZCode runtime is incompatible with the builtin provider alias patch (selection validation anchor missing).");
+    }
+    const selectionAnchor = selectionCheck[0];
+    const selectionReplacement = `validateSelection(${selectionCheck[1]}){if(!this.getProvider(${selectionCheck[1]}.providerId))return{ok:!1,code:"provider-not-found"`;
     return runtime
+      .replace(selectionAnchor, selectionReplacement)
       .replace(providerAnchor, `getProvider(${providerArg}){/*${marker}*/let $zProvider=this.${providerField}.get(${providerArg});if(!$zProvider&&${stringGuard(providerArg)})$zProvider=this.${providerField}.get(${familyResolve(providerArg)});return $zProvider}`)
       .replace(modelAnchor, `getModel(${modelProviderArg},${modelIdArg}){let $zModel=this.${modelField}.get(${modelProviderArg})?.get(${modelIdArg});if(!$zModel&&${stringGuard(modelProviderArg)}){let $zFamily=${familyResolve(modelProviderArg)};if($zFamily){let $zFamilyModels=this.${modelField}.get($zFamily);if($zFamilyModels)$zModel=$zFamilyModels.get(${modelIdArg})??$zFamilyModels.get(String(${modelIdArg}).toLowerCase())}}return $zModel}`);
   }
@@ -728,10 +741,14 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   // Some runtime bundles duplicate this small helper (tree-shaking artifact),
   // so replace every occurrence, not just the first, to keep this step
   // idempotent regardless of how many copies exist.
-  patched = patched.replace(
+  patched = replaceWarmed(
+    patched,
     new RegExp(legacyStartedTurnResultPattern.source, "gu"),
     'return $1.kind!=="started_turn"?$1:$2(await($1.result??$1.completion),$3,$4($5))'
   );
+  if (legacyStartedTurnResultPattern.test(patched) && legacyStartedTurnResultPattern.test(patched)) {
+    throw new Error("ZCode runtime is incompatible with the TUI bridge (started-turn completion patch did not apply).");
+  }
   if (!supportsActiveTurnSteer(patched)) {
     if (!activeTurnSteerPattern.test(patched)) {
       throw new Error("ZCode runtime is incompatible with the TUI bridge (active-turn steer delivery anchor missing).");
@@ -913,7 +930,7 @@ export function patchRuntimeTuiBridge(runtime: string): string {
   }
   // The upstream CLI shim turns every switch into a permanent --mode override,
   // which prevents later resumes from loading their saved execution state.
-  patched = patched.replace(cliModeOverrideBridge, `${bridge}.setMode=async e=>{return await(await ${getApp}()).setMode(e)}`);
+  patched = replaceWarmed(patched, cliModeOverrideBridge, `${bridge}.setMode=async e=>{return await(await ${getApp}()).setMode(e)}`);
   if (!modeBridgePattern.test(patched)) {
     assignments.push(`${bridge}.setMode=async e=>{return await(await ${getApp}()).setMode(e)}`);
   }
@@ -1084,8 +1101,18 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
     const [, bridge, getApp] = list;
     const [, label, helper, context] = registryList;
     const validator = currentModelOption[5];
+    // The saved-default repository belongs to the process registry runtime, not to
+    // the per-session app controller, so it is reached through the factory-scope
+    // registry promise (`let ae=await v,...=ae?.modelSelectionConfigRepository`).
+    const registry = execWarmed(
+      runtime.slice(factoryStart, list.index),
+      /let ([A-Za-z_$][\w$]*)=await ([A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*=\1\?\.modelSelectionConfigRepository\?await \1\.modelSelectionConfigRepository\.read\(\)/u
+    )?.[2];
+    if (!registry) {
+      throw new Error("ZCode runtime is incompatible with model catalog reload (saved-default repository anchor missing).");
+    }
     const controllerEntries = `reloadModels:${label}(async()=>{await ${context}.providerRegistry.refresh("cli-model-catalog");return ${helper}(${context}.providerRegistry)},"reloadModels"),validateSelection:${label}($zSelection=>{let $zOption=${validator}(${context}.providerRegistry,$zSelection);if(!$zOption)throw new Error("Unknown default model: "+$zSelection.providerId+"/"+$zSelection.modelId);return $zOption},"validateSelection"),`;
-    const bridgeMethods = `,${bridge}.reloadModelOptions=async()=>await(await ${getApp}()).reloadModels(),${bridge}.readDefaultModel=async()=>{let $zSelection=await(await ${getApp}()).modelSelectionConfigRepository.read();return $zSelection?$zSelection.providerId+"/"+$zSelection.modelId:void 0},${bridge}.setDefaultModel=async $zModel=>{let $zApp=await ${getApp}(),$zIndex=$zModel.indexOf("/");if($zIndex<=0)throw new Error("Unknown default model: "+$zModel);let $zSelection={providerId:$zModel.slice(0,$zIndex),modelId:$zModel.slice($zIndex+1)},$zOption=$zApp.validateSelection($zSelection);await $zApp.modelSelectionConfigRepository.saveConfiguredDefault({providerId:$zSelection.providerId,modelId:$zSelection.modelId,options:$zOption.options});return await $zApp.runtime.setSessionModelSelection({providerId:$zSelection.providerId,modelId:$zSelection.modelId,options:$zOption.options})}`;
+    const bridgeMethods = `,${bridge}.reloadModelOptions=async()=>await(await ${getApp}()).reloadModels(),${bridge}.readDefaultModel=async()=>{await ${getApp}();let $zSelection=await(await ${registry}).modelSelectionConfigRepository.read();return $zSelection?$zSelection.providerId+"/"+$zSelection.modelId:void 0},${bridge}.setDefaultModel=async $zModel=>{let $zApp=await ${getApp}(),$zIndex=$zModel.indexOf("/"),$zSelection={providerId:$zModel.slice(0,$zIndex),modelId:$zModel.slice($zIndex+1)};if($zIndex<=0||!$zApp.getModelOption($zSelection))throw new Error("Unknown default model: "+$zModel);await(await ${registry}).modelSelectionConfigRepository.saveConfiguredDefault($zSelection);return await ${bridge}.setTransientModel($zModel)}`;
     return runtime
       .replace(registryList[0], controllerEntries + registryList[0])
       .replace(list[0], list[0] + bridgeMethods)
@@ -1222,6 +1249,26 @@ export function patchRuntimeHttpNoContent(runtime: string): string {
 
 function escapeRegExpName(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function execWarmed(source: string, pattern: RegExp): RegExpExecArray | null {
+  const fresh = new RegExp(pattern.source, pattern.flags);
+  fresh.test(source);
+  fresh.lastIndex = 0;
+  return fresh.exec(source);
+}
+
+/**
+ * `String.prototype.replace` with a warm-up match attempt. Bun/JSC intermittently
+ * misses the first match of a freshly-used regex against the multi-megabyte runtime
+ * bundle (see the warm-up comment in patchRuntimeTuiBridge); a missed replace is a
+ * silent no-op that leaves the runtime unpatched, so the anchor is probed first.
+ */
+function replaceWarmed(source: string, pattern: RegExp, replacement: string): string {
+  const fresh = new RegExp(pattern.source, pattern.flags);
+  fresh.test(source);
+  fresh.lastIndex = 0;
+  return source.replace(fresh, replacement);
 }
 
 function countRegExpMatches(source: string, pattern: RegExp): number {
