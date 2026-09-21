@@ -1,0 +1,166 @@
+// Reuse proof: the same consumer graph regenerated for the py target agrees with the ts target
+// byte-for-byte on the recorded turns (same head hash, same event count, receipts verify cross-language),
+// src/generated is what a fresh `ggen sync run` produces, and wasm4pm loads the emitted OCEL.
+import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { OcelRecorder, STREAM_SOURCE, normalizeRecord, APP_SERVER_SOURCE } from "../src/ocel-tap.ts";
+import { fixtures, repoRoot } from "./support/ocel.ts";
+
+const have = (bin: string) => spawnSync("which", [bin]).status === 0;
+const py = join(repoRoot, "src", "generated", "py");
+
+function tsRun(lines: string[]) {
+  const dir = mkdtempSync(join(tmpdir(), "zcode-reuse-"));
+  const rec = new OcelRecorder(STREAM_SOURCE, dir);
+  rec.write(lines.join("\n") + "\n");
+  const out = rec.finish();
+  const result = { out, doc: JSON.parse(readFileSync(out.ocelPath, "utf8")), receipt: JSON.parse(readFileSync(out.receiptPath, "utf8")), dir };
+  return result;
+}
+
+describe.skipIf(!have("python3"))("py target from the same graph", () => {
+  for (const fx of fixtures()) {
+    test(`${fx.name}: py tap head hash and event count equal the ts tap`, () => {
+      const ts = tsRun(fx.lines);
+      try {
+        const normalized = fx.records.map((r) => JSON.stringify(normalizeRecord(r))).join("\n") + "\n";
+        const run = spawnSync("python3", ["-c", [
+          "import sys, json",
+          `sys.path.insert(0, ${JSON.stringify(py)})`,
+          "import ocel",
+          `t = ocel.Tap(${JSON.stringify(STREAM_SOURCE)})`,
+          "t.ingest(sys.stdin.read())",
+          "doc = t.to_ocel()",
+          "print(json.dumps({'n': len(doc['events']), 'head': t.seal(), 'intact': ocel.verify_chain(doc, 'sha256')}))"
+        ].join("\n")], { input: normalized, encoding: "utf8" });
+        expect(run.status).toBe(0);
+        const got = JSON.parse(run.stdout);
+        expect(got.n).toBe(ts.out.events);
+        expect(got.head).toBe(ts.out.head);
+        expect(got.intact).toBeNull();
+      } finally {
+        rmSync(ts.dir, { recursive: true, force: true });
+      }
+    });
+
+    test(`${fx.name}: py receipt module verifies the ts-written receipt chain`, () => {
+      const ts = tsRun(fx.lines);
+      try {
+        const run = spawnSync("python3", ["-c", [
+          "import sys, json",
+          `sys.path.insert(0, ${JSON.stringify(py)})`,
+          "import receipt",
+          "chain = json.load(sys.stdin)",
+          "print(json.dumps(receipt.verify(chain)))"
+        ].join("\n")], { input: JSON.stringify(ts.receipt.chain), encoding: "utf8" });
+        expect(run.status).toBe(0);
+        expect(JSON.parse(run.stdout)).toBe(true);
+      } finally {
+        rmSync(ts.dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("py generated turn machine agrees with the ts one", () => {
+    const run = spawnSync("python3", ["-c", [
+      "import sys, json",
+      `sys.path.insert(0, ${JSON.stringify(py)})`,
+      "import loop",
+      "s = loop.ZcodeTurnState.Idle if hasattr(loop.ZcodeTurnState, 'Idle') else None",
+      "s = loop.step_zcodeturn(s, 'turn_started', {})",
+      "s = loop.step_zcodeturn(s, 'turn_completed', {})",
+      "print(s.value)"
+    ].join("\n")], { encoding: "utf8" });
+    expect(run.status).toBe(0);
+    expect(run.stdout.trim()).toBe("Completed");
+  });
+});
+
+describe.skipIf(!have("ggen"))("src/generated is a fixed point of ggen sync run", () => {
+  test("bun scripts/gen-ocel.ts --check", () => {
+    const run = spawnSync("bun", ["scripts/gen-ocel.ts", "--check"], { cwd: repoRoot, encoding: "utf8", timeout: 120000 });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+  });
+});
+
+describe("app-server subscription source (UNVERIFIED shape: synthetic envelope around real wire events)", () => {
+  test("wrapping the recorded events as notifications yields the same log", () => {
+    const fx = fixtures().find((f) => f.name === "turn-tool.ndjson")!;
+    const dir = mkdtempSync(join(tmpdir(), "zcode-app-"));
+    try {
+      const rec = new OcelRecorder(APP_SERVER_SOURCE, dir);
+      for (const r of fx.records) rec.feedLine(JSON.stringify({ jsonrpc: "2.0", method: "session/event", params: r }));
+      rec.feedLine(JSON.stringify({ id: 1, result: {} })); // a response envelope is not an event
+      const app = rec.finish();
+      const ts = tsRun(fx.lines);
+      try {
+        expect(app.events).toBe(ts.out.events);
+        const appDoc = JSON.parse(readFileSync(app.ocelPath, "utf8"));
+        expect(appDoc.events.map((e: any) => e.type)).toEqual(ts.doc.events.map((e: any) => e.type));
+      } finally {
+        rmSync(ts.dir, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+const w4 = "/Users/sac/wasm4pm/wasm4pm/pkg/wasm4pm.js";
+describe.skipIf(!existsSync(w4) || !have("node"))("wasm4pm imports the emitted OCEL", () => {
+  test("load_ocel2_from_json accepts the log and lists the object types", () => {
+    const fx = fixtures().find((f) => f.name === "turn-tool.ndjson")!;
+    const ts = tsRun(fx.lines);
+    try {
+      const run = spawnSync("node", ["-e", [
+        `const w = require(${JSON.stringify(w4)});`,
+        "const h = w.load_ocel2_from_json(require('node:fs').readFileSync(process.argv[1], 'utf8'));",
+        "console.log(JSON.stringify(w.list_ocel_object_types(h)));"
+      ].join("\n"), ts.out.ocelPath], { encoding: "utf8" });
+      expect(run.status).toBe(0);
+      expect(JSON.parse(run.stdout).sort()).toEqual(["model_request", "session", "tool_call", "turn"]);
+    } finally {
+      rmSync(ts.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(!have("ggen"))("mutation check: renaming one individual changes exactly its output", () => {
+  test("renaming an event type id rewrites only that id in the generated tap", async () => {
+    const { generateInto, relocate } = await import("../scripts/gen-ocel.ts");
+    const dir = mkdtempSync(join(tmpdir(), "zcode-mut-"));
+    try {
+      const base = readFileSync(join(repoRoot, "ontology", "zcode-loop.ttl"), "utf8");
+      const mutated = join(dir, "mutated.ttl");
+      const { writeFileSync } = await import("node:fs");
+      expect(base.split('pi:typeId "part_started"').length).toBe(2);
+      writeFileSync(mutated, base.replace('pi:typeId "part_started"', 'pi:typeId "part_begun"'));
+      const work = join(dir, "work");
+      generateInto(work, mutated);
+      const out = join(dir, "out");
+      relocate(work, out);
+      const before = readFileSync(join(repoRoot, "src", "generated", "ocel.ts"), "utf8").split("\n");
+      const after = readFileSync(join(out, "ocel.ts"), "utf8").split("\n");
+      // ids are emitted sorted, so a rename may move one token inside its line: compare the file skeleton
+      // (everything but quoted tokens) exactly, and the quoted tokens as a multiset with the rename undone.
+      const skeleton = (ls: string[]) => ls.map((l) => l.replace(/"[^"]*"/g, '""'));
+      const tokens = (ls: string[]) => ls.join("\n").match(/"[^"]*"/g)!.map((t) => t.replace("part_begun", "part_started")).sort();
+      expect(skeleton(after)).toEqual(skeleton(before));
+      expect(tokens(after)).toEqual(tokens(before));
+      expect(after.join("\n")).toContain("part_begun");
+      // the rule ids are separate individuals and keep their names; the event type reference follows the rename
+      expect(after.join("\n")).not.toContain('event: "part_started"');
+      expect(after.join("\n")).toContain('event: "part_begun"');
+      for (const f of ["loop.ts", "receipt.ts", "schemas.json"]) {
+        expect(readFileSync(join(out, f), "utf8")).toBe(readFileSync(join(repoRoot, "src", "generated", f), "utf8"));
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
