@@ -15,6 +15,8 @@ import {
   hasRuntimeNetworkRetryGuard,
   hasRuntimeStreamEofFinishGuard,
   patchRuntimeGoalFailurePause,
+  patchRuntimeMaxTurnsEnforcement,
+  patchRuntimeStreamingLedgerForwarding,
   patchRuntimeHttpNoContent,
   patchRuntimeLoginModelDefaults,
   patchRuntimeNetworkRetryClassification,
@@ -73,6 +75,8 @@ if (!metadataCapabilities
 if (patchRuntimeLoginModelDefaults(runtimeSource) !== runtimeSource
   || (patchEnabled("official-mcp-availability") && patchRuntimeOfficialMcpAvailability(runtimeSource) !== runtimeSource)
   || (patchEnabled("goal-failure-pause") && patchRuntimeGoalFailurePause(runtimeSource) !== runtimeSource)
+  || patchRuntimeMaxTurnsEnforcement(runtimeSource) !== runtimeSource
+  || patchRuntimeStreamingLedgerForwarding(runtimeSource) !== runtimeSource
   || patchRuntimeHttpNoContent(runtimeSource) !== runtimeSource
   || !hasRuntimeHttpNoContentGuard(runtimeSource)
   || patchRuntimeNetworkRetryClassification(runtimeSource) !== runtimeSource
