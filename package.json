@@ -60,6 +60,7 @@
     "test": "bun run test:unit",
     "test:all": "bun run test:unit && bun run test:tui && bun run test:runtime",
     "test:unit": "bun test test/*.test.ts",
+    "test:capability-snapshot": "bun test test/capability-snapshot.test.ts",
     "test:fast": "bun run test:unit",
     "test:runtime": "bun test test/runtime/*.test.ts",
     "test:tui": "bun run test:tui:component && bun run test:tui:e2e",
