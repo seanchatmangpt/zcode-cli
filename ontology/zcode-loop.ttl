@@ -332,6 +332,7 @@ ex:ReceiptEntryShape a sh:NodeShape ;
     [ sh:path ex:standing ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:subject ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:action ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
+    [ sh:path ex:pending_ref ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:hash ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] .
 zl:ReceiptEntry a sp:SchemaModel ; sp:className "ReceiptEntry" ; sp:derivedFromShape ex:ReceiptEntryShape .
 ex:OcelEventShape a sh:NodeShape ;

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { Tap, verifyChain, type OcelDoc } from "./generated/ocel.ts";
-import { append, seal, verify, type Chain, type Entry } from "./generated/receipt.ts";
+import { appendOutcome, appendPending, seal, unpaired, verify, type Chain, type Entry } from "./generated/receipt.ts";
 
 export const STREAM_SOURCE = "zcode_stream";
 export const APP_SERVER_SOURCE = "zcode_app_server";
@@ -114,8 +114,8 @@ export class OcelRecorder {
 
     const intact = verifyChain(doc as OcelDoc, this.tap.spec.hash) === null && doc.events.length > 0;
     const chain: Chain = [];
-    append(chain, `${sessionId}-e1`, "pending", "unknown", sessionId, "record-ocel");
-    append(chain, `${sessionId}-e2`, "outcome", intact ? "alive" : "blocked", sessionId, "record-ocel");
+    appendPending(chain, `${sessionId}-e1`, sessionId, "record-ocel");
+    appendOutcome(chain, `${sessionId}-e2`, intact ? "alive" : "blocked", sessionId, "record-ocel");
     seal(chain, `${sessionId}-e3`, intact ? "alive" : "blocked", sessionId);
     const receipt = {
       session: sessionId,
@@ -125,6 +125,7 @@ export class OcelRecorder {
       event_count: doc.events.length,
       head_hash: head,
       chain_intact: verify(chain),
+      unpaired: unpaired(chain),
       chain
     };
     atomicWrite(receiptPath, JSON.stringify(receipt, null, 2));

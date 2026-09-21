@@ -131,7 +131,15 @@ export const RULES: RuleSpec[] = [
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "session", qualifier: "in_session", path: "sessionId" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "turn", qualifier: "in_turn", path: "turnId" },
 ];
+export const PHASE_OPEN = "pending";
+export const PHASE_CLOSE = "outcome";
+export const PHASED: Record<string, string> = {
+};
+export const CLOSES: [string, string][] = [
+];
 
+const closesPair = (outcome: string, pending: string): boolean => CLOSES.some(([o, p]) => o === outcome && p === pending);
+const objectSet = (rels: Relationship[]): string => JSON.stringify(rels.map((r) => r.objectId).sort());
 export type Relationship = { objectId: string; qualifier: string };
 export type Attribute = { name: string; value: string };
 export type OcelEvent = { id: string; type: string; time: string; attributes: Attribute[]; relationships: Relationship[] };
@@ -148,11 +156,13 @@ export function hashHex(alg: string, data: string): string {
 }
 
 // Canonical form: keys sorted, no whitespace. Identical across all generated languages.
-export function canon(e: { id: string; type: string; time: string; relationships: Relationship[] }): string {
+// A phased event (phase !== "") additionally binds pendingRef and phase into the digest.
+export function canon(e: { id: string; type: string; time: string; relationships: Relationship[] }, phase = "", ref = ""): string {
   const rels = e.relationships
     .map((r) => "{\"objectId\":" + JSON.stringify(r.objectId) + ",\"qualifier\":" + JSON.stringify(r.qualifier) + "}")
     .join(",");
-  return "{\"id\":" + JSON.stringify(e.id) + ",\"relationships\":[" + rels + "],\"time\":" + JSON.stringify(e.time) + ",\"type\":" + JSON.stringify(e.type) + "}";
+  const bound = phase ? ",\"pendingRef\":" + JSON.stringify(ref) + ",\"phase\":" + JSON.stringify(phase) : "";
+  return "{\"id\":" + JSON.stringify(e.id) + bound + ",\"relationships\":[" + rels + "],\"time\":" + JSON.stringify(e.time) + ",\"type\":" + JSON.stringify(e.type) + "}";
 }
 
 function getPath(raw: unknown, path: string): unknown {
@@ -185,6 +195,7 @@ export class Tap {
   private objects = new Map<string, string>();
   private last = "";
   private sealed = false;
+  readonly orphans: string[] = [];
 
   constructor(sourceId: string) {
     const s = SOURCES.find((x) => x.id === sourceId);
@@ -228,26 +239,65 @@ export class Tap {
     const rs = RULES.filter((r) => r.source === this.spec.id && r.name === String(name));
     if (rs.length === 0) return null;
     const relationships: Relationship[] = [];
+    const found: [string, string][] = [];
     for (const r of rs) {
       for (const oid of ids(getPath(raw, r.path))) {
         relationships.push({ objectId: oid, qualifier: r.qualifier });
-        if (!this.objects.has(oid)) this.objects.set(oid, r.object);
+        found.push([oid, r.object]);
       }
     }
-    const base = { id: String(id), type: rs[0].event, time: String(time), relationships };
+    const type = rs[0].event;
+    const phase = PHASED[type] ?? "";
+    let ref = "";
+    if (phase === PHASE_CLOSE) {
+      const open = this.openPending(type, relationships);
+      if (!open) {
+        this.orphans.push(String(id)); // outcome with no open pending: reported, not emitted
+        return null;
+      }
+      ref = open.hash;
+    }
+    for (const [oid, otype] of found) if (!this.objects.has(oid)) this.objects.set(oid, otype);
+    const base = { id: String(id), type, time: String(time), relationships };
     const parent = this.last;
-    const hash = hashHex(this.spec.hash, parent + "\n" + canon(base));
+    const hash = hashHex(this.spec.hash, parent + "\n" + canon(base, phase, ref));
     this.last = hash;
-    const ev: OcelEvent = {
-      ...base,
-      attributes: [
-        { name: "pi_parent", value: parent },
-        { name: "pi_hash", value: hash },
-        { name: "pi_hash_alg", value: this.spec.hash },
-      ],
-    };
+    const attributes: Attribute[] = [
+      { name: "pi_parent", value: parent },
+      { name: "pi_hash", value: hash },
+      { name: "pi_hash_alg", value: this.spec.hash },
+    ];
+    if (phase) attributes.push({ name: "pi_phase", value: phase });
+    if (phase === PHASE_CLOSE) attributes.push({ name: "pi_pending_ref", value: ref });
+    const ev: OcelEvent = { ...base, attributes };
     this.events.push(ev);
     return ev;
+  }
+
+  private attr(e: OcelEvent, n: string): string | undefined {
+    return e.attributes.find((a) => a.name === n)?.value;
+  }
+
+  private closedRefs(): Set<string> {
+    return new Set(this.events.map((e) => this.attr(e, "pi_pending_ref")).filter((v): v is string => !!v));
+  }
+
+  /** Oldest pending event this outcome type may close, over the same object set. */
+  private openPending(outcome: string, rels: Relationship[]): { id: string; hash: string } | null {
+    const closed = this.closedRefs();
+    for (const e of this.events) {
+      const hash = this.attr(e, "pi_hash") as string;
+      if (this.attr(e, "pi_phase") === PHASE_OPEN && !closed.has(hash) && closesPair(outcome, e.type) && objectSet(e.relationships) === objectSet(rels)) {
+        return { id: e.id, hash };
+      }
+    }
+    return null;
+  }
+
+  /** ids of pending events no outcome has closed yet (reported; the tap may still seal). */
+  unpaired(): string[] {
+    const closed = this.closedRefs();
+    return this.events.filter((e) => this.attr(e, "pi_phase") === PHASE_OPEN && !closed.has(this.attr(e, "pi_hash") as string)).map((e) => e.id);
   }
 
   /** seal once: no further ingest; returns the head hash. */
@@ -271,14 +321,27 @@ export class Tap {
   }
 }
 
-/** Recompute the chain over a serialized OCEL document. Returns null when intact, else the reason. */
+/** Recompute the chain over a serialized OCEL document and enforce phase pairing. Null when intact, else the reason. */
 export function verifyChain(doc: OcelDoc, alg: string): string | null {
   let parent = "";
+  const seen = new Map<string, OcelEvent>();
+  const used = new Set<string>();
   for (const e of doc.events) {
     const attr = (n: string) => e.attributes.find((a) => a.name === n)?.value;
+    const phase = PHASED[e.type] ?? "";
+    const ref = attr("pi_pending_ref") ?? "";
     if (attr("pi_parent") !== parent) return "parent mismatch at " + e.id;
-    const want = hashHex(alg, parent + "\n" + canon(e));
+    const want = hashHex(alg, parent + "\n" + canon(e, attr("pi_phase") ?? "", ref));
     if (attr("pi_hash") !== want) return "hash mismatch at " + e.id;
+    if ((attr("pi_phase") ?? "") !== phase) return "phase mismatch at " + e.id;
+    if (phase === PHASE_OPEN) {
+      if (ref) return "pairing mismatch at " + e.id;
+      seen.set(want, e);
+    } else if (phase === PHASE_CLOSE) {
+      const p = seen.get(ref);
+      if (!p || used.has(ref) || !closesPair(e.type, p.type) || objectSet(p.relationships) !== objectSet(e.relationships)) return "pairing mismatch at " + e.id;
+      used.add(ref);
+    }
     parent = want;
   }
   return null;

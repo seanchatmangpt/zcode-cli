@@ -7,10 +7,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { appendOutcome, appendPending, seal, verify as tsVerify, type Chain } from "../src/generated/receipt.ts";
 import { OcelRecorder, STREAM_SOURCE, normalizeRecord, APP_SERVER_SOURCE } from "../src/ocel-tap.ts";
-import { fixtures, repoRoot } from "./support/ocel.ts";
+import { fixtures, repoRoot, toolchain } from "./support/ocel.ts";
 
-const have = (bin: string) => spawnSync("which", [bin]).status === 0;
+const have = (bin: string) => toolchain(bin, spawnSync("which", [bin]).status === 0);
 const py = join(repoRoot, "src", "generated", "py");
 
 function tsRun(lines: string[]) {
@@ -173,5 +174,90 @@ describe("ggen.toml pack paths are configurable", () => {
     const t = ggenToml("x.ttl", { ZCODE_PACK_ROOT: "/r", ZCODE_PACK_ROOT_ST: "/Users/sac/wt/st-fsm-codegen/packs" });
     expect(t).toContain('path = "/r/process-intelligence-pack"');
     expect(t).toContain('path = "/Users/sac/wt/st-fsm-codegen/packs/state-transition-pack"');
+  });
+});
+
+// py-target pending/outcome + shared golden vector: the same entries through the ts and py receipt modules
+// must yield identical hashes, and both must reject the same misuse.
+const ENTRIES: [string, string, string, string][] = [
+  ["s1-e1", "pending", "s1", "record-ocel"],
+  ["s1-e2", "alive", "s1", "record-ocel"]
+];
+function pyChain(script: string): any {
+  const run = spawnSync("python3", ["-c", [
+    "import sys, json",
+    `sys.path.insert(0, ${JSON.stringify(py)})`,
+    "import receipt",
+    script
+  ].join("\n")], { encoding: "utf8" });
+  expect(run.stderr).toBe("");
+  expect(run.status).toBe(0);
+  return JSON.parse(run.stdout);
+}
+
+describe.skipIf(!have("python3"))("py receipt pending/outcome", () => {
+  test("py pairs outcome to pending, seals, verifies; unpaired and orphan outcome are refused", () => {
+    const got = pyChain([
+      "c = []",
+      "receipt.append_pending(c, 's1-e1', 's1', 'record-ocel')",
+      "u1 = receipt.unpaired(c)",
+      "try:",
+      "    receipt.seal(c, 'x', 'alive', 's1'); sealed_early = True",
+      "except Exception: sealed_early = False",
+      "receipt.append_outcome(c, 's1-e2', 'alive', 's1', 'record-ocel')",
+      "u2 = receipt.unpaired(c)",
+      "receipt.seal(c, 's1-e3', 'alive', 's1')",
+      "try:",
+      "    receipt.append_outcome(receipt.__dict__['_x'] if False else [], 'o', 'alive', 's', 'nothing'); orphan = True",
+      "except Exception: orphan = False",
+      "print(json.dumps({'u1': u1, 'u2': u2, 'sealed_early': sealed_early, 'orphan': orphan, 'ok': receipt.verify(c), 'chain': c}))"
+    ].join("\n"));
+    expect(got.u1).toEqual(["s1-e1"]);
+    expect(got.sealed_early).toBe(false);
+    expect(got.u2).toEqual([]);
+    expect(got.orphan).toBe(false);
+    expect(got.ok).toBe(true);
+    expect(got.chain[1].pending_ref).toBe(got.chain[0].hash);
+    expect(got.chain[0].standing).toBe("unknown");
+  });
+
+  test("golden vector: ts and py chain digests are identical on the same events", () => {
+    const tsChain: Chain = [];
+    appendPending(tsChain, ENTRIES[0][0], ENTRIES[0][2], ENTRIES[0][3]);
+    appendOutcome(tsChain, ENTRIES[1][0], ENTRIES[1][1], ENTRIES[1][2], ENTRIES[1][3]);
+    seal(tsChain, "s1-e3", "alive", "s1");
+    const pyC = pyChain([
+      "c = []",
+      "receipt.append_pending(c, 's1-e1', 's1', 'record-ocel')",
+      "receipt.append_outcome(c, 's1-e2', 'alive', 's1', 'record-ocel')",
+      "receipt.seal(c, 's1-e3', 'alive', 's1')",
+      "print(json.dumps(c))"
+    ].join("\n"));
+    expect(pyC.map((e: any) => e.hash)).toEqual(tsChain.map((e) => e.hash));
+    expect(pyC).toEqual(JSON.parse(JSON.stringify(tsChain)));
+    expect(tsVerify(tsChain)).toBe(true);
+  });
+
+  test("golden vector: ts and py OCEL tap chain digests agree on fixture events", () => {
+    for (const fx of fixtures()) {
+      const ts = tsRun(fx.lines);
+      try {
+        const normalized = fx.records.map((r) => JSON.stringify(normalizeRecord(r))).join("\n") + "\n";
+        const run = spawnSync("python3", ["-c", [
+          "import sys, json",
+          `sys.path.insert(0, ${JSON.stringify(py)})`,
+          "import ocel",
+          `t = ocel.Tap(${JSON.stringify(STREAM_SOURCE)})`,
+          "t.ingest(sys.stdin.read())",
+          "doc = t.to_ocel()",
+          "print(json.dumps(doc['events']))"
+        ].join("\n")], { input: normalized, encoding: "utf8" });
+        expect(run.status).toBe(0);
+        const digests = (evs: any[]) => evs.map((e) => e.attributes.filter((a: any) => /hash|digest|pending_ref/.test(a.name)).map((a: any) => a.value));
+        expect(digests(JSON.parse(run.stdout))).toEqual(digests(ts.doc.events));
+      } finally {
+        rmSync(ts.dir, { recursive: true, force: true });
+      }
+    }
   });
 });

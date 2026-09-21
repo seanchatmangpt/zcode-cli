@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { EVENT_TYPES, OBJECT_TYPES, RULES, Tap, verifyChain, type OcelDoc } from "../src/generated/ocel.ts";
-import { verify as verifyReceiptChain, seal as sealReceipt, append as appendReceipt, type Chain } from "../src/generated/receipt.ts";
+import { verify as verifyReceiptChain, seal as sealReceipt, appendPending, appendOutcome, unpaired, type Chain } from "../src/generated/receipt.ts";
 import { OcelRecorder, STREAM_SOURCE, normalizeRecord, toEx4pmReceipt } from "../src/ocel-tap.ts";
 import { declaredRuntimeEvents, fixtures, getPath, ocelProblems, repoRoot, schemaProblems } from "./support/ocel.ts";
 
@@ -110,13 +110,20 @@ describe("seal-once refusal", () => {
   });
   test("generated receipt chain refuses a second seal and appends after seal", () => {
     const chain: Chain = [];
-    appendReceipt(chain, "a", "pending", "unknown", "s", "act");
+    appendPending(chain, "a", "s", "act");
+    appendOutcome(chain, "a2", "alive", "s", "act");
     sealReceipt(chain, "b", "alive", "s");
     expect(() => sealReceipt(chain, "c", "alive", "s")).toThrow("already sealed");
-    expect(() => appendReceipt(chain, "d", "pending", "unknown", "s", "act2")).toThrow("chain sealed");
+    expect(() => appendPending(chain, "d", "s", "act2")).toThrow("chain sealed");
+  });
+  test("seal refuses while a pending is unpaired", () => {
+    const chain: Chain = [];
+    appendPending(chain, "a", "s", "act");
+    expect(unpaired(chain)).toEqual(["a"]);
+    expect(() => sealReceipt(chain, "b", "alive", "s")).toThrow("unpaired");
   });
   test("an outcome without a pending is refused", () => {
-    expect(() => appendReceipt([], "a", "outcome", "alive", "s", "act")).toThrow("outcome without pending");
+    expect(() => appendOutcome([], "a", "alive", "s", "act")).toThrow("outcome without pending");
   });
 });
 

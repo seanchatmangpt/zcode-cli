@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { RULES, SOURCES } from "../src/generated/ocel.ts";
 import { APP_SERVER_SOURCE, STREAM_SOURCE } from "../src/ocel-tap.ts";
 import { readRuntimeEvents, wireOf } from "../scripts/zcode-events.ts";
-import { declaredInternal, declaredRuntimeEvents, runtimeMissing } from "./support/ocel.ts";
+import { declaredInternal, declaredRuntimeEvents, runtimeMissing, toolchain } from "./support/ocel.ts";
 
 const declared = declaredRuntimeEvents();
 
@@ -37,7 +37,7 @@ describe("ontology coverage", () => {
   });
 });
 
-describe.skipIf(runtimeMissing)("runtime drift gate (vendor/zcode.cjs)", () => {
+describe.skipIf(!toolchain("vendor/zcode.cjs", !runtimeMissing))("runtime drift gate (vendor/zcode.cjs)", () => {
   const events = runtimeMissing ? undefined : readRuntimeEvents();
 
   test("wire enum equals the app-server runtime events; stream adds the result envelope", () => {

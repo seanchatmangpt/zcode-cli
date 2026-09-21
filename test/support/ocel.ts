@@ -1,7 +1,5 @@
 // Shared helpers for test/ocel-*.test.ts. Real files, real fixtures, no doubles.
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -97,23 +95,10 @@ export function schemaProblems(schemas: any, def: string, value: unknown): strin
 
 export const runtimeMissing = !existsSync(join(repoRoot, "vendor", "zcode.cjs"));
 
-// Pack paths come from ZCODE_PACK_ROOT[_KEY] (see scripts/gen-ocel.ts). The main checkout packs may predate the
-// extended packs; when a pack lacks its gate, export the exact pack commit that src/generated was generated from
-// out of the branch worktree (git archive, real files, no dirty-tree drift) and point that pack at it.
-{
-  const packs: Record<string, [string, string, string, string]> = {
-    PI: ["pi-ocel-tap", "e391f8183", "process-intelligence-pack", "040_unique_ids.rq"],
-    ST: ["st-fsm-codegen", "f32db0093", "state-transition-pack", "040_chain_policy_supported.rq"],
-    ES: ["es-receipt-chain", "8169a55ab", "evidence-standing-pack", "040_algorithm_supported_set.rq"],
-    SHACL: ["targets-shacl-zod", "1bf906b8c", "shacl-projection-pack", "020_schema_model_named.rq"]
-  };
-  for (const [k, [branch, commit, pack, gate]] of Object.entries(packs)) {
-    const root = process.env[`ZCODE_PACK_ROOT_${k}`] ?? process.env.ZCODE_PACK_ROOT ?? "/Users/sac/ggen-marketplace/packs";
-    if (existsSync(`${root}/${pack}/gates/${gate}`)) continue;
-    const wt = `/Users/sac/wt/${branch}`;
-    if (!existsSync(wt)) continue;
-    const out = mkdtempSync(join(tmpdir(), `zcode-pack-${k}-`));
-    const tar = spawnSync("sh", ["-c", `git -C ${wt} archive ${commit} packs/${pack} | tar -x -C ${out}`]);
-    if (tar.status === 0) process.env[`ZCODE_PACK_ROOT_${k}`] = `${out}/packs`;
-  }
+export const requireToolchains = process.env.ZCODE_REQUIRE_TOOLCHAINS === "1";
+
+/** True when a toolchain is present. Under ZCODE_REQUIRE_TOOLCHAINS=1 an absent toolchain throws (test fails) instead of skipping. */
+export function toolchain(name: string, present: boolean): boolean {
+  if (!present && requireToolchains) throw new Error(`ZCODE_REQUIRE_TOOLCHAINS=1 but toolchain missing: ${name}`);
+  return present;
 }

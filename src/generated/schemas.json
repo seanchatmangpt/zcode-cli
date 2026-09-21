@@ -22,12 +22,13 @@
         "entry_id": { "type": "string" },
         "hash": { "type": "string" },
         "parent_hash": { "type": "string" },
+        "pending_ref": { "type": "string" },
         "phase": { "type": "string" },
         "standing": { "type": "string" },
         "subject": { "type": "string" }
 
       },
-      "required": ["action", "entry_id", "hash", "parent_hash", "phase", "standing", "subject"]
+      "required": ["action", "entry_id", "hash", "parent_hash", "pending_ref", "phase", "standing", "subject"]
     }
   }
 }

@@ -13,6 +13,7 @@ export const ReceiptEntrySchema = z.object({
   entry_id: z.string(),
   hash: z.string(),
   parent_hash: z.string(),
+  pending_ref: z.string(),
   phase: z.string(),
   standing: z.string(),
   subject: z.string(),
