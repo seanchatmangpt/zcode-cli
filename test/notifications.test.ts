@@ -274,6 +274,7 @@ describe("TUI turn notifications", () => {
     const writes: string[] = [];
     let failing = false;
     const notifier = new TurnNotifier({
+      env: {}, // hermetic: BEL fallback must not depend on the host terminal (e.g. iTerm OSC 9)
       settings: { method: "auto", condition: "always" },
       writeTerminal: (data) => {
         if (failing) {
@@ -309,6 +310,7 @@ describe("TUI turn notifications", () => {
     stdout.on("error", ignoreError);
     stderr.on("error", ignoreError);
     const notifier = new TurnNotifier({
+      env: {}, // hermetic: BEL fallback must not depend on the host terminal (e.g. iTerm OSC 9)
       settings: { method: "auto", condition: "always" },
       writeTerminal: (data) => writes.push(data)
     });

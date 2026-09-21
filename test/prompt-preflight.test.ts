@@ -1,10 +1,10 @@
 import { writeProviderFixture } from "./fixtures/provider-config.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { missingCodingPlanKey } from "../src/prompt-preflight.ts";
+import { hermeticTempRoot } from "./fixtures/hermetic-env.ts";
 import { promptPreflight } from "../src/launcher.ts";
 import { providerConfigPath } from "../src/model-access.ts";
 
@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 async function fixture() {
-  const home = await mkdtemp(join(tmpdir(), "zcode-preflight-"));
+  const home = await mkdtemp(join(hermeticTempRoot(), "zcode-preflight-"));
   directories.push(home);
   const env = { HOME: home, USERPROFILE: home };
   const { config, path: file } = await writeProviderFixture(env, { providerId: "zai", modelId: "GLM-5.3", apiType: "anthropic-messages" });
