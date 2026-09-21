@@ -14,6 +14,10 @@ on:
       - ".github/workflows/gall-006-worker-integration.yml"
   workflow_dispatch:
 
+concurrency:
+  group: gall-006-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
