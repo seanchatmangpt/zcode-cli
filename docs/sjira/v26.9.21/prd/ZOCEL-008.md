@@ -59,11 +59,11 @@ Authority requirement:
 
 Each requirement below is an acceptance criterion node in the canonical graph.
 
-- **Shell syntax clean** — 'bash -n' over each snapshot script exits 0.
+- **Shell syntax clean** — cd /Users/sac/wt/snapshot-hardening && for f in scripts/*snapshot*.sh scripts/capability-snapshot.sh; do bash -n "$f" || echo BAD $f; done; echo rc=$?. Expected: no BAD lines, rc=0. Earns: SHELL_SYNTAX_OK.
 
-- **Snapshot tests pass** — 'bun test test/capability-snapshot.test.ts' reports 7 pass and 0 fail.
+- **Snapshot tests pass** — cd /Users/sac/wt/snapshot-hardening && bun test test/capability-snapshot.test.ts; expected output contains ' 7 pass' and ' 0 fail', exit 0. Earns: SNAPSHOT_TESTS_PASS.
 
-- **No new suite failures** — The full unit suite shows no failure absent from the recorded baseline.
+- **No new suite failures** — cd /Users/sac/wt/snapshot-hardening && bun test 2>&1 | grep -E '^\(fail\)' | sort -u > /Users/sac/wt/zocel-runs/snap-fail.txt; diff against the recorded baseline /Users/sac/wt/zocel-runs/snap-baseline.txt: no '<' lines. Earns: NO_NEW_FAILURES.
 
 
 ## Falsifiers

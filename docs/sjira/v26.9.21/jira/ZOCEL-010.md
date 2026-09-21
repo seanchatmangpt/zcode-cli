@@ -61,11 +61,11 @@ graph_hash.
 
 ## Acceptance
 
-- **Full gate passes** — On merged main, 'bun run typecheck', 'bun test', 'bun run test:runtime', 'bun run release:build' and the check script each exit 0.
+- **Full gate passes** — cd /Users/sac/dev/zcode-cli (merged main) && for c in 'bun run typecheck' 'bun test' 'bun run test:runtime' 'bun run release:build' 'bun scripts/check-package.ts'; do sh -c "$c" >/dev/null 2>&1; echo "$c rc=$?"; done. Expected: five lines each rc=0. Earns: GATE_PASS.
 
-- **No mocks in new tests** — grep for mock, jest.fn and vi.fn across tests added by this work returns zero matches.
+- **No mocks in new tests** — cd /Users/sac/dev/zcode-cli && git diff --name-only $(git merge-base origin/main HEAD)..HEAD -- 'test/*' | xargs grep -nE 'mock|jest\.fn|vi\.fn'; echo rc=$?. Expected: no output, grep rc=1. Earns: NO_MOCKS.
 
-- **Exact-head receipt** — A receipt in receipt_qualification format contains an 'Exact Head Commit' line equal to git rev-parse HEAD at gate time.
+- **Exact-head receipt** — cd /Users/sac/dev/zcode-cli && grep -F "Exact Head Commit: $(git rev-parse HEAD)" /Users/sac/dev/zcode-cli/docs/receipts/zocel-010.md; echo rc=$?. Expected: rc=0 (line present, equal to HEAD at gate time). Earns: EXACT_HEAD_RECEIPT.
 
 
 ## Falsifiers

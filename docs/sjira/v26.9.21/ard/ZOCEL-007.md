@@ -92,13 +92,13 @@ canonical graph; observing one falsifies this decision.
 **Verification:** each acceptance criterion below is a node in the canonical graph
 that must hold for this decision to stand.
 
-- **No new test failures** — Full 'bun test' on the branch shows no failure absent from the recorded baseline, compared with diff of failing-test lists.
+- **No new test failures** — cd /Users/sac/wt/zcode-ocel-consumer && bun test 2>&1 | grep -E '^\(fail\)' | sort -u > /Users/sac/wt/zocel-runs/fail-now.txt; diff /Users/sac/wt/zocel-runs/fail-now.txt /Users/sac/wt/zocel-runs/fail-baseline.txt | grep '^<'; expected: no '<' lines (nothing failing that the baseline lacks). Earns: NO_NEW_FAILURES.
 
-- **Sync gates green** — 'bun run sync:locked' and the sync check both exit 0.
+- **Sync gates green** — cd /Users/sac/wt/zcode-ocel-consumer && bun run sync:locked; echo rc=$? and bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json; echo rc=$?. Expected: both rc=0. Earns: SYNC_GREEN.
 
-- **No anchor drift** — The runtime patch anchor-drift check exits 0.
+- **No anchor drift** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/runtime/*.test.ts (the runtime patch-anchor tests); echo rc=$?. Expected: rc=0, 0 fail. Earns: ANCHORS_HOLD.
 
-- **maxTurns stops a live loop** — A real zcode run with a low maxTurns against a prompt that would continue emits a result with subtype error_max_turns in stream-json and exits nonzero as designed.
+- **maxTurns stops a live loop** — cd /Users/sac/wt/zcode-ocel-consumer && zcode -p 'Count from 1 to 1000, one number per turn, using a tool call each turn.' --max-turns 2 --output-format stream-json > /Users/sac/wt/zocel-runs/maxturns.jsonl; echo rc=$?. Expected: rc nonzero and grep -c '"subtype":"error_max_turns"' /Users/sac/wt/zocel-runs/maxturns.jsonl prints >= 1. No log => NOT_RUN. Earns: OBSERVED_LIVE_STOP.
 
-- **Ledger events in stream** — The same real run's stream-json output contains ledger events, shown by grep with count above zero.
+- **Ledger events in stream** — grep -ci ledger /Users/sac/wt/zocel-runs/maxturns.jsonl prints a count > 0 (same run as acc-zocel-007-4); count 0 or missing file => FAIL/NOT_RUN. Earns: LEDGER_OBSERVED.
 

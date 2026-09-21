@@ -94,11 +94,11 @@ canonical graph; observing one falsifies this decision.
 **Verification:** each acceptance criterion below is a node in the canonical graph
 that must hold for this decision to stand.
 
-- **Zod decision typechecks** — After the zod dependency decision, 'bun run typecheck' exits 0 with schemas.zod.ts included.
+- **Zod decision typechecks** — cd /Users/sac/wt/zcode-ocel-consumer && bun run typecheck; echo rc=$?. Expected: rc=0 with the zod decision recorded (zod in package.json dependencies or schemas.zod.ts removed). Earns: TYPECHECK_OK.
 
-- **Real-turn contract fixture** — A contract fixture recorded from a real runtime turn is committed, and its test fails when a recorded event shape is altered in a copy.
+- **Real-turn contract fixture** — cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/runtime-turn.contract.json && bun test test/ocel-launcher.test.ts exits 0; then in a copy of the fixture rename one event field with sed -i.bak 's/"type"/"kind"/' and rerun the test against the copy: exit nonzero. Both required. Earns: CONTRACT_SENSITIVE.
 
-- **Ontology reviewed** — ontology/zcode-loop.ttl parses with a real Turtle parser exit 0 and the review outcome is recorded in the ticket receipt.
+- **Ontology reviewed** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -c "import rdflib;g=rdflib.Graph();g.parse('ontology/zcode-loop.ttl');print(len(g))"; echo rc=$?. Expected: rc=0 and a triple count > 0, plus a review-outcome line in the ZOCEL-006 receipt. Earns: ONTOLOGY_PARSES.
 
-- **Fresh-clone pack root** — In a fresh clone of the branch, the generator locates the pack root without a path outside the clone, shown by 'bun scripts/gen-ocel.ts --check' exit 0.
+- **Fresh-clone pack root** — rm -rf /Users/sac/wt/zocel-runs/fresh && git clone --branch $(git -C /Users/sac/wt/zcode-ocel-consumer branch --show-current) /Users/sac/wt/zcode-ocel-consumer /Users/sac/wt/zocel-runs/fresh && cd /Users/sac/wt/zocel-runs/fresh && bun install && bun scripts/gen-ocel.ts --check; echo rc=$?. Expected: rc=0 with no STALE line. Earns: PACK_ROOT_PORTABLE.
 

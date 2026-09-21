@@ -43,11 +43,11 @@ graph_hash.
 
 ## Acceptance
 
-- **Golden vectors exist** — A single golden chain vector file is committed in the consumer and both language test suites read that same file.
+- **Golden vectors exist** — cd /Users/sac/wt/zcode-ocel-consumer && test -s test/fixtures/ocel-golden-chain.json exits 0, and grep -l ocel-golden-chain.json test/ocel-*.test.ts /Users/sac/wt/zocel-runs/py/*.py lists both a TypeScript and a Python reader of that one path. Missing file or single reader => FAIL. Earns: SHARED_VECTOR.
 
-- **TypeScript parity** — 'bun test test/ocel-*.test.ts' passes with 0 fail and asserts every golden vector digest byte-for-byte.
+- **TypeScript parity** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-generated.test.ts test/ocel-conformance.test.ts exits 0 with 0 fail, each golden vector digest asserted equal to the literal in test/fixtures/ocel-golden-chain.json. Earns: TS_PARITY.
 
-- **Python parity** — The Python test run over the same golden vectors exits 0 with every digest equal to the TypeScript digest.
+- **Python parity** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/fixtures/../py 2>&1 | tail -3 exits 0 with '0 failed', and for every vector id in test/fixtures/ocel-golden-chain.json the Python digest string equals the TypeScript digest string (diff of the two digest lists exits 0). Earns: PY_PARITY.
 
 
 ## Falsifiers

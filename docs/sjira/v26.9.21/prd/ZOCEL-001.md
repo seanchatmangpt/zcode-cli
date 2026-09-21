@@ -69,26 +69,26 @@ Each requirement below is an acceptance criterion node in the canonical graph.
 
 - **Static gates pass** — In /Users/sac/wt/zcode-ocel-consumer, 'bun run typecheck' exits 0, 'bun test test/ocel-*.test.ts' reports 0 fail, and 'bun scripts/gen-ocel.ts --check' prints no STALE line and exits 0.
 
-- **Real run emits log and receipt** — 'ZCODE_OCEL=1 zcode -p <prompt> --output-format stream-json' exits 0 and produces <session>.jsonocel and <session>.receipt.json on disk; absence of either is NOT_RUN, never ALIVE.
+- **Real run emits log and receipt** — Run: mkdir -p /Users/sac/wt/zocel-runs && touch /Users/sac/wt/zocel-runs/.mark && cd /Users/sac/wt/zcode-ocel-consumer && ZCODE_OCEL=1 zcode -p 'List the files in the current directory and then stop.' --output-format stream-json. Expected: exit 0 and one new *.jsonocel plus a sibling *.receipt.json found by: LOG=$(find ~/.zcode /Users/sac/wt/zocel-runs -name '*.jsonocel' -newer /Users/sac/wt/zocel-runs/.mark | head -1); test -s "$LOG" && test -s "${LOG%.jsonocel}.receipt.json" exits 0. No log or no receipt => standing NOT_RUN, never ALIVE. Earns: OBSERVED (real-run evidence) for the emit claim.
 
-- **Log validates against OCEL 2.0 schema** — The produced .jsonocel validates against an OCEL 2.0 jsonschema with zero errors.
+- **Log validates against OCEL 2.0 schema** — After acc-zocel-001-2 (LOG set as there): python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" "$LOG" exits 0 and prints nothing (zero validation errors). No LOG => NOT_RUN. Earns: SCHEMA_VALID for the log; ALIVE only with acc-zocel-001-4..6.
 
-- **Receipt chain verifies** — The generated verifier chain-verifies the receipt over the real log and exits 0.
+- **Receipt chain verifies** — cd /Users/sac/wt/zcode-ocel-consumer && bun scripts/gen-ocel.ts --check exits 0, then the generated verifier under src/ (path printed by gen-ocel.ts) run over "$LOG" and "${LOG%.jsonocel}.receipt.json" exits 0 and prints a chain-verified line. Nonzero exit or no LOG => NOT_RUN/FAIL. Earns: CHAIN_VERIFIED.
 
-- **Replay is conformant** — Replaying the real log through the generated st: transition table yields zero non-conformant transitions.
+- **Replay is conformant** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-conformance.test.ts exits 0 with 0 fail, and replay of "$LOG" through the generated st: transition table reports 0 non-conformant transitions. No LOG => NOT_RUN. Earns: CONFORMANT for that session.
 
-- **Seal-twice refused and tamper detected** — Sealing the same session a second time is refused with a typed error, and flipping one byte of the log makes chain verification fail.
+- **Seal-twice refused and tamper detected** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-generated.test.ts exits 0 with 0 fail, covering: a second seal of the same session returns a typed error (not exit 0 silently), and copying "$LOG" to /Users/sac/wt/zocel-runs/tamper.jsonocel, flipping one byte with printf '\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc, makes the verifier exit nonzero. Earns: TAMPER_EVIDENT.
 
 
 ## Falsifiers
 
 Each falsifier below is an executable refutation condition in the canonical graph.
 
-- **Fixture-only evidence** — A passing test suite with no real .jsonocel from a live zcode run falsifies ALIVE; standing stays NOT_RUN.
+- **Fixture-only evidence** — Observation: a green bun test with 'find ~/.zcode /Users/sac/wt/zocel-runs -name *.jsonocel -newer /Users/sac/wt/zocel-runs/.mark' returning no file refutes ALIVE; standing stays NOT_RUN.
 
-- **Stale generated code** — 'gen-ocel.ts --check' reporting STALE falsifies the claim that generated verifier and table match the ontology.
+- **Stale generated code** — Observation: 'bun scripts/gen-ocel.ts --check' in /Users/sac/wt/zcode-ocel-consumer printing a line containing STALE refutes the claim that the generated verifier and table match ontology/zcode-loop.ttl.
 
-- **Tamper undetected** — A mutated log that still chain-verifies falsifies tamper detection.
+- **Tamper undetected** — Observation: the verifier exiting 0 on a copy of the log with one byte flipped (dd conv=notrunc) refutes tamper detection.
 
 
 ## Promotion rule

@@ -39,11 +39,11 @@ graph_hash.
 
 ## Acceptance
 
-- **Inventory complete** — 'git worktree list' output for each repo is captured and every matching path appears in the triage list.
+- **Inventory complete** — for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE.
 
-- **Dirty state recorded** — For each listed worktree 'git status --porcelain' output and unmerged commit count are recorded.
+- **Dirty state recorded** — For each path in triage.txt: git -C $path status --porcelain and git -C $path rev-list --count origin/main..HEAD are recorded on that entry; a triage line without both fields => FAIL. Earns: DIRTY_STATE_RECORDED.
 
-- **Decision is human** — Each entry is marked keep, discard or undecided, and no deletion command has been run, shown by the same worktree list after triage.
+- **Decision is human** — Each triage line ends in keep|discard|undecided (grep -vcE '(keep|discard|undecided)$' triage.txt prints 0) and re-running the git worktree list command yields output identical to wt-list.txt (diff exit 0), so no deletion ran. Earns: HUMAN_DECISION_PRESERVED.
 
 
 ## Falsifiers

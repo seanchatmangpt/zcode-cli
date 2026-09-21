@@ -90,15 +90,15 @@ canonical graph; observing one falsifies this decision.
 **Verification:** each acceptance criterion below is a node in the canonical graph
 that must hold for this decision to stand.
 
-- **Marketplace validates** — 'marketplace.py validate' exits 0 and reports packs=319.
+- **Marketplace validates** — cd /Users/sac/ggen-marketplace && python3 scripts/marketplace.py validate; echo rc=$?. Expected: rc=0 and output contains 'packs=319'. Earns: MARKETPLACE_VALID.
 
-- **Qualify failing set matches baseline** — The failing set printed by qualify_packs is identical to the 24 entries in /Users/sac/wt/mp-baseline-failures.txt, checked with diff exiting 0.
+- **Qualify failing set matches baseline** — cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
 
-- **Event-sourcing chains ALIVE** — 'es_chain_qualify.py' reports every pack ALIVE and exits 0.
+- **Event-sourcing chains ALIVE** — cd /Users/sac/ggen-marketplace && python3 scripts/es_chain_qualify.py; echo rc=$?. Expected: rc=0 and every pack line reads ALIVE, none other. Earns: ES_CHAIN_ALIVE.
 
-- **Pack tests pass** — Every pack pytest file exits 0.
+- **Pack tests pass** — cd /Users/sac/ggen-marketplace && python3 -m pytest -q $(ls packs/*/test*.py packs/*/tests/*.py 2>/dev/null) for the merged packs; echo rc=$?. Expected: rc=0, 0 failed. Earns: PACK_TESTS_PASS.
 
-- **Targets sidecar present** — A [targets] sidecar exists for the merged packs, shown by ls of the sidecar path.
+- **Targets sidecar present** — ls -l the [targets] sidecar file of the merged packs under /Users/sac/ggen-marketplace/packs/ (ls -l /Users/sac/ggen-marketplace/packs/*/targets.toml exits 0 and lists a nonempty file for each merged pack named in the ZOCEL-004 receipt); absence => FAIL. Earns: SIDECAR_PRESENT.
 
-- **Signing-key decision recorded** — The decision on committed signing keys is recorded as BLOCKED-on-human; no agent removes or rotates keys.
+- **Signing-key decision recorded** — The ZOCEL-004 receipt contains the literal line 'signing-keys: BLOCKED-on-human' and cd /Users/sac/ggen-marketplace && git diff --stat -- '*.key' '*.pem' '*.sk' prints nothing (exit 0, no key touched). Earns: BLOCKED (human decision), never ALIVE.
 

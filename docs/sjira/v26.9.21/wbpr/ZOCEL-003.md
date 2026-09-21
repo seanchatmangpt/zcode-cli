@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Toolchain strictness fails
 
-- **Requirement:** **Toolchain strictness fails** — With ZCODE_REQUIRE_TOOLCHAINS=1 and a toolchain hidden from PATH, the make ocel-coverage and ocel-reuse tests exit nonzero instead of reporting skipped.
+- **Requirement:** **Toolchain strictness fails** — cd /Users/sac/wt/zcode-ocel-consumer && env -i PATH=/usr/bin:/bin HOME=$HOME ZCODE_REQUIRE_TOOLCHAINS=1 /Users/sac/.bun/bin/bun test test/ocel-coverage.test.ts test/ocel-reuse.test.ts; echo rc=$?. Expected: rc nonzero and no 'skip' line counted as pass. rc=0 with skipped => FAIL. Earns: STRICT_TOOLCHAIN_GATE.
 
 - **Falsifier:** **Silent skip** — A run with a missing toolchain that exits 0 with skipped tests falsifies the strict gate.
 
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Bundle strictness fails
 
-- **Requirement:** **Bundle strictness fails** — With ZCODE_REQUIRE_BUNDLE=1 and the bundle absent, the reuse test exits nonzero instead of skipping.
+- **Requirement:** **Bundle strictness fails** — cd /Users/sac/wt/zcode-ocel-consumer && ZCODE_REQUIRE_BUNDLE=1 bun test test/ocel-reuse.test.ts with the bundle output directory absent; echo rc=$?. Expected: rc nonzero, not skipped. Earns: STRICT_BUNDLE_GATE.
 
 - **Falsifier:** **Silent skip** — A run with a missing toolchain that exits 0 with skipped tests falsifies the strict gate.
 
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Wired into release paths
 
-- **Requirement:** **Wired into release paths** — 'bun run sync:locked' and 'bun run release:build' set both variables, shown by grep of package.json and the scripts they call.
+- **Requirement:** **Wired into release paths** — cd /Users/sac/wt/zcode-ocel-consumer && grep -c ZCODE_REQUIRE_TOOLCHAINS package.json scripts/build-release.ts scripts/sync-runtime.ts and grep -c ZCODE_REQUIRE_BUNDLE on the same files: sum of each variable across the files reachable from sync:locked and release:build is >= 1, exit 0 from grep -q for both variables per script chain. Earns: GATE_WIRED.
 
 - **Falsifier:** **Silent skip** — A run with a missing toolchain that exits 0 with skipped tests falsifies the strict gate.
 

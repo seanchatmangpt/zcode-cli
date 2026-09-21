@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Adapter ALIVE by observation
 
-- **Requirement:** **Adapter ALIVE by observation** — The adapter is recorded ALIVE only with a real run log whose chain verifies, by the ZOCEL-001 verifier command exit 0.
+- **Requirement:** **Adapter ALIVE by observation** — cd /Users/sac/wt/zcode-ocel-consumer && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Second consumer
 
-- **Requirement:** **Second consumer** — An OCEL log from the xaas Ultracode loop graph validates against the same OCEL 2.0 schema.
+- **Requirement:** **Second consumer** — python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" the xaas Ultracode loop-graph OCEL file (find /Users/sac/xaas -name '*.jsonocel' -o -name '*ocel*.json' | head -1); expected: exit 0, no output. No such file => BLOCKED. Earns: SECOND_CONSUMER_VALID.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Loop comparison query
 
-- **Requirement:** **Loop comparison query** — queries/compare-loops.rq executes with a real SPARQL engine exit 0 over both consumers' logs and returns at least one row.
+- **Requirement:** **Loop comparison query** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -c "import rdflib,sys;g=rdflib.Graph();[g.parse(f) for f in sys.argv[1:]];print(len(list(g.query(open('queries/compare-loops.rq').read()))))" /Users/sac/wt/zocel-runs/zcode.ttl /Users/sac/wt/zocel-runs/ultracode.ttl (the two consumers' logs converted to RDF); expected: exit 0 and printed row count >= 1. Zero rows => FAIL. Earns: LOOPS_COMPARABLE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 
@@ -77,7 +77,7 @@ per-requirement edges.
 
 ### WBS 4 — Python reuse proof
 
-- **Requirement:** **Python reuse proof** — The Python consumer reuses the generated verifier and its test exits 0 against the shared golden vectors.
+- **Requirement:** **Python reuse proof** — cd /Users/sac/wt/zcode-ocel-consumer && python3 -m pytest -q test/py 2>&1 | tail -2; expected exit 0 with '0 failed', using the shared golden vector test/fixtures/ocel-golden-chain.json. Earns: PY_REUSE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 

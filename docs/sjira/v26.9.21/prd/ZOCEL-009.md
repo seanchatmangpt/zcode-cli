@@ -59,11 +59,11 @@ Authority requirement:
 
 Each requirement below is an acceptance criterion node in the canonical graph.
 
-- **Typecheck passes** — 'bun run typecheck' exits 0 on integrate/gall-into-main.
+- **Typecheck passes** — cd /Users/sac/dev/zcode-cli && git checkout integrate/gall-into-main in a worktree at /Users/sac/wt/gall-integrate and run bun run typecheck; echo rc=$?. Expected: rc=0. Earns: TYPECHECK_OK.
 
-- **Full tests no regression** — Full 'bun test' and 'bun run test:runtime' show no failure absent from the main baseline.
+- **Full tests no regression** — cd /Users/sac/wt/gall-integrate && bun test and bun run test:runtime; each compared by diff of '(fail)' lists with the main baseline /Users/sac/wt/zocel-runs/main-fail-baseline.txt: no '<' lines and exit codes not worse than baseline. Earns: NO_REGRESSION.
 
-- **Contract fixture identical** — cmp of the gall-work contract fixture against /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json exits 0.
+- **Contract fixture identical** — cmp /Users/sac/wt/gall-integrate/test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json; echo rc=$?. Expected: rc=0 with no output. Earns: FIXTURE_IDENTICAL.
 
 
 ## Falsifiers

@@ -47,11 +47,11 @@ graph_hash.
 
 ## Acceptance
 
-- **Coverage gate enforced** — The coverage gate exits 0 when every declared event type appears in the real run log and exits nonzero when one is removed from a copy.
+- **Coverage gate enforced** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-coverage.test.ts exits 0 over the real log "$LOG"; then delete one declared event type's lines from a copy /Users/sac/wt/zocel-runs/cov-copy.jsonocel and rerun against the copy: exit nonzero. Both outcomes required. Earns: COVERAGE_ENFORCED.
 
-- **Conformance replay passes** — Conformance replay of a real run's log against the generated transition table reports zero deviations.
+- **Conformance replay passes** — cd /Users/sac/wt/zcode-ocel-consumer && bun test test/ocel-conformance.test.ts exits 0 and replay of "$LOG" prints 'deviations: 0' (zero deviations). No real LOG => NOT_RUN. Earns: REPLAY_CONFORMANT.
 
-- **Importer accepts the log** — An import of the same real run's OCEL through wasm4pm or ex4pm exits 0 and reports the same event and object counts as the source log.
+- **Importer accepts the log** — Import "$LOG" with the wasm4pm or ex4pm importer CLI (whichever is installed, ls /Users/sac/wasm4pm /Users/sac/ex4pm) ; expected exit 0 and printed event and object counts equal to jq '.events|length' and jq '.objects|length' of "$LOG". Neither importer installed => BLOCKED, not ALIVE. Earns: IMPORT_CROSS_VALIDATED.
 
 
 ## Falsifiers
