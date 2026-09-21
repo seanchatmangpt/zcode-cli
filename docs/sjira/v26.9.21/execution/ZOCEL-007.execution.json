@@ -1,0 +1,16 @@
+{
+  "schema": "semantic-jira/execution-descriptor/v1",
+  "work_order_id": "ZOCEL-007",
+  "subject": "zcode-cli:feat/loop-gaps",
+  "repository": "seanchatmangpt/zcode-cli",
+  "base_sha": "5e20ab3c9dff97edd35deee6759c5e5961ee1a05",
+  "definition_digest": "sha256:53b98b328025e5dd0234da0362d066b25c434cb87e5cadabf2d6c3073ae7382d",
+  "snapshot_digest": "sha256:432c1b6d1f8743c84afb2e7b6279319d3a666e61e7a4b76f901ff4a4c6c61c83",
+  "graph_digest": "sha256:f4e800ce95fd10c19d2f8c49f2df0654efdd10e41604aa1743c25c81706936b3",
+  "provider": "zcode",
+  "worker_identity": "zcode-agent",
+  "verifier_identity": "exact-head-court",
+  "replay_identity": "semantic-jira:v26.9.21:ZOCEL-007",
+  "authority": "NONE",
+  "package": {"actions":[{"authority":"NONE","kind":"bounded_transition","work_order_id":"ZOCEL-007"}],"admission":{"admitted":true,"standing":"UNKNOWN","work_order_digest":"sha256:432c1b6d1f8743c84afb2e7b6279319d3a666e61e7a4b76f901ff4a4c6c61c83"},"attributes":[],"bindings":[{"base_sha":"5e20ab3c9dff97edd35deee6759c5e5961ee1a05","repository":"seanchatmangpt/zcode-cli"}],"graph_digest":"sha256:f4e800ce95fd10c19d2f8c49f2df0654efdd10e41604aa1743c25c81706936b3","measurements":[],"native_facets":{},"ontology_versions":{},"policies":[{"base_sha":"5e20ab3c9dff97edd35deee6759c5e5961ee1a05","rule":"base_must_not_move"},{"rule":"worker_not_verifier","verifier":"exact-head-court","worker":"zcode-agent"}],"projections":[{"authority":"NONE","kind":"ard","standing":"CANDIDATE"},{"authority":"NONE","kind":"executive","standing":"CANDIDATE"},{"authority":"NONE","kind":"fond","standing":"CANDIDATE"},{"authority":"NONE","kind":"hddl","standing":"CANDIDATE"},{"authority":"NONE","kind":"jira","standing":"CANDIDATE"},{"authority":"NONE","kind":"machine","standing":"CANDIDATE"},{"authority":"NONE","kind":"prd","standing":"CANDIDATE"},{"authority":"NONE","kind":"receipt","standing":"CANDIDATE"},{"authority":"NONE","kind":"replay","standing":"CANDIDATE"},{"authority":"NONE","kind":"sa2a","standing":"CANDIDATE"},{"authority":"NONE","kind":"verification","standing":"CANDIDATE"},{"authority":"NONE","kind":"vision","standing":"CANDIDATE"},{"authority":"NONE","kind":"wbpr","standing":"CANDIDATE"},{"authority":"NONE","kind":"worker","standing":"CANDIDATE"}],"provenance":{"replay_identity":"semantic-jira:v26.9.21:ZOCEL-007"},"public_facets":[],"relationships":[],"resource_budget":{},"schema_version":1,"shape_digest":"sha256:d631e969879e06795fc74d8620cbb6bebb115691593be3f9a0ad5a683212c381","source_digest":"sha256:f4e800ce95fd10c19d2f8c49f2df0654efdd10e41604aa1743c25c81706936b3","subject_id":"zcode-cli:feat/loop-gaps","temporal":null}
+}
