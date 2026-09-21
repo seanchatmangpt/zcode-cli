@@ -19,8 +19,14 @@
             "output": 128000
           },
           "modalities": {
-            "input": ["text", "image", "video"],
-            "output": ["text"]
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
           }
         },
         "glm-5.2": {
@@ -36,7 +42,7 @@
     }
   },
   "model": {
-    "main": "zai/glm-5.3-flash",
+    "main": "zai/glm-5.3",
     "lite": "zai/glm-5.3-flash"
   },
   "modelCatalog": {
