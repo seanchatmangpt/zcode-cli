@@ -42,7 +42,7 @@
     }
   },
   "model": {
-    "main": "zai/glm-5.3",
+    "main": "zai/glm-5.3-flash",
     "lite": "zai/glm-5.3-flash"
   },
   "modelCatalog": {
