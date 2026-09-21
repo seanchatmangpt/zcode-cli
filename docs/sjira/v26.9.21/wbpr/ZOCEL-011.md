@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Adapter ALIVE by observation
 
-- **Requirement:** **Adapter ALIVE by observation** — cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
+- **Requirement:** **Adapter ALIVE by observation** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) over "$LOG" exits 0; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
 
 - **Falsifier:** **Adapter claimed without run** — An ALIVE mark with no real run log falsifies the adapter claim.
 

@@ -27,7 +27,7 @@ read-only, run 2026-09-21.
 | /Users/sac/wt/zcode-3 | 0d66a9d | gall/dfcm-006-worker-integration | clean |
 | .../wt/zcode-ocel-consumer | 0a15c1f | feat/zcode-ocel-consumer (in 5e20ab3) | ?? nm, vendor |
 | /Users/sac/wt/zcode-ocel-parent | 1aceb47 | detached | ?? node_modules, vendor |
-| /Users/sac/wt/sjira-v26-9-21 | 62634ec | docs/sjira-v26.9.21 | clean |
+| /Users/sac/wt/sjira-v26-9-21 | the commit containing this file (see git log) | docs/sjira-v26.9.21 | clean |
 | /Users/sac/wt/integrate-gall | b01634f | integrate/gall-into-main | ?? node_modules, vendor |
 
 Dirty column re-run 2026-09-21 via `git -C <wt> log -1` and `status --short`. d17-5 untracked:

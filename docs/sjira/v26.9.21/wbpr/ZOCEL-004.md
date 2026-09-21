@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Qualify failing set matches baseline
 
-- **Requirement:** **Qualify failing set matches baseline** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; then diff <(grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u) <(sort -u /Users/sac/wt/mp-baseline-failures.txt); echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
+- **Requirement:** **Qualify failing set matches baseline** — Run: mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/ggen-marketplace && python3 scripts/qualify_packs.py > /Users/sac/wt/zocel-runs/qualify.log 2>&1; grep -i fail /Users/sac/wt/zocel-runs/qualify.log | sort -u > /Users/sac/wt/zocel-runs/qualify-fail.txt; sort -u /Users/sac/wt/mp-baseline-failures.txt > /Users/sac/wt/zocel-runs/baseline-sorted.txt; diff /Users/sac/wt/zocel-runs/qualify-fail.txt /Users/sac/wt/zocel-runs/baseline-sorted.txt; echo rc=$?. Expected: rc=0 (identical to the 24-entry baseline). Any difference => FAIL. Earns: BASELINE_MATCH.
 
 - **Falsifier:** **Baseline drift** — A failing set that differs from the 24-entry baseline in either direction falsifies the match.
 

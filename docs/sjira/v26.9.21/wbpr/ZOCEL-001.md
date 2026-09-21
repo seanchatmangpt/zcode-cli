@@ -65,7 +65,7 @@ per-requirement edges.
 
 ### WBS 3 — Log validates against OCEL 2.0 schema
 
-- **Requirement:** **Log validates against OCEL 2.0 schema** — After acc-zocel-001-2 (LOG set as there): python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" "$LOG" exits 0 and prints nothing (zero validation errors). No LOG => NOT_RUN. Earns: SCHEMA_VALID for the log; ALIVE only with acc-zocel-001-4..6.
+- **Requirement:** **Log validates against OCEL 2.0 schema** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" "$LOG" exits 0 and prints nothing (zero validation errors). No LOG (acc-zocel-001-2 not yet run) => NOT_RUN. Earns: SCHEMA_VALID for the log; ALIVE only with acc-zocel-001-4..6.
 
 - **Falsifier:** **Fixture-only evidence** — Observation: a green bun test with 'find ~/.zcode /Users/sac/wt/zocel-runs -name *.jsonocel -newer /Users/sac/wt/zocel-runs/.mark' returning no file refutes ALIVE; standing stays NOT_RUN.
 
@@ -83,7 +83,7 @@ per-requirement edges.
 
 ### WBS 4 — Receipt chain verifies
 
-- **Requirement:** **Receipt chain verifies** — cd /Users/sac/dev/zcode-cli && bun scripts/gen-ocel.ts --check exits 0, then the generated verifier under src/ (path printed by gen-ocel.ts) run over "$LOG" and "${LOG%.jsonocel}.receipt.json" exits 0 and prints a chain-verified line. Nonzero exit or no LOG => NOT_RUN/FAIL. Earns: CHAIN_VERIFIED.
+- **Requirement:** **Receipt chain verifies** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && bun scripts/gen-ocel.ts --check exits 0, then the generated verifier under src/ (path printed by gen-ocel.ts) run over "$LOG" and "${LOG%.jsonocel}.receipt.json" exits 0 and prints a chain-verified line. Nonzero exit or no LOG => NOT_RUN/FAIL. Earns: CHAIN_VERIFIED.
 
 - **Falsifier:** **Fixture-only evidence** — Observation: a green bun test with 'find ~/.zcode /Users/sac/wt/zocel-runs -name *.jsonocel -newer /Users/sac/wt/zocel-runs/.mark' returning no file refutes ALIVE; standing stays NOT_RUN.
 
@@ -119,7 +119,7 @@ per-requirement edges.
 
 ### WBS 6 — Seal-twice refused and tamper detected
 
-- **Requirement:** **Seal-twice refused and tamper detected** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test test/ocel-generated.test.ts exits 0 with 0 fail, covering: a second seal of the same session returns a typed error (not exit 0 silently), and copying "$LOG" to /Users/sac/wt/zocel-runs/tamper.jsonocel, flipping one byte with printf '\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc, makes the verifier exit nonzero. Earns: TAMPER_EVIDENT.
+- **Requirement:** **Seal-twice refused and tamper detected** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && bun test test/ocel-generated.test.ts exits 0 with 0 fail, covering: a second seal of the same session returns a typed error (not exit 0 silently), and cp "$LOG" /Users/sac/wt/zocel-runs/tamper.jsonocel then printf '\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc flips one byte and the verifier over tamper.jsonocel exits nonzero. Earns: TAMPER_EVIDENT.
 
 - **Falsifier:** **Fixture-only evidence** — Observation: a green bun test with 'find ~/.zcode /Users/sac/wt/zocel-runs -name *.jsonocel -newer /Users/sac/wt/zocel-runs/.mark' returning no file refutes ALIVE; standing stays NOT_RUN.
 

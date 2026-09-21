@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Inventory complete
 
-- **Requirement:** **Inventory complete** — mkdir -p /Users/sac/wt/zocel-runs && for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; every path in that file whose name matches /Users/sac/wt/* appears in the triage list: comm -23 <(awk '{print $1}' wt-list.txt | sort) <(awk '{print $1}' triage.txt | sort) prints nothing. Earns: INVENTORY_COMPLETE.
+- **Requirement:** **Inventory complete** — Run: mkdir -p /Users/sac/wt/zocel-runs && for r in /Users/sac/dev/zcode-cli /Users/sac/ggen-marketplace /Users/sac/ggen_igniter; do git -C $r worktree list; done > /Users/sac/wt/zocel-runs/wt-list.txt; awk '{print $1}' /Users/sac/wt/zocel-runs/wt-list.txt | sort > /Users/sac/wt/zocel-runs/wt-paths.txt; awk '{print $1}' /Users/sac/wt/zocel-runs/triage.txt | sort > /Users/sac/wt/zocel-runs/triage-paths.txt; comm -23 /Users/sac/wt/zocel-runs/wt-paths.txt /Users/sac/wt/zocel-runs/triage-paths.txt prints nothing (every worktree path under /Users/sac/wt appears in the triage list, triage.txt written by the ZOCEL-012 triage step into the same directory). Earns: INVENTORY_COMPLETE.
 
 - **Falsifier:** **Unlisted worktree** — A matching worktree absent from the list falsifies completeness.
 
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Dirty state recorded
 
-- **Requirement:** **Dirty state recorded** — For each path in triage.txt: git -C $path status --porcelain and git -C $path rev-list --count origin/main..HEAD are recorded on that entry; a triage line without both fields => FAIL. Earns: DIRTY_STATE_RECORDED.
+- **Requirement:** **Dirty state recorded** — For each path in the first column of /Users/sac/wt/zocel-runs/triage.txt (loop: for path in the awk-extracted first column): git -C "$path" status --porcelain and git -C "$path" rev-list --count origin/main..HEAD are recorded on that entry; a triage line without both fields => FAIL. Earns: DIRTY_STATE_RECORDED.
 
 - **Falsifier:** **Unlisted worktree** — A matching worktree absent from the list falsifies completeness.
 

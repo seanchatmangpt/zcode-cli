@@ -29,7 +29,7 @@ per-requirement edges.
 
 ### WBS 1 — Coverage gate enforced
 
-- **Requirement:** **Coverage gate enforced** — mkdir -p /Users/sac/wt/zocel-runs && cd /Users/sac/dev/zcode-cli && bun test test/ocel-coverage.test.ts exits 0 over the real log "$LOG"; then delete one declared event type's lines from a copy /Users/sac/wt/zocel-runs/cov-copy.jsonocel and rerun against the copy: exit nonzero. Both outcomes required. Earns: COVERAGE_ENFORCED.
+- **Requirement:** **Coverage gate enforced** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && bun test test/ocel-coverage.test.ts exits 0 over the real log "$LOG"; then copy it with cp "$LOG" /Users/sac/wt/zocel-runs/cov-copy.jsonocel, delete one declared event type's lines from the copy, and rerun against the copy: exit nonzero. Both outcomes required. Earns: COVERAGE_ENFORCED.
 
 - **Falsifier:** **Synthetic log only** — An importer run over a hand-written log rather than a real run falsifies cross-validation.
 
@@ -45,7 +45,7 @@ per-requirement edges.
 
 ### WBS 2 — Conformance replay passes
 
-- **Requirement:** **Conformance replay passes** — cd /Users/sac/dev/zcode-cli && bun test test/ocel-conformance.test.ts exits 0 and replay of "$LOG" prints 'deviations: 0' (zero deviations). No real LOG => NOT_RUN. Earns: REPLAY_CONFORMANT.
+- **Requirement:** **Conformance replay passes** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && bun test test/ocel-conformance.test.ts exits 0 and replay of "$LOG" prints 'deviations: 0' (zero deviations). No real LOG => NOT_RUN. Earns: REPLAY_CONFORMANT.
 
 - **Falsifier:** **Synthetic log only** — An importer run over a hand-written log rather than a real run falsifies cross-validation.
 
@@ -61,7 +61,7 @@ per-requirement edges.
 
 ### WBS 3 — Importer accepts the log
 
-- **Requirement:** **Importer accepts the log** — LOG=$(ls -t /Users/sac/wt/zocel-runs/*/*.jsonocel | head -1); import "$LOG" with the ex4pm importer CLI (ls /Users/sac/ex4pm exists; /Users/sac/wasm4pm is absent, use it only if it appears); expected exit 0 and printed event and object counts equal to jq '.events|length' and jq '.objects|length' of "$LOG". No LOG or no importer => BLOCKED, not ALIVE. Earns: IMPORT_CROSS_VALIDATED.
+- **Requirement:** **Importer accepts the log** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/*/*.jsonocel | head -1) && import "$LOG" with the ex4pm importer CLI (ls /Users/sac/ex4pm exists; /Users/sac/wasm4pm is absent, use it only if it appears); expected exit 0 and printed event and object counts equal to jq '.events|length' and jq '.objects|length' of "$LOG". No LOG or no importer => BLOCKED, not ALIVE. Earns: IMPORT_CROSS_VALIDATED.
 
 - **Falsifier:** **Synthetic log only** — An importer run over a hand-written log rather than a real run falsifies cross-validation.
 

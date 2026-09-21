@@ -67,7 +67,7 @@ Authority requirement:
 
 Each requirement below is an acceptance criterion node in the canonical graph.
 
-- **Adapter ALIVE by observation** — cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) exits 0 on a real "$LOG"; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
+- **Adapter ALIVE by observation** — Run: mkdir -p /Users/sac/wt/zocel-runs && LOG=$(ls -t /Users/sac/wt/zocel-runs/001/*.jsonocel | head -1) && cd /Users/sac/dev/zcode-cli && the ZOCEL-001 verifier command (acc-zocel-001-4) over "$LOG" exits 0; adapter standing is ALIVE only if that exit is 0, otherwise NOT_RUN. Earns: ADAPTER_ALIVE.
 
 - **Second consumer** — python3 -c "import json,jsonschema,sys; jsonschema.validate(json.load(open(sys.argv[1])), json.load(open('/Users/sac/gymact/src/gymact/schemas/ocel20-schema.json')))" the xaas Ultracode loop-graph OCEL file (find /Users/sac/xaas -name '*.jsonocel' -o -name '*ocel*.json' | head -1); expected: exit 0, no output. No such file => BLOCKED. Earns: SECOND_CONSUMER_VALID.
 

@@ -65,7 +65,7 @@ Each requirement below is an acceptance criterion node in the canonical graph.
 
 - **Bundle strictness fails** — cd /Users/sac/dev/zcode-cli && ZCODE_REQUIRE_BUNDLE=1 bun test test/ocel-reuse.test.ts with the bundle output directory absent; echo rc=$?. Expected: rc nonzero, not skipped. Earns: STRICT_BUNDLE_GATE.
 
-- **Wired into release paths** — cd /Users/sac/dev/zcode-cli && grep -c ZCODE_REQUIRE_TOOLCHAINS package.json scripts/build-release.ts scripts/sync-runtime.ts and grep -c ZCODE_REQUIRE_BUNDLE on the same files: sum of each variable across the files reachable from sync:locked and release:build is >= 1, exit 0 from grep -q for both variables per script chain. Earns: GATE_WIRED.
+- **Wired into release paths** — Run: cd /Users/sac/dev/zcode-cli && grep -c ZCODE_REQUIRE_TOOLCHAINS package.json scripts/build-release.ts scripts/sync-runtime.ts; grep -c ZCODE_REQUIRE_BUNDLE package.json scripts/build-release.ts scripts/sync-runtime.ts. Expected (verified by grep -rn, excluding node_modules and docs/sjira): ZCODE_REQUIRE_TOOLCHAINS counts package.json:0 scripts/build-release.ts:1 (line 18, env of the test spawn) scripts/sync-runtime.ts:0, read in test/support/ocel.ts (line 98); ZCODE_REQUIRE_BUNDLE counts package.json:1 (sync:locked script) scripts/build-release.ts:0 scripts/sync-runtime.ts:0, read in test/sync-runtime-loop-gaps.test.ts (line 40). Gate wired iff build-release.ts contains TOOLCHAINS and package.json sync:locked contains BUNDLE: grep -q for each exits 0. Earns: GATE_WIRED.
 
 
 ## Falsifiers

@@ -14,7 +14,7 @@ and closes it with a receipt. Nothing here is proof of work done; a claim needs 
 docs/sjira/v26.9.21/
   README.md          this guide
   000-survey.md      observed-state receipt (read-only commands actually run)
-  work-orders.ttl    canonical source (present; 13 work orders, 19 dependency edges)
+  work-orders.ttl    canonical source (present; 13 work orders, 16 dependency edges)
   jira prd ard wbpr  generated tickets per order (never hand-edit)
   plan/*.hddl        HDDL plans per order (generated)
   execution/*.json   descriptors, frontier orders only (see HANDWRITTEN.md)
