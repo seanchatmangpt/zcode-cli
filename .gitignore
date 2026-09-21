@@ -8,3 +8,5 @@ bin/runtime-config.cjs
 .zcode/
 *.tgz
 .DS_Store
+__pycache__/
+*.pyc

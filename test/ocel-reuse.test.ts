@@ -82,7 +82,7 @@ describe.skipIf(!have("python3"))("py target from the same graph", () => {
 
 describe.skipIf(!have("ggen"))("src/generated is a fixed point of ggen sync run", () => {
   test("bun scripts/gen-ocel.ts --check", () => {
-    const run = spawnSync("bun", ["scripts/gen-ocel.ts", "--check"], { cwd: repoRoot, encoding: "utf8", timeout: 120000 });
+    const run = spawnSync("bun", ["scripts/gen-ocel.ts", "--check"], { cwd: repoRoot, encoding: "utf8", timeout: 120000, env: process.env });
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
   });
@@ -162,5 +162,16 @@ describe.skipIf(!have("ggen"))("mutation check: renaming one individual changes 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("ggen.toml pack paths are configurable", () => {
+  test("default is the main checkout packs dir; ZCODE_PACK_ROOT and per-pack overrides apply", async () => {
+    const { ggenToml, DEFAULT_PACK_ROOT } = await import("../scripts/gen-ocel.ts");
+    expect(DEFAULT_PACK_ROOT).toBe("/Users/sac/ggen-marketplace/packs");
+    expect(ggenToml("x.ttl", {})).toContain(`path = "${DEFAULT_PACK_ROOT}/process-intelligence-pack"`);
+    const t = ggenToml("x.ttl", { ZCODE_PACK_ROOT: "/r", ZCODE_PACK_ROOT_ST: "/Users/sac/wt/st-fsm-codegen/packs" });
+    expect(t).toContain('path = "/r/process-intelligence-pack"');
+    expect(t).toContain('path = "/Users/sac/wt/st-fsm-codegen/packs/state-transition-pack"');
   });
 });

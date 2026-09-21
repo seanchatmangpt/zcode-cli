@@ -9,7 +9,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const marketplaceWorktrees = process.env.ZCODE_PACK_ROOT ?? "/Users/sac/wt";
+// ZCODE_PACK_ROOT is a packs/ directory holding the four packs (default: main checkout).
+// ZCODE_PACK_ROOT_<KEY> (PI, ST, ES, SHACL) overrides one pack's parent packs/ dir, e.g. /Users/sac/wt/<branch>/packs.
+export const DEFAULT_PACK_ROOT = "/Users/sac/ggen-marketplace/packs";
+export function packDir(name: string, key: string, env: Record<string, string | undefined> = process.env): string {
+  return `${env[`ZCODE_PACK_ROOT_${key}`] ?? env.ZCODE_PACK_ROOT ?? DEFAULT_PACK_ROOT}/${name}`;
+}
 
 // pack output (relative to the ggen project) -> committed path (relative to src/generated)
 export const RELOCATION: Record<string, string> = {
@@ -23,7 +28,7 @@ export const RELOCATION: Record<string, string> = {
   "src/es/chain.py": "py/receipt.py"
 };
 
-export function ggenToml(ontologyFile: string): string {
+export function ggenToml(ontologyFile: string, env: Record<string, string | undefined> = process.env): string {
   return `[project]
 name = "zcode-ocel-consumer"
 
@@ -31,10 +36,10 @@ name = "zcode-ocel-consumer"
 source = "${ontologyFile}"
 
 [packs]
-"process-intelligence-pack" = { path = "${marketplaceWorktrees}/pi-ocel-tap/packs/process-intelligence-pack" }
-"state-transition-pack" = { path = "${marketplaceWorktrees}/st-fsm-codegen/packs/state-transition-pack" }
-"evidence-standing-pack" = { path = "${marketplaceWorktrees}/es-receipt-chain/packs/evidence-standing-pack" }
-"shacl-projection-pack" = { path = "${marketplaceWorktrees}/targets-shacl-zod/packs/shacl-projection-pack" }
+"process-intelligence-pack" = { path = "${packDir("process-intelligence-pack", "PI", env)}" }
+"state-transition-pack" = { path = "${packDir("state-transition-pack", "ST", env)}" }
+"evidence-standing-pack" = { path = "${packDir("evidence-standing-pack", "ES", env)}" }
+"shacl-projection-pack" = { path = "${packDir("shacl-projection-pack", "SHACL", env)}" }
 
 [templates]
 dir = "templates"
@@ -45,7 +50,7 @@ export function generateInto(work: string, ontologyPath = join(root, "ontology",
   mkdirSync(join(work, "templates"), { recursive: true });
   cpSync(ontologyPath, join(work, "zcode-loop.ttl"));
   writeFileSync(join(work, "ggen.toml"), ggenToml("zcode-loop.ttl"));
-  const run = spawnSync("ggen", ["sync", "run"], { cwd: work, encoding: "utf8" });
+  const run = spawnSync("ggen", ["sync", "run"], { cwd: work, encoding: "utf8", env: process.env });
   if (run.status !== 0) throw new Error(`ggen sync run failed (${run.status}): ${(run.stderr || run.stdout).slice(-2000)}`);
 }
 

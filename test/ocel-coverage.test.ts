@@ -56,3 +56,18 @@ describe.skipIf(runtimeMissing)("runtime drift gate (vendor/zcode.cjs)", () => {
     }
   });
 });
+
+describe("coverage gate has teeth", () => {
+  const unmapped = (rules: typeof RULES, source: string) =>
+    declared.filter((e) => e.source === source && !e.unmappedReason && !rules.some((r) => r.source === source && r.name === e.name)).map((e) => e.name);
+
+  test("the generated rules leave no mapped event uncovered", () => {
+    expect(unmapped(RULES, STREAM_SOURCE)).toEqual([]);
+  });
+
+  test("dropping the rules of one mapped event is reported as an unmapped event", () => {
+    const victim = declared.find((e) => e.source === STREAM_SOURCE && !e.unmappedReason)!.name;
+    const gutted = RULES.filter((r) => !(r.source === STREAM_SOURCE && r.name === victim));
+    expect(unmapped(gutted, STREAM_SOURCE)).toEqual([victim]);
+  });
+});
