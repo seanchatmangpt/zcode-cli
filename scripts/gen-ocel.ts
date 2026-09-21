@@ -16,12 +16,13 @@ export function packDir(name: string, key: string, env: Record<string, string | 
   return `${env[`ZCODE_PACK_ROOT_${key}`] ?? env.ZCODE_PACK_ROOT ?? DEFAULT_PACK_ROOT}/${name}`;
 }
 
+// The pack's zod target is deliberately not relocated: nothing imports it and zod is not a dependency
+// (ZOCEL-006); schemas.json is the validator the tests exercise.
 // pack output (relative to the ggen project) -> committed path (relative to src/generated)
 export const RELOCATION: Record<string, string> = {
   "src/pi_ocel_tap/ts/tap.ts": "ocel.ts",
   "src/st_fsm/fsm.ts": "loop.ts",
   "src/es/chain.ts": "receipt.ts",
-  "src/shacl_zod_schemas.ts": "zod/schemas.zod.ts",
   "schemas/shacl_projection.schema.json": "schemas.json",
   "src/pi_ocel_tap/py/tap.py": "py/ocel.py",
   "src/st_fsm/fsm.py": "py/loop.py",

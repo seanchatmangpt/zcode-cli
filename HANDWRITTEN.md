@@ -21,8 +21,17 @@ residue and why each row cannot be generated yet.
 - `vendor/zcode.cjs` is not patched. The runtime-internal hook that would see events before the wire
   projection stays out; the tap consumes the wire output instead, so it survives runtime updates as long
   as `test/ocel-generated.test.ts` (shape contract) and `test/ocel-coverage.test.ts` (enum drift) pass.
-- `src/generated/zod/schemas.zod.ts` is generated but excluded from `tsc` because `zod` is not a
-  dependency of this package (no new deps). Status: UNVERIFIED as typed code. `src/generated/schemas.json`
-  (JSON Schema 2020-12 from the same shapes) is the validator exercised by the tests.
+- The shacl pack's zod target is not committed (ZOCEL-006 decision): nothing in the repo imports it, `zod`
+  is not a dependency, and `src/generated/schemas.json` (JSON Schema 2020-12 from the same shapes) is the
+  validator the tests exercise. `scripts/gen-ocel.ts` omits it from RELOCATION.
 - The app-server subscription paths (`params.*`) are UNVERIFIED: no live subscription was captured; the
   test uses a synthetic envelope around real wire events.
+
+## Fresh-clone pack root
+
+`bun scripts/gen-ocel.ts` (and `--check`) needs the four marketplace packs (process-intelligence,
+state-transition, evidence-standing, shacl-projection) and the `ggen` binary. The default pack directory is
+`/Users/sac/ggen-marketplace/packs`. On any other machine or worktree set `ZCODE_PACK_ROOT=<packs dir>`;
+`ZCODE_PACK_ROOT_PI|ST|ES|SHACL` override a single pack's parent dir. Tested by
+`test/ocel-reuse.test.ts` (path resolution) and by running
+`ZCODE_PACK_ROOT=$HOME/ggen-marketplace/packs bun scripts/gen-ocel.ts --check` in a fresh clone (ZOCEL-006 receipt).
