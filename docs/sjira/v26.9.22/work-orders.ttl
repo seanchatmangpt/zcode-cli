@@ -1,0 +1,310 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for ZOCEL work orders v26.9.22: open the 2026-09-22 cycle with three
+# cross-repo OCEL orders (two on seanchatmangpt/xaas, one on seanchatmangpt/zcode-cli).
+# Vocabulary is the semantic-jira-pack ontology; class and individual definitions below
+# are the same sj: vocabulary as v26.9.21's canonical graph, declared once.
+# This graph is hand-authored canonical source (法面 input), not a projection; the
+# tickets under jira/ are hand-projections of it pending a semantic-jira-pack re-run.
+# Edit this file, never a ticket.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Action a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:ProjectionSpec a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+sj:source-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Source evidence" ;
+    dcterms:description "Exact canonical-source identity evidence." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+
+sj:projection-jira a sj:ProjectionSpec ;
+    rdfs:label "Jira/Markdown ticket" ;
+    dcterms:description "Deterministic jira/markdown ticket projection; authority is NONE." ;
+    sj:projectionType "jira" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-wbpr a sj:ProjectionSpec ;
+    rdfs:label "Working-backwards plan" ;
+    dcterms:description "Deterministic working-backwards plan projection; authority is NONE." ;
+    sj:projectionType "wbpr" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-prd a sj:ProjectionSpec ;
+    rdfs:label "Product requirements document" ;
+    dcterms:description "Deterministic product requirements document projection; authority is NONE." ;
+    sj:projectionType "prd" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-ard a sj:ProjectionSpec ;
+    rdfs:label "Architecture requirements document" ;
+    dcterms:description "Deterministic architecture requirements document projection; authority is NONE." ;
+    sj:projectionType "ard" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-vision a sj:ProjectionSpec ;
+    rdfs:label "Vision document" ;
+    dcterms:description "Deterministic vision document projection; authority is NONE." ;
+    sj:projectionType "vision" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-fond a sj:ProjectionSpec ;
+    rdfs:label "FOND planning projection" ;
+    dcterms:description "Deterministic fond planning projection projection; authority is NONE." ;
+    sj:projectionType "fond" ;
+    sj:extension "pddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-hddl a sj:ProjectionSpec ;
+    rdfs:label "HDDL task/method projection" ;
+    dcterms:description "Deterministic hddl task/method projection projection; authority is NONE." ;
+    sj:projectionType "hddl" ;
+    sj:extension "hddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-sa2a a sj:ProjectionSpec ;
+    rdfs:label "SA2A work/execution package" ;
+    dcterms:description "Deterministic sa2a work/execution package projection; authority is NONE." ;
+    sj:projectionType "sa2a" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-worker a sj:ProjectionSpec ;
+    rdfs:label "Bounded worker input envelope" ;
+    dcterms:description "Deterministic bounded worker input envelope projection; authority is NONE." ;
+    sj:projectionType "worker" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-verification a sj:ProjectionSpec ;
+    rdfs:label "Verification plan" ;
+    dcterms:description "Deterministic verification plan projection; authority is NONE." ;
+    sj:projectionType "verification" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-executive a sj:ProjectionSpec ;
+    rdfs:label "Executive status view" ;
+    dcterms:description "Deterministic executive status view projection; authority is NONE." ;
+    sj:projectionType "executive" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-machine a sj:ProjectionSpec ;
+    rdfs:label "Machine status view" ;
+    dcterms:description "Deterministic machine status view projection; authority is NONE." ;
+    sj:projectionType "machine" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-receipt a sj:ProjectionSpec ;
+    rdfs:label "Receipt requirement summary" ;
+    dcterms:description "Deterministic receipt requirement summary projection; authority is NONE." ;
+    sj:projectionType "receipt" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-replay a sj:ProjectionSpec ;
+    rdfs:label "Replay manifest" ;
+    dcterms:description "Deterministic replay manifest projection; authority is NONE." ;
+    sj:projectionType "replay" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+# ---- ZOCEL-014 ----
+sj:zocel-014
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-014: ocel-registry-bridge — wire the xaas OcelAshEmitter to the zcode-ocel-pack generated registry" ;
+    dcterms:identifier "ZOCEL-014" ;
+    dcterms:title "ocel-registry-bridge — wire the xaas OcelAshEmitter to the zcode-ocel-pack generated registry" ;
+    dcterms:description "Successor of xaas SJ-002, standing UNSUPPORTED today (capability absent). Xaas.Telemetry.OcelAshEmitter (lib/xaas/telemetry/ocel_ash_emitter.ex) emits OCEL events without any binding to the zcode-ocel-pack generated registry (src/generated/ocel.ts event table, verifyChain, src/generated/schemas.json in seanchatmangpt/zcode-cli). Bridge the emitter to that generated registry so an xaas-emitted event validates differentially against the zcode-generated schema. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
+    dcterms:issued "2026-09-22"^^xsd:date ;
+    sj:repository "seanchatmangpt/xaas" ;
+    sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
+    sj:subject "xaas:ocel-registry-bridge" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.22:ZOCEL-014" ;
+    sj:pathScope "lib", "test" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zocel-014 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zocel-014-1, sj:acc-zocel-014-2, sj:acc-zocel-014-3 ;
+    sj:falsifier sj:fal-zocel-014-1, sj:fal-zocel-014-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-014 ;
+    sj:nextCheckpoint sj:cp-zocel-014 .
+
+sj:court-zocel-014 a sj:Court ;
+    rdfs:label "ZOCEL-014 exact-subject court" ;
+    dcterms:description "Independent court for ocel-registry-bridge: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-014-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Emitter emits a real event" ;
+    dcterms:description "Drive xaas to emit one OCEL event through Xaas.Telemetry.OcelAshEmitter and capture the emitted event document to a file under /Users/sac/wt/zocel-runs/014/. Expected: exit 0 and a nonempty capture (test -s). No capture => NOT_RUN, never ALIVE. Earns: EMITTER_OBSERVED." .
+sj:acc-zocel-014-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Differential validation against the zcode-generated registry" ;
+    dcterms:description "Run the zcode-ocel-pack generated validation (EVENT_TYPES/verifyChain from src/generated/ocel.ts and src/generated/schemas.json of seanchatmangpt/zcode-cli, or the schema artifact scripts/gen-ocel.ts emits) over the captured xaas-emitted event: expected exit 0. Then copy the capture, rename one field or event type to an undeclared value, and rerun: expected nonzero exit. Both outcomes required. Earns: DIFFERENTIAL_PASS." .
+sj:acc-zocel-014-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Bridge binds registry identity" ;
+    dcterms:description "The xaas bridge consumes the generated registry artifact pinned by path and sha256 digest recorded in the ZOCEL-014 receipt, and cd /Users/sac/dev/zcode-cli && bun scripts/gen-ocel.ts --check exits 0 with no STALE line (registry source and projection agree). Earns: REGISTRY_IDENTITY_BOUND." .
+
+sj:fal-zocel-014-1 a sj:Falsifier ;
+    rdfs:label "Schema-insensitive bridge" ;
+    dcterms:description "Validation exiting 0 on the mutated capture refutes the differential test and the bridge claim." .
+sj:fal-zocel-014-2 a sj:Falsifier ;
+    rdfs:label "Hand-copied schema" ;
+    dcterms:description "A bridge validated against a hand-copied or re-typed schema rather than the generated artifact refutes source binding; UNSUPPORTED remains the standing of record." .
+
+sj:cp-zocel-014 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-014 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-014 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-015 ----
+sj:zocel-015
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-015: execution-mcp-audit — audit coverage for /internal-api/execution/mcp tool calls" ;
+    dcterms:identifier "ZOCEL-015" ;
+    dcterms:title "execution-mcp-audit — apply AuditMcpToolCall (or equivalent) to /internal-api/execution/mcp tool calls" ;
+    dcterms:description "Audit asymmetry in seanchatmangpt/xaas: router.ex pipes :audit_mcp_tool_call (XaasWeb.Plugs.AuditMcpToolCall) through the /mcp scope only; the execution fabric route post(\"/execution/mcp\", ExecutionFabricController, :mcp) (full path /internal-api/execution/mcp) is unaudited, so execution-plane tool calls leave no audit row while /mcp tool calls do. Apply the same audit coverage (AuditMcpToolCall or equivalent) to the execution-mcp route. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
+    dcterms:issued "2026-09-22"^^xsd:date ;
+    sj:repository "seanchatmangpt/xaas" ;
+    sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
+    sj:subject "xaas:execution-mcp-audit" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.22:ZOCEL-015" ;
+    sj:pathScope "lib/xaas_web", "test" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-015 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zocel-015-1, sj:acc-zocel-015-2, sj:acc-zocel-015-3 ;
+    sj:falsifier sj:fal-zocel-015-1, sj:fal-zocel-015-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-015 ;
+    sj:nextCheckpoint sj:cp-zocel-015 .
+
+sj:court-zocel-015 a sj:Court ;
+    rdfs:label "ZOCEL-015 exact-subject court" ;
+    dcterms:description "Independent court for execution-mcp-audit: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-015-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Pipeline wired on the execution-mcp route" ;
+    dcterms:description "In /Users/sac/xaas (worktree at the exact head), grep -n 'audit_mcp_tool_call' lib/xaas_web/router.ex lists the pipeline piped through the route serving post(\"/execution/mcp\", ExecutionFabricController, :mcp), matching the /mcp scope's coverage. Absent => FAIL. Earns: AUDIT_WIRED." .
+sj:acc-zocel-015-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Real execution-mcp call produces an audit row" ;
+    dcterms:description "Run a real authenticated POST to /internal-api/execution/mcp against the running endpoint (or an integration test driving the endpoint stack), then query the audit store AuditMcpToolCall writes: exactly one audit row exists for that call, observed by an independent read (test -n on the row id or a nonempty query result). No row => FAIL. Earns: AUDIT_ROW_OBSERVED." .
+sj:acc-zocel-015-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Test is sensitive to the plug" ;
+    dcterms:description "With the new audit test in place, temporarily remove the plug from the execution-mcp route and rerun: the test exits nonzero; restore the plug and rerun: exit 0. Both outcomes required (anti-vacuity). Earns: TEST_SENSITIVE." .
+
+sj:fal-zocel-015-1 a sj:Falsifier ;
+    rdfs:label "Synthetic row" ;
+    dcterms:description "An audit row present without a real execution-mcp call (fixture or seed row) falsifies the observation claim." .
+sj:fal-zocel-015-2 a sj:Falsifier ;
+    rdfs:label "Asymmetry persists" ;
+    dcterms:description "A real /internal-api/execution/mcp call leaving no audit row falsifies the closure of the audit asymmetry." .
+
+sj:cp-zocel-015 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-015 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-015 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+# ---- ZOCEL-016 ----
+sj:zocel-016
+    a sj:WorkOrder ;
+    rdfs:label "ZOCEL-016: ocel-verify-ci — verify OCEL receipts on every test boundary, not ad hoc" ;
+    dcterms:identifier "ZOCEL-016" ;
+    dcterms:title "ocel-verify-ci — wire scripts/ocel-verify.ts into package.json scripts / CI" ;
+    dcterms:description "scripts/ocel-verify.ts in seanchatmangpt/zcode-cli verifies a recorded .jsonocel plus sibling .receipt.json (generated verifier, table and chain; prints chain-verified and deviations: 0) but is invoked only ad hoc: it appears in no package.json script and no .github/workflows workflow at base e0a77911b804040d5bd3412a86bf94957ad5a2c6. Wire it into package.json scripts / CI so OCEL receipts are verified on every test boundary. Checked-in fixtures exist at test/fixtures/zcode-ocel/ (turn-list.jsonocel, app-server-list.jsonocel, each with a sibling .receipt.json). Standing stays UNKNOWN until a court receipt exists." ;
+    dcterms:issued "2026-09-22"^^xsd:date ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
+    sj:subject "zcode-cli:ocel-verify-ci" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.22:ZOCEL-016" ;
+    sj:pathScope "package.json", "scripts", "test/fixtures/zcode-ocel", ".github/workflows" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zocel-016 ;
+    sj:requiresEvidence sj:local-execution-evidence, sj:receipt-evidence, sj:source-evidence ;
+    sj:acceptance sj:acc-zocel-016-1, sj:acc-zocel-016-2, sj:acc-zocel-016-3 ;
+    sj:falsifier sj:fal-zocel-016-1, sj:fal-zocel-016-2 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zocel-016 ;
+    sj:nextCheckpoint sj:cp-zocel-016 .
+
+sj:court-zocel-016 a sj:Court ;
+    rdfs:label "ZOCEL-016 exact-subject court" ;
+    dcterms:description "Independent court for ocel-verify-ci: runs the acceptance commands at an exact head in the worktree scope and binds candidateSha, subjectSha, tool versions and receipt identity." .
+
+sj:acc-zocel-016-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Baseline verify is green" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel; echo rc=$?. Expected: rc=0, output contains chain-verified and deviations: 0. Nonzero at base => the subject is BLOCKED before wiring. Earns: BASELINE_GREEN." .
+sj:acc-zocel-016-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Wired into a named script and the test boundary" ;
+    dcterms:description "package.json exposes a script (e.g. ocel:verify) that runs scripts/ocel-verify.ts over the checked-in fixtures, and that script is reachable from the test boundary (composed into test:all or test:unit, or invoked by .github/workflows/ci.yml). grep -c 'ocel-verify' package.json prints >= 1 and the boundary reference is present. Absent => FAIL. Earns: GATE_WIRED." .
+sj:acc-zocel-016-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Mutated fixture fails the boundary" ;
+    dcterms:description "mkdir -p /Users/sac/wt/zocel-runs && cp test/fixtures/zcode-ocel/turn-list.jsonocel /Users/sac/wt/zocel-runs/tamper.jsonocel and printf '\\x00' | dd of=/Users/sac/wt/zocel-runs/tamper.jsonocel bs=1 seek=10 conv=notrunc, then run the wired script over the mutated copy: expected nonzero exit; the same script over the untouched fixture exits 0. Both outcomes required. Earns: MUTATION_FAILS_BOUNDARY." .
+
+sj:fal-zocel-016-1 a sj:Falsifier ;
+    rdfs:label "Green on mutation" ;
+    dcterms:description "The wired verification exiting 0 on a byte-flipped fixture refutes the gate and its coverage claim." .
+sj:fal-zocel-016-2 a sj:Falsifier ;
+    rdfs:label "Ad-hoc only" ;
+    dcterms:description "ocel-verify.ts reachable only by manual invocation (absent from package.json scripts and CI workflows) refutes the wiring claim." .
+
+sj:cp-zocel-016 a sj:Checkpoint ;
+    rdfs:label "ZOCEL-016 checkpoint" ;
+    dcterms:description "Closed when the ZOCEL-016 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zocel-014 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-014" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-014 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+sj:run-court-zocel-015 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-015" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-015 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+sj:run-court-zocel-016 a sj:Action ;
+    rdfs:label "Next action for ZOCEL-016" ;
+    dcterms:description "Run the acceptance commands of ZOCEL-016 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
