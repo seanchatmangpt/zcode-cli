@@ -288,7 +288,7 @@ test(
   240_000
 );
 
-test("runConstruct pins --mode yolo on the construct spawn argv", async () => {
+test("runConstruct pins --mode yolo, stream-json output, and lease identity on the construct spawn", async () => {
   const { runConstruct } = await import("../src/gall-work.ts");
   const { EventEmitter } = await import("node:events");
   const recorded: { argv: string[]; env: Record<string, unknown> } = { argv: [], env: {} };
@@ -309,7 +309,18 @@ test("runConstruct pins --mode yolo on the construct spawn argv", async () => {
   })();
   const outcome = await runConstruct(
     {
-      workerId, epochId, cwd: "/tmp", json: true, heartbeatSeconds: 15
+      workerId, epochId, cwd: "/tmp", json: true, heartbeatSeconds: 15,
+      descriptor: {
+        schema: "gall.work-lease/1",
+        work_order_iri: "https://w3id.org/chatman/sjira/v26.9.22#ZOCEL-TEST",
+        checkpoint_iri: "https://w3id.org/chatman/aps#checkpoint-test",
+        graph_digest: `sha256:${"b".repeat(64)}`,
+        repository_identity: "seanchatmangpt/zcode-cli",
+        base_sha: "a".repeat(40),
+        epoch_id: epochId,
+        worker_id: workerId,
+        worktree: "/tmp"
+      }
     },
     "prompt",
     async () => {},
@@ -318,8 +329,13 @@ test("runConstruct pins --mode yolo on the construct spawn argv", async () => {
   expect(outcome.exitCode).toBe(0);
   expect(recorded.argv[0]?.endsWith("vendor/zcode.cjs")).toBe(true);
   expect(recorded.argv.slice(1, 5)).toEqual(["--prompt", "prompt", "--cwd", "/tmp"]);
-  expect(recorded.argv).toContain("--json");
+  expect(recorded.argv).toContain("--output-format");
+  expect(recorded.argv[recorded.argv.indexOf("--output-format") + 1]).toBe("stream-json");
   expect(recorded.argv.indexOf("--mode")).toBeGreaterThanOrEqual(0);
   expect(recorded.argv[recorded.argv.indexOf("--mode") + 1]).toBe("yolo");
   expect(recorded.env.XAAS_WORKER).toBe("1");
+  expect(recorded.env.XAAS_LEASE_CWD).toBe("/tmp");
+  expect(recorded.env.XAAS_WORK_ORDER_IRI).toBe("https://w3id.org/chatman/sjira/v26.9.22#ZOCEL-TEST");
+  expect(recorded.env.XAAS_EPOCH_ID).toBe(epochId);
+  expect(recorded.env.XAAS_BASE_SHA).toBe("a".repeat(40));
 });

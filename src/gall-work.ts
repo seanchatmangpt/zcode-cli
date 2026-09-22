@@ -37,6 +37,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { OcelRecorder, STREAM_SOURCE, leaseIdentityFromEnv, ocelDirectory, ocelEnabled } from "./ocel-tap.ts";
 import {
   capacityFromBody,
   capacityFromStatus,
@@ -461,6 +462,8 @@ export interface ConstructOutcome {
   outputTail: string;
   durationMs: number;
   spawnError?: string;
+  /** Receipt sealed by the OCEL tap when ZCODE_OCEL=1 (ZCODE-26922-06). */
+  ocelReceiptPath?: string;
 }
 
 const constructOutputTailBytes = 4096;
@@ -489,18 +492,50 @@ export async function runConstruct(
   const node = process.env.ZCODE_NODE?.trim() || process.execPath;
   const started = Date.now();
 
+  // OCEL tap (ZCODE-26922-06): when ZCODE_OCEL=1, the construct turn feeds
+  // the ontology-generated tap and seals a receipt bound to the exact
+  // subject and lease identity. The turn emits stream-json -- the surface
+  // the tap consumes -- instead of the bare --json result envelope.
+  const ocel = ocelEnabled(process.env)
+    ? new OcelRecorder(
+        STREAM_SOURCE,
+        ocelDirectory(process.env),
+        leaseIdentityFromEnv({
+          XAAS_WORKER: "1",
+          XAAS_LEASE_CWD: request.cwd,
+          XAAS_EPOCH_ID: request.epochId,
+          ...(request.descriptor
+            ? { XAAS_WORK_ORDER_IRI: request.descriptor.work_order_iri, XAAS_BASE_SHA: request.descriptor.base_sha }
+            : {})
+        })
+      )
+    : undefined;
+
   return await new Promise<ConstructOutcome>((resolveOutcome) => {
     let child: ChildProcess;
     try {
-      child = spawnImpl(node, [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--json", ...permissionArgs], {
-        cwd: packageRoot,
-        env: {
-          ...process.env,
-          XAAS_WORKER: "1",
-          XAAS_LEASE_CWD: request.cwd
-        },
-        stdio: ["ignore", "pipe", "pipe"]
-      });
+      child = spawnImpl(
+        node,
+        [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--output-format", "stream-json", ...permissionArgs],
+        {
+          cwd: packageRoot,
+          env: {
+            ...process.env,
+            XAAS_WORKER: "1",
+            XAAS_LEASE_CWD: request.cwd,
+            // Lease identity for the OCEL tap (ZCODE-26922-06): receipts sealed
+            // for this turn carry the exact work order, epoch and base subject.
+            ...(request.descriptor
+              ? {
+                  XAAS_WORK_ORDER_IRI: request.descriptor.work_order_iri,
+                  XAAS_BASE_SHA: request.descriptor.base_sha
+                }
+              : {}),
+            XAAS_EPOCH_ID: request.epochId
+          },
+          stdio: ["ignore", "pipe", "pipe"]
+        }
+      );
     } catch (error) {
       resolveOutcome({
         exitCode: null,
@@ -517,6 +552,7 @@ export async function runConstruct(
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
       process.stdout.write(text);
       tail = (tail + text).slice(-constructOutputTailBytes);
+      ocel?.write(text);
     };
     child.stdout?.on("data", absorb);
     child.stderr?.on("data", absorb);
@@ -530,7 +566,17 @@ export async function runConstruct(
     const settle = (): void => {
       if (!exit) return;
       clearInterval(heartbeat);
-      resolveOutcome({ ...exit, outputTail: tail, durationMs: Date.now() - started });
+      let ocelReceiptPath: string | undefined;
+      if (ocel) {
+        try {
+          ocelReceiptPath = ocel.finish().receiptPath;
+        } catch (error) {
+          // A failed tap must not fail the leased turn; the close evidence
+          // simply carries no receipt path.
+          console.error(`gall-work: ocel tap failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      resolveOutcome({ ...exit, outputTail: tail, durationMs: Date.now() - started, ocelReceiptPath });
     };
 
     child.once("error", (error) => {
@@ -808,6 +854,7 @@ export async function runGallWork(
       duration_ms: construct.durationMs,
       output_tail: construct.outputTail,
       heartbeat_seconds: request.heartbeatSeconds,
+      ...(construct.ocelReceiptPath ? { ocel_receipt: construct.ocelReceiptPath } : {}),
       ...semanticEvidence
     }
   });
