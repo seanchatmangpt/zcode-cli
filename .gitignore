@@ -10,3 +10,7 @@ bin/runtime-config.cjs
 .DS_Store
 __pycache__/
 *.pyc
+
+# Machine-local: contains credentials (Bearer tokens) — never commit
+.mcp.json
+setting.json
