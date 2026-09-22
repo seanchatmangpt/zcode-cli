@@ -1,0 +1,291 @@
+{
+ "schema": "zcode.ocel-golden-chain/1",
+ "vectors": [
+  {
+   "id": "pending-outcome-seal",
+   "ops": [
+    [
+     "pending",
+     "e1",
+     "s",
+     "run"
+    ],
+    [
+     "outcome",
+     "e2",
+     "alive",
+     "s",
+     "run"
+    ],
+    [
+     "seal",
+     "e3",
+     "alive",
+     "s"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "0d11fdc82f45b68996b58fe0b3f1b765138aac762e593faff86cd6dd0300bbf0",
+     "3056916a4d5763e0874060c7a20bb6388d31561154806286413ce8ec6fd006bb",
+     "daf4a99265bb85f83697bf4573697ce068d2a164e83ca787d7dbe2458d18edb9"
+    ],
+    "verify": true,
+    "unpaired": [],
+    "error": null
+   }
+  },
+  {
+   "id": "two-open-pending-fifo",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s",
+     "build"
+    ],
+    [
+     "pending",
+     "b",
+     "s",
+     "build"
+    ],
+    [
+     "outcome",
+     "c",
+     "alive",
+     "s",
+     "build"
+    ],
+    [
+     "outcome",
+     "d",
+     "blocked",
+     "s",
+     "build"
+    ],
+    [
+     "seal",
+     "z",
+     "partial_alive",
+     "s"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "435df931b0915b021ec80275538c6711a129a2065359f5945ba4a7e9aec165a2",
+     "672513be995051f6c2b8980a9efe27af1c842bb8587aa6170b020ebfdcf19f2a",
+     "ef9d900a8acc7f6b2989083ee6accd54bddf0ed4da059bd22ec78bbc000108ee",
+     "56c577d31dc7e14779f2650662ab1246c57dbc7ae2030356c16e3b45425d07f3",
+     "885b981b87da4488e8bbabadd41f26cba88397061eb464def6699ca97e9abedd"
+    ],
+    "verify": true,
+    "unpaired": [],
+    "error": null
+   }
+  },
+  {
+   "id": "interleaved-actions",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s",
+     "x"
+    ],
+    [
+     "pending",
+     "b",
+     "s",
+     "y"
+    ],
+    [
+     "outcome",
+     "c",
+     "unsupported",
+     "s",
+     "y"
+    ],
+    [
+     "outcome",
+     "d",
+     "build_broken",
+     "s",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "0cd27cfaf8471fb893c88eb518c2cdba6ebdb8207b6839f1ac58f51926beab6f",
+     "4e4248c75e6c7464a1bbd6542e2446c37d704eee8bf3728758059697003a402c",
+     "9a00c659becf3d6d630412c49016fc645566aa7d7bcb848b758b41729aba0002",
+     "0e230dbd724f1391347989e59a1f0bf7a655af4d9d04801dcaad9fd910fe559f"
+    ],
+    "verify": true,
+    "unpaired": [],
+    "error": null
+   }
+  },
+  {
+   "id": "open-pending-unsealed",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "0cd27cfaf8471fb893c88eb518c2cdba6ebdb8207b6839f1ac58f51926beab6f"
+    ],
+    "verify": true,
+    "unpaired": [
+     "a"
+    ],
+    "error": null
+   }
+  },
+  {
+   "id": "error-outcome-without-pending",
+   "ops": [
+    [
+     "outcome",
+     "a",
+     "alive",
+     "s",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [],
+    "verify": true,
+    "unpaired": [],
+    "error": "outcome without pending"
+   }
+  },
+  {
+   "id": "error-seal-with-unpaired",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s",
+     "x"
+    ],
+    [
+     "seal",
+     "b",
+     "alive",
+     "s"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "0cd27cfaf8471fb893c88eb518c2cdba6ebdb8207b6839f1ac58f51926beab6f"
+    ],
+    "verify": true,
+    "unpaired": [
+     "a"
+    ],
+    "error": "seal with unpaired pending"
+   }
+  },
+  {
+   "id": "error-append-after-seal",
+   "ops": [
+    [
+     "seal",
+     "a",
+     "unknown",
+     "s"
+    ],
+    [
+     "pending",
+     "b",
+     "s",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "adbdc98b2536994f8b996f1e263ff86633bce4f466a2ccd516d9c770c7f4ff34"
+    ],
+    "verify": true,
+    "unpaired": [],
+    "error": "chain sealed"
+   }
+  },
+  {
+   "id": "error-double-seal",
+   "ops": [
+    [
+     "seal",
+     "a",
+     "unknown",
+     "s"
+    ],
+    [
+     "seal",
+     "b",
+     "unknown",
+     "s"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "adbdc98b2536994f8b996f1e263ff86633bce4f466a2ccd516d9c770c7f4ff34"
+    ],
+    "verify": true,
+    "unpaired": [],
+    "error": "chain already sealed"
+   }
+  },
+  {
+   "id": "error-bad-standing",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s",
+     "x"
+    ],
+    [
+     "outcome",
+     "b",
+     "great",
+     "s",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [
+     "0cd27cfaf8471fb893c88eb518c2cdba6ebdb8207b6839f1ac58f51926beab6f"
+    ],
+    "verify": true,
+    "unpaired": [
+     "a"
+    ],
+    "error": "bad phase/standing"
+   }
+  },
+  {
+   "id": "error-lf-in-field",
+   "ops": [
+    [
+     "pending",
+     "a",
+     "s\nt",
+     "x"
+    ]
+   ],
+   "expected": {
+    "digests": [],
+    "verify": true,
+    "unpaired": [],
+    "error": "LF in field subject"
+   }
+  }
+ ]
+}

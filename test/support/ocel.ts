@@ -102,3 +102,10 @@ export function toolchain(name: string, present: boolean): boolean {
   if (!present && requireToolchains) throw new Error(`ZCODE_REQUIRE_TOOLCHAINS=1 but toolchain missing: ${name}`);
   return present;
 }
+
+export const requireBundle = process.env.ZCODE_REQUIRE_BUNDLE === "1";
+
+/** Under ZCODE_REQUIRE_BUNDLE=1 an absent vendor/zcode.cjs is a failure, never a skip. */
+export function assertBundleWhenRequired(): void {
+  if (requireBundle && runtimeMissing) throw new Error(`ZCODE_REQUIRE_BUNDLE=1 but bundle missing at ${join(repoRoot, "vendor", "zcode.cjs")}; run bun run sync:locked`);
+}

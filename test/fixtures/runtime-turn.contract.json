@@ -1,0 +1,689 @@
+{
+ "expectedTypes": [
+  "session.titleUpdated",
+  "turn.started",
+  "session.updated",
+  "session.updated",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "model.streaming",
+  "session.updated",
+  "session.updated",
+  "turn.completed",
+  "result"
+ ],
+ "provenance": "real zcode stream-json turn captured 2026-09 (copied from test/fixtures/zcode-stream-json/turn-simple.ndjson, prompt 'reply with the single word ok')",
+ "records": [
+  {
+   "eventId": "5101e1d4-49ae-4fd3-af99-32bd2a2483f1",
+   "payload": {
+    "previousTitle": "",
+    "source": "first_input",
+    "title": "reply with the single word ok"
+   },
+   "seq": 1,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019649926,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "session.titleUpdated"
+  },
+  {
+   "eventId": "2d05ef3a-1e40-4a47-9e6f-5fee71d76f72",
+   "payload": {
+    "foregroundExecutionId": "runtime_command_1",
+    "input": "reply with the single word ok",
+    "messageId": "msg_mubnhdhj_1c79d69f-4949-4e9e-8867-23febe51a68c",
+    "queryId": "query_ac6bff34-3d50-4007-b08c-2c0db432523f",
+    "turnNumber": 0
+   },
+   "seq": 2,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019649927,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "turn.started"
+  },
+  {
+   "eventId": "79a976b4-ef11-424a-aeaa-2cc23574c1f7",
+   "payload": {
+    "iteration": 0,
+    "messageCount": 6,
+    "modelId": "glm-5.3",
+    "providerId": "zai",
+    "toolCount": 34
+   },
+   "seq": 3,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019652477,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "session.updated"
+  },
+  {
+   "eventId": "1c07b72b-d7bb-450c-8b6c-30a701f0c0e8",
+   "payload": {
+    "_meta": {
+     "zcode": {
+      "apiRetry": null
+     }
+    },
+    "attempt": 1,
+    "baseURL": "https://api.z.ai/api/anthropic",
+    "maxAttempts": 6,
+    "modelCall": {
+     "actorKind": "main",
+     "logicalCallId": "281c624e-dce1-4a37-a3f4-86efa24e2de1",
+     "operation": "agent_step",
+     "operationId": "e7d57d71-b9fc-46",
+     "reasoning": {
+      "capability": "unknown",
+      "effectiveControl": "unknown",
+      "effectiveLevel": "unknown",
+      "effectiveState": "unknown",
+      "requestedControl": "provider_default",
+      "requestedLevel": "max",
+      "requestedState": "provider_default"
+     },
+     "stepIndex": 0
+    },
+    "modelId": "glm-5.3",
+    "modelRequestSessionType": "main",
+    "parentSpanId": "a0372deb-d950-40",
+    "providerId": "zai",
+    "providerKind": "anthropic",
+    "queryId": "query_ac6bff34-3d50-4007-b08c-2c0db432523f",
+    "querySource": "main_turn",
+    "requestHeaderCount": 16,
+    "requestHeaders": {
+     "http-referer": "https://zcode.z.ai",
+     "user-agent": "ZCode/0.16.5",
+     "x-client-language": "en-US",
+     "x-client-timezone": "America/Los_Angeles",
+     "x-os-category": "macos",
+     "x-os-version": "25.2.0",
+     "x-platform": "darwin-arm64",
+     "x-query-id": "ac6bff34-3d50-4007-b08c-2c0db432523f",
+     "x-release-channel": "production",
+     "x-request-id": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4",
+     "x-session-id": "ac415adb-52b9-4786-b8cb-6112c37fd622",
+     "x-title": "Z Code@cli",
+     "x-zcode-agent": "glm",
+     "x-zcode-app-version": "0.16.5",
+     "x-zcode-session-type": "main",
+     "x-zcode-trace-id": "7f121b23-2242-4b13-a0a4-497fca2c3bb4"
+    },
+    "requestId": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4",
+    "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+    "spanId": "e7d57d71-b9fc-46",
+    "timestamp": "2026-09-21T19:40:52.482Z",
+    "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+    "transport": "sse",
+    "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+    "type": "model_request_started"
+   },
+   "seq": 4,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019652483,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "session.updated"
+  },
+  {
+   "eventId": "74284305-3f7d-4344-baea-e88040fc5b76",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "start"
+   },
+   "seq": 5,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655717,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "a13f0935-0e28-4947-91df-c6f80829b80f",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "reasoning_start"
+   },
+   "seq": 6,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655718,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "b4cc0376-803b-416c-85f0-4c0a09b1709b",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "The",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 7,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655718,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "11123015-8513-4182-8794-d40cf2190bde",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " user",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 8,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655719,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "178282cf-4905-48f6-93e0-0241f5485fd7",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " wants",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 9,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655719,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "0d8fea35-d77c-4dc1-89e5-94c676c7a178",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " me",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 10,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655719,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "9d1e420b-86e2-4152-8a53-6cc1963f7e33",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " to",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 11,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655719,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "a1338080-5aa3-4d17-b3ee-f63cd844f6b7",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " reply",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 12,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655720,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "4df4df3a-0592-4cdd-81a3-d88b7d3639a7",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " with",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 13,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655720,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "2203d6a7-a2b8-40d5-87e4-5b41ed99da71",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " the",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 14,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655720,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "db074f95-b09a-4b54-85b0-047f05952a37",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " single",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 15,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655721,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "2b599d74-b2c2-43a9-b222-703907477de5",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " word",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 16,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655721,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "90ea3e71-257e-4037-9eab-faa86ddb6c4b",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": " \"",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 17,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655721,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "9f5d5a57-7af7-4eda-9c50-45e137fe702a",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "ok",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 18,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "6ef04a35-8350-4ed6-b49f-6ee1cca4b580",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "\".",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 19,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "edd58607-684e-491e-b762-9a4786dbf457",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "reasoning_delta"
+   },
+   "seq": 20,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "d2a679f1-4915-4648-a1e7-2e183d2994c2",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "reasoning_end"
+   },
+   "seq": 21,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "69cd5d2f-9b44-4325-af13-c7d3f8962d3d",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "text_start"
+   },
+   "seq": 22,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "51bdd1a1-dfbf-4fe5-93f6-ae310f306b67",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "ok",
+    "done": false,
+    "kind": "text_delta"
+   },
+   "seq": 23,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "848f5e43-b8ad-460a-abeb-d857eb084b90",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": false,
+    "kind": "text_end"
+   },
+   "seq": 24,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655722,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "92052555-ac20-477f-8059-34a97b532799",
+   "payload": {
+    "assistantMessageId": "msg_mubnhfgb_88dabfa0-da88-4bca-9a1b-35b9b5620f57",
+    "delta": "",
+    "done": true,
+    "kind": "finish"
+   },
+   "seq": 25,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655725,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "model.streaming"
+  },
+  {
+   "eventId": "3316d897-2a0d-41fe-8089-c219d9416798",
+   "payload": {
+    "_meta": {
+     "zcode": {
+      "apiRetry": null
+     }
+    },
+    "attempt": 1,
+    "baseURL": "https://api.z.ai/api/anthropic",
+    "durationMs": 3244,
+    "finishReason": "stop",
+    "maxAttempts": 6,
+    "modelCall": {
+     "actorKind": "main",
+     "logicalCallId": "281c624e-dce1-4a37-a3f4-86efa24e2de1",
+     "operation": "agent_step",
+     "operationId": "e7d57d71-b9fc-46",
+     "reasoning": {
+      "capability": "unknown",
+      "effectiveControl": "unknown",
+      "effectiveLevel": "unknown",
+      "effectiveState": "unknown",
+      "requestedControl": "provider_default",
+      "requestedLevel": "max",
+      "requestedState": "provider_default"
+     },
+     "stepIndex": 0
+    },
+    "modelId": "glm-5.3",
+    "modelRequestSessionType": "main",
+    "parentSpanId": "a0372deb-d950-40",
+    "providerId": "zai",
+    "providerKind": "anthropic",
+    "providerRequestId": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4",
+    "queryId": "query_ac6bff34-3d50-4007-b08c-2c0db432523f",
+    "querySource": "main_turn",
+    "requestHeaderCount": 16,
+    "requestHeaders": {
+     "http-referer": "https://zcode.z.ai",
+     "user-agent": "ZCode/0.16.5",
+     "x-client-language": "en-US",
+     "x-client-timezone": "America/Los_Angeles",
+     "x-os-category": "macos",
+     "x-os-version": "25.2.0",
+     "x-platform": "darwin-arm64",
+     "x-query-id": "ac6bff34-3d50-4007-b08c-2c0db432523f",
+     "x-release-channel": "production",
+     "x-request-id": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4",
+     "x-session-id": "ac415adb-52b9-4786-b8cb-6112c37fd622",
+     "x-title": "Z Code@cli",
+     "x-zcode-agent": "glm",
+     "x-zcode-app-version": "0.16.5",
+     "x-zcode-session-type": "main",
+     "x-zcode-trace-id": "7f121b23-2242-4b13-a0a4-497fca2c3bb4"
+    },
+    "requestId": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4",
+    "responseHeaderCount": 12,
+    "responseHeaders": {
+     "access-control-allow-headers": "*",
+     "access-control-allow-origin": "*",
+     "alt-svc": "h3=\":443\"; ma=3600",
+     "cache-control": "no-cache",
+     "content-type": "text/event-stream; charset=utf-8",
+     "date": "Mon, 21 Sep 2026 19:40:55 GMT",
+     "ga-traceid": "8e987db58b378154eaa2d278b51739c2",
+     "set-cookie": "[redacted]",
+     "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Origin",
+     "x-log-id": "2026092203405428d005ee62d34a02",
+     "x-process-time": "0.507647",
+     "x-request-id": "ddd8ef9c-b0d6-4441-ae58-b1ff81a2c0b4"
+    },
+    "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+    "spanId": "e7d57d71-b9fc-46",
+    "streamOutputCommitted": true,
+    "streamStallCount": 0,
+    "timeToFirstContentMs": 3236,
+    "timeToFirstProviderEventMs": 7,
+    "timeToFirstTextMs": 3240,
+    "timestamp": "2026-09-21T19:40:55.726Z",
+    "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+    "transport": "sse",
+    "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+    "type": "model_request_completed",
+    "usage": {
+     "cacheReadTokens": 11456,
+     "cacheWriteTokens": 0,
+     "inputTokens": 16808,
+     "outputTokens": 16,
+     "totalTokens": 16824
+    }
+   },
+   "seq": 26,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655726,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "session.updated"
+  },
+  {
+   "eventId": "0e36fde1-8acb-4339-bbaa-6aea9accb94c",
+   "payload": {
+    "cacheHit": {
+     "cacheReadTokens": 11456,
+     "cacheWriteTokens": 0,
+     "hitRate": 0.6815801999048072,
+     "hitRateRequestCount": 1,
+     "inputTokens": 16808,
+     "latestHitRate": 0.6815801999048072,
+     "totalCacheReadTokens": 11456,
+     "totalCacheWriteTokens": 0,
+     "totalInputTokens": 16808
+    },
+    "content": "ok",
+    "contextUsageBreakdown": [
+     {
+      "chars": 9523,
+      "source": "system_prompt"
+     },
+     {
+      "chars": 11152,
+      "source": "meta_user_context"
+     },
+     {
+      "chars": 5795,
+      "source": "skills"
+     },
+     {
+      "chars": 68432,
+      "source": "system_tool_schemas"
+     },
+     {
+      "chars": 22491,
+      "source": "mcp_tool_schemas"
+     },
+     {
+      "chars": 57,
+      "source": "messages"
+     }
+    ],
+    "contextWindow": 1000000,
+    "querySource": "main_turn",
+    "stopReason": "stop",
+    "toolCallCount": 0,
+    "usage": {
+     "cacheReadTokens": 11456,
+     "cacheWriteTokens": 0,
+     "inputTokens": 16808,
+     "outputTokens": 16,
+     "totalTokens": 16824
+    }
+   },
+   "seq": 27,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655733,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "session.updated"
+  },
+  {
+   "eventId": "978a5002-0e71-452f-9cb1-498ab161089f",
+   "payload": {
+    "cacheStats": {
+     "cacheReadTokens": 11456,
+     "cachedMessages": 6,
+     "lastCacheHit": true,
+     "totalMessages": 7
+    },
+    "duration": 5943,
+    "historyRoundCount": 1,
+    "response": "ok",
+    "resultType": "success",
+    "tokenCount": 16824,
+    "toolCallCount": 0,
+    "usage": {
+     "cacheReadTokens": 11456,
+     "cacheWriteTokens": 0,
+     "inputTokens": 16808,
+     "modelRequestCount": 1,
+     "outputTokens": 16,
+     "reasoningTokens": 0,
+     "source": "provider",
+     "totalTokens": 16824,
+     "webFetchRequests": 0,
+     "webSearchRequests": 0
+    }
+   },
+   "seq": 28,
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "timestamp": 1790019655741,
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "turn.completed"
+  },
+  {
+   "eventCount": 27,
+   "projection": {
+    "contextUsed": 16824,
+    "contextWindow": 200000,
+    "status": "idle",
+    "totalTokenCount": 16824,
+    "turnCount": 1
+   },
+   "response": "ok",
+   "sessionId": "sess_ac415adb-52b9-4786-b8cb-6112c37fd622",
+   "traceId": "7f121b23-2242-4b13-a0a4-497fca2c3bb4",
+   "turnId": "turn_68fe04f9-21b3-4106-b9e1-d233a4ac4e60",
+   "type": "result",
+   "usage": {
+    "cacheReadTokens": 11456,
+    "cacheWriteTokens": 0,
+    "inputTokens": 16808,
+    "modelRequestCount": 1,
+    "outputTokens": 16,
+    "reasoningTokens": 0,
+    "source": "provider",
+    "totalTokens": 16824,
+    "webFetchRequests": 0,
+    "webSearchRequests": 0
+   }
+  }
+ ],
+ "schema": "zcode.runtime-turn.contract/1",
+ "source": "zcode_stream"
+}
