@@ -1081,10 +1081,12 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
     .replace("Use /model <provider/model>, /model main, or /model lite.", "Use /model <provider/model> to switch this session.");
   if (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
     && runtime.includes(".reloadModelOptions=async()=>")) return runtime;
-  const list = /([A-Za-z_$][\w$]*)\.listModelOptions=async\(\)=>\(await ([A-Za-z_$][\w$]*)\(\)\)\.listModels\?\.\(\)\?\?\[\]/u.exec(runtime);
+  // Warmed matches: Bun/JSC intermittently misses these anchors on a cold regex
+  // over the multi-MB runtime (see execWarmed).
+  const list = execWarmed(runtime, /([A-Za-z_$][\w$]*)\.listModelOptions=async\(\)=>\(await ([A-Za-z_$][\w$]*)\(\)\)\.listModels\?\.\(\)\?\?\[\]/u);
   const factoryStart = list ? runtime.lastIndexOf("function ", list.index) : -1;
-  const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
-  const registryList = /listModels:([A-Za-z_$][\w$]*)\(\(\)=>([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry\),"listModels"\)/u.exec(runtime);
+  const option = execWarmed(runtime, /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u);
+  const registryList = execWarmed(runtime, /listModels:([A-Za-z_$][\w$]*)\(\(\)=>([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry\),"listModels"\)/u);
   // Shipped 3.12.3: the TUI bridge is built by method assignment
   // (B.listModelOptions=async()=>...) and patchRuntimeTuiBridge has already
   // registered listModelOptions into the adapter options object, so the

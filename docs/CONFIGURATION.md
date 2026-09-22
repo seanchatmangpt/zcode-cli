@@ -180,6 +180,18 @@ The maximum output limit is `optionSpecs.maxOutputTokens.max`; it is independent
 of the context window. Request parameter mappings belong in each option's `map`
 string. See the [complete field tables and examples](PROVIDER_CONFIG.md).
 
+Built-in subagent model overrides saved by the ZCode desktop app in
+`<storage.dir>/v2/agents-state.json` name desktop provider ids: 3.12.3 stores
+full selections under `builtInModelSelectionOverrides` (for example
+`{"providerId": "account:zai-individual-coding-plan", "modelId": "GLM-5.3"}`),
+older files use `builtInModelOverrides` strings such as
+`custom:builtin%3Azai-coding-plan:GLM-5.3-Flash`. The CLI never registers those
+provider ids, so the runtime patch resolves `builtin:zai-coding-plan` and the
+`account:zai-*-coding-plan` / `-start-plan` shapes onto the provider keyed
+`zai` (and the `bigmodel` equivalents onto `bigmodel`). To change which model
+those subagents use, change the override in the desktop app;
+`defaultModelSelection` does not apply to them.
+
 When the upstream catalog changes, smart models inherit the new capability
 and option metadata automatically. Only explicit personal overrides remain fixed.
 Runtime sync copies the complete catalog, and `/model` refreshes the live registry;
