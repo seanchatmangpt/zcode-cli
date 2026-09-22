@@ -7,6 +7,7 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 import { Tap, verifyChain, type OcelDoc } from "./generated/ocel.ts";
 import { appendOutcome, appendPending, seal, unpaired, verify, type Chain, type Entry } from "./generated/receipt.ts";
@@ -30,6 +31,46 @@ export function ocelSourceForArgs(args: readonly string[]): string | undefined {
   if (idx < 0) return undefined;
   const value = args[idx].includes("=") ? args[idx].split("=")[1] : args[idx + 1];
   return print && value === "stream-json" ? STREAM_SOURCE : undefined;
+}
+
+// gall-work binds its construct turn to the leased subject and work order:
+// the orchestrator exports XAAS_WORKER=1 plus the identity variables, and
+// receipts sealed for that turn carry the exact subject/lease identity
+// (ZCODE-26922-06). No identity is fabricated: a field is bound only when
+// its variable is present and, for subject_sha, only when the lease cwd
+// resolves an exact git head.
+export interface LeaseIdentity {
+  subjectCwd?: string;
+  workOrderIri?: string;
+  epochId?: string;
+  baseSha?: string;
+}
+
+const gitShaPattern = /^[0-9a-f]{40}$/u;
+
+export function leaseIdentityFromEnv(env: NodeJS.ProcessEnv): LeaseIdentity {
+  if (env.XAAS_WORKER !== "1") return {};
+  const trim = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  };
+  return {
+    subjectCwd: trim(env.XAAS_LEASE_CWD),
+    workOrderIri: trim(env.XAAS_WORK_ORDER_IRI),
+    epochId: trim(env.XAAS_EPOCH_ID),
+    baseSha: trim(env.XAAS_BASE_SHA)
+  };
+}
+
+/** Exact head of the leased subject at seal time; undefined when unresolvable. */
+export function subjectHead(cwd: string | undefined): string | undefined {
+  if (!cwd) return undefined;
+  try {
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return gitShaPattern.test(head) ? head : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The runtime stamps epoch milliseconds; OCEL 2.0 wants ISO 8601. Applied to a shallow copy. */
@@ -63,7 +104,7 @@ export class OcelRecorder {
   private carry = "";
   private closed = false;
 
-  constructor(readonly source: string, private readonly dir: string) {
+  constructor(readonly source: string, private readonly dir: string, private readonly identity: LeaseIdentity = {}) {
     this.tap = new Tap(source);
   }
 
@@ -124,6 +165,12 @@ export class OcelRecorder {
       ocel_file_sha256: sha256(ocelText),
       event_count: doc.events.length,
       head_hash: head,
+      // Exact subject and lease identity (ZCODE-26922-06): bound only when
+      // the run carries them, so a receipt can never invent an identity.
+      ...(this.identity.subjectCwd ? { subject_sha: subjectHead(this.identity.subjectCwd) } : {}),
+      ...(this.identity.workOrderIri ? { work_order_iri: this.identity.workOrderIri } : {}),
+      ...(this.identity.epochId ? { epoch_id: this.identity.epochId } : {}),
+      ...(this.identity.baseSha ? { base_sha: this.identity.baseSha } : {}),
       chain_intact: verify(chain),
       unpaired: unpaired(chain),
       chain
@@ -155,5 +202,5 @@ export function toEx4pmReceipt(entry: Entry): Record<string, unknown> {
 export function startOcelTap(args: readonly string[], env: NodeJS.ProcessEnv): OcelRecorder | undefined {
   if (!ocelEnabled(env)) return undefined;
   const source = ocelSourceForArgs(args);
-  return source ? new OcelRecorder(source, ocelDirectory(env)) : undefined;
+  return source ? new OcelRecorder(source, ocelDirectory(env), leaseIdentityFromEnv(env)) : undefined;
 }
