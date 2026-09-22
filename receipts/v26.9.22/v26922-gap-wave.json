@@ -1,0 +1,61 @@
+{
+  "identity": {
+    "subject": "v26.9.22 gap-closure wave: 10-lane remediation of zcode-cli<->xaas environment-understanding gaps",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "c7b82999b89ad79f41820d75a72e6df4985cb228",
+    "base_sha": "e0a77911b804040d5bd3412a86bf94957ad5a2c6"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "operator instruction 'launch 10 agents to implement plan' 2026-09-22; plan approved same day",
+    "actor": "zcode session: 10 parallel general-purpose agents + serial integration"
+  },
+  "consequence": {
+    "commits": [
+      "a564ca8eeab6e37ceb42508a70b115836833ed31",
+      "4969bd9bd130324bf3146eac86bd35e3e19e6ceb",
+      "57be34df00439fc08c3ae590e88fae5b8cc44ffb",
+      "c7b82999b89ad79f41820d75a72e6df4985cb228",
+      "1a5db5236153ab236ea07cd01f82eeb096315a07",
+      "3a0a8a2c9407e3813730e4bc0ef644a3f6c17878",
+      "c2a7ea9fbefc9e45d89c30fad36afb3fee96fabd"
+    ],
+    "files_changed": [
+      "21 files in zcode-cli across 4 commits; 8 files in xaas across 3 commits; user-scope: hooks enabled in ~/.zcode/cli/setting.json, mcp duplicates removed from setting.json+config.json, .mcp.json deleted, 7 skill symlinks in ~/.zcode/skills, gall-resolutions.md recorded"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "bun run typecheck",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun run test:unit (729/730; 1 pre-existing failure reproduced on pristine HEAD)",
+        "exit": 1,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun run test:runtime (18 fail, all reproduced on pristine HEAD e0a7791 \u2014 pre-existing since vendor re-extraction 2026-09-21T21:22Z)",
+        "exit": 1,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "mix test test/xaas/zcode_plugin/projection_test.exs (3 passed)",
+        "exit": 0,
+        "cwd": "/Users/sac/xaas"
+      },
+      {
+        "cmd": "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      }
+    ]
+  },
+  "standing": {
+    "value": "PARTIAL_ALIVE",
+    "derived_from": "all 10 lanes returned with per-lane verification; integration boundary run recorded above; remaining gaps: ZOCEL-009 full superset + human review, plugin reinstall (sensitive flag), execution-mcp audit implementation (SJ-011), OCEL registry bridge (SJ-010/ZOCEL-014), runtime-suite redness predates wave"
+  }
+}

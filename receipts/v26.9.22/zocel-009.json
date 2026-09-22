@@ -1,0 +1,59 @@
+{
+  "identity": {
+    "subject": "ZOCEL-009 subset: gall-work lease lifecycle landed on main (full superset merge pending human review)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "a564ca8eeab6e37ceb42508a70b115836833ed31",
+    "base_sha": "e0a77911b804040d5bd3412a86bf94957ad5a2c6"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "operator-approved implementation plan 2026-09-22 (10-lane fan-out); no merge of superset, no push",
+    "actor": "zcode session: 10-agent fan-out + serial integration"
+  },
+  "consequence": {
+    "commits": [
+      "a564ca8eeab6e37ceb42508a70b115836833ed31"
+    ],
+    "files_changed": [
+      "src/gall-work.ts",
+      "test/gall-work.test.ts",
+      "test/runtime/gall-work-e2e.test.ts",
+      "test/fixtures/gall-work.contract.json",
+      "src/launcher.ts"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun test test/gall-work",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun test test/runtime/gall-work-e2e.test.ts",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun run typecheck",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      },
+      {
+        "cmd": "bun run test:runtime",
+        "exit": 1,
+        "cwd": "/Users/sac/dev/zcode-cli"
+      }
+    ]
+  },
+  "standing": {
+    "value": "PARTIAL_ALIVE",
+    "derived_from": "lease lifecycle + contract identity + tests green at a564ca8; ticket acceptance not fully met: acceptance demands the full w9-sweep/zcode-pr3 superset merge via trial branch integrate/gall-into-main@b01634f with a reviewed-by line on /Users/sac/wt/zocel-runs/gall-resolutions.md (resolutions recorded 2026-09-22, human review pending). test:runtime exit 1 is pre-existing on pristine HEAD e0a7791 (vendor re-extraction 2026-09-21T21:22Z), reproduced on a clean worktree \u2014 not introduced by this landing."
+  }
+}
