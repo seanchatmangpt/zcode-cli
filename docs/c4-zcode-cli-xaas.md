@@ -6,6 +6,7 @@ Grounded in (2026-09-18):
 - Installed instance: `~/.zcode/cli/plugins/cache/xaas-fabric-marketplace/xaas-fabric/26.9.17/`
 - Server side: `~/xaas/lib/xaas_web/router.ex:83` — `post("/execution/mcp", ExecutionFabricController, :mcp)` under `/internal-api`, behind `RequireInternalApiToken`
 - Host contract: `~/dev/zcode-cli/docs/HOST_INTEGRATION.md` (plugin manifests, user_config interpolation)
+- Headless session registration: project `.mcp.json` in the working directory (2026-09-21 runtime rebuild); see [CONFIGURATION.md](./CONFIGURATION.md), "Headless session registration: the project `.mcp.json`"
 
 zcode-cli contains **zero** xaas-specific code; the entire coupling runs through three plugin contracts: the marketplace install, the `.mcp.json` MCP registration, and the `hooks.json` PreToolUse gate.
 
