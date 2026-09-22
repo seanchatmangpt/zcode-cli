@@ -1,0 +1,18 @@
+{
+  "wo": "ZCODE-26922-02",
+  "base_sha": "00b3a89",
+  "merge_sha": "a01a583 (integration), 15d3a91 (wo2 hand-resolved gall merge)",
+  "merged": { "integrate/gall-into-main": "b01634f" },
+  "command": [
+    "git merge-tree --write-tree 00b3a89 b01634f  (conflict set: package.json, scripts/sync-runtime.ts, src/launcher.ts)",
+    "bun run typecheck",
+    "bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts test/runtime/gall-work-e2e.test.ts",
+    "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+    "bun run build  (PATH=/opt/homebrew/opt/node/bin: node 26 required, default node 20 fails tsdown)",
+    "node bin/zcode.js gall-work --lease /nonexistent.json --json",
+    "node bin/zcode.js --prompt /mcp status --json  (headless regression probe)"
+  ],
+  "exit": 0,
+  "output_excerpt": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge.",
+  "standing": "ALIVE"
+}
