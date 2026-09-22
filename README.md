@@ -100,6 +100,10 @@ The official runtime directly owns raw terminal mode, IME cursor placement and
 resize handling; the launcher does not insert a second PTY or relay terminal
 bytes.
 
+For the coupling to the XaaS execution fabric (plugin contracts, MCP surface,
+native gall-work dispatch), see
+[C4 architecture: zcode-cli ↔ xaas coupling](./docs/c4-zcode-cli-xaas.md).
+
 ## Features
 
 **Editor and input.** pi-tui differential rendering with a CJK-aware

@@ -1,13 +1,13 @@
 # C4 — zcode-cli ↔ xaas connections
 
-Grounded in (2026-09-18):
+Grounded in (2026-09-22):
 
 - Plugin source (製-ed from ontology): `~/xaas/priv/zcode_plugin/` — `ontology.ttl`, ggen `templates/*.tmpl` (SPARQL-driven), rendered `marketplace/xaas-fabric/` (`plugin.json`, `.mcp.json`, `hooks/hooks.json`, `scripts/xaas-gate.mjs`, `scripts/xaas-lease.mjs`, `skills/xaas-worker/`, `agents/xaas-worker.md`, `commands/xaas.md`)
 - Installed instance: `~/.zcode/cli/plugins/cache/xaas-fabric-marketplace/xaas-fabric/26.9.17/`
-- Server side: `~/xaas/lib/xaas_web/router.ex:83` — `post("/execution/mcp", ExecutionFabricController, :mcp)` under `/internal-api`, behind `RequireInternalApiToken`
+- Server side: `~/xaas/lib/xaas_web/router.ex:95` — `post("/execution/mcp", ExecutionFabricController, :mcp)` inside `scope "/internal-api"` (router.ex:80), piped through `[:api, :require_internal_api_token]` (router.ex:81), behind `RequireInternalApiToken`. The same scope also carries `POST /execution/hooks/:event` (router.ex:94, plain-JSON hook transport) and `GET /execution/epochs/:epoch_id/receipts` (router.ex:112, sealed-receipt read)
 - Host contract: `~/dev/zcode-cli/docs/HOST_INTEGRATION.md` (plugin manifests, user_config interpolation)
 
-zcode-cli contains **zero** xaas-specific code; the entire coupling runs through three plugin contracts: the marketplace install, the `.mcp.json` MCP registration, and the `hooks.json` PreToolUse gate.
+zcode-cli contains **zero** xaas-specific code; the entire coupling runs through three plugin contracts: the marketplace install, the `.mcp.json` MCP registration, and the `hooks.json` PreToolUse gate. Since xaas `1f429b4` (2026-09-20) there is a fourth, native surface in the other direction: the fabric dispatcher launches semantic runs with `zcode gall-work --lease <descriptor>` under the shared contract `~/xaas/priv/zcode_plugin/gall-work.contract.json` (byte-identical to `test/fixtures/gall-work.contract.json` here; both repos pin its sha256), implemented in `src/gall-work.ts` (landing on main from `w9-sweep/zcode-pr3`, commit `454ed62`) — a claim → persist → construct → close lifecycle alongside the gate and lease scripts.
 
 ## L1 — System Context
 
@@ -52,7 +52,7 @@ C4Container
     }
 
     System_Boundary(fabric, "XaaS (~/xaas, Phoenix on localhost:4000)") {
-        Container(endpoint, "Phoenix endpoint", "Elixir", "RequireInternalApiToken plug guards /internal-api")
+        Container(endpoint, "Phoenix endpoint", "Elixir", "RequireInternalApiToken plug guards /internal-api: MCP (POST /execution/mcp), plain-JSON hooks (POST /execution/hooks/:event), sealed-receipt reads (GET /execution/epochs/:epoch_id/receipts)")
         Container(mcpserver, "ExecutionFabricController", "Elixir", "POST /internal-api/execution/mcp - the xaas-execution MCP server over JSON-RPC/HTTP")
         Container(domain, "Fabric domain", "Elixir/Ash", "Lease service, admission court, actuation kernel, verifier suites, receipt sealing")
         ContainerDb(store, "Lease and receipt store", "Ash", "Append-only ledger of claims, decisions and evidence")
@@ -63,7 +63,7 @@ C4Container
     Rel(loader, cache, "Loads plugin.json, .mcp.json and hooks.json")
     Rel(loader, mcpclient, "Registers xaas-execution HTTP server with Bearer user_config.zcode_xaas_token")
     Rel(forge, cache, "Publishes marketplace release that installs into the cache", "via GitHub, zcode plugins install")
-    Rel(session, mcpclient, "claim_next, heartbeat, admit_tool, actuate, close_candidate, refuse")
+    Rel(session, mcpclient, "claim_next, heartbeat, admit_tool, record_provider_event, close_candidate, refuse, actuate (all seven verbs)")
     Rel(session, hooks, "Every tool call passes PreToolUse")
     Rel(hooks, gate, "Invokes with tool name and input", "node, 30s timeout")
     Rel(mcpclient, endpoint, "JSON-RPC tool calls", "HTTP POST /internal-api/execution/mcp, Bearer token")
@@ -143,4 +143,19 @@ C4Dynamic
 - **No hard-coded coupling in zcode-cli**: the endpoint URL, server name, tool surface and token key all arrive via the installed plugin manifest, themselves rendered from `zp:` ontology facts by ggen SPARQL templates — editing the endpoint is an ontology edit in xaas, not a code change in zcode-cli.
 - **Token path**: operator runs `zcode plugins configure xaas-fabric@<marketplace> --options-file`; the loader interpolates `user_config.zcode_xaas_token` into the `Authorization` header (the `${user_config.*}` form exists because install-time plugin contexts have empty `env`).
 - **Two enforcement planes**: the server-side `admit_tool` court (per-consequence fence) and the host-side `xaas-gate.mjs` PreToolUse gate (active only in dispatcher-launched sessions). Both fail closed; the gate only ever denies or defers.
+- **Internal-api execution surface**: beyond the MCP endpoint, the scope serves `POST /execution/hooks/:event` (plain-JSON hook transport, added in fd829dc) and `GET /execution/epochs/:epoch_id/receipts` (org-scoped sealed-receipt read). The fabric controller registers seven MCP verbs (`@mcp_tools` at `execution_fabric_controller.ex:55`, dispatch at :331–400): `claim_next`, `heartbeat`, `admit_tool`, `record_provider_event`, `close_candidate`, `refuse`, `actuate`.
 - **What each side can never do**: zcode-cli holds no ambient execution authority (a plugin tool call is not authority); the worker cannot push, spawn subagents, or write outside its leased worktree.
+
+## Five gaps (権証並票製)
+
+Where the coupling is not yet at law, stated as of 2026-09-22.
+
+- **権 (authority)** — gall-work was branch-only until today's landing (`w9-sweep/zcode-pr3`, `454ed62`); the PreToolUse gate was configured off until today (`hooks.enabled` now true). The gate is inert unless `XAAS_WORKER=1`, and subagents bypass PreToolUse entirely — a documented runtime hole.
+- **証 (evidence)** — zero schema-conformant receipts exist. Five divergent receipt formats are in circulation, and standing is stored as unbound literals with no invalidation when refs change.
+- **並 (scale)** — the MCP server was triple-registered until today's dedupe, and a plaintext dev token sits in 3 files. The second xaas MCP server (`/mcp`) is unregistered, and `AuditMcpToolCall` covers `/mcp` but NOT `/internal-api/execution/mcp` — an audit asymmetry, tracked as an open work order.
+- **票 (tickets)** — no v26.9.22 milestone existed until today, and four divergent ticket formats are in use. The `_RUNBOOK.md` canonical form lives only in `~/ggen_igniter`, and the calver-ticket-day-pack pin `d018ed4` is on a deleted branch.
+- **製 (manufacturing)** — the plugin is ggen-projected (`priv/zcode_plugin` ontology.ttl + templates) and cache-identical, but the ticket projection carries UNSUPPORTED manual-relocation rows in `HANDWRITTEN.md`.
+
+## Known open work orders
+
+Successor orders live in `docs/sjira/v26.9.22/` (created 2026-09-22): the OCEL registry bridge, execution-mcp audit coverage, and ocel-verify CI.
