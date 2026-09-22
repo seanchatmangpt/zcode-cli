@@ -33,6 +33,8 @@ import {
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
 import { extractMaxTurns } from "./max-turns.ts";
+import { runGallCommand } from "./gall-cli.ts";
+import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -472,6 +474,23 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(rawArgs: string[]): Promise<number> {
+  const gallCommand = await runGallCommand(rawArgs);
+  if (gallCommand !== undefined) return gallCommand;
+
+  try {
+    // Native gall-work lifecycle (claim -> persist -> construct -> close).
+    // It runs before the config bootstrap so a dispatcher-launched worker
+    // stays hermetic, and it manages its own runtime turn for the construct
+    // stage. There is no `/xaas claim_next` prompt fallback: a failure here
+    // is a typed non-zero exit, never a re-dispatch as a prompt.
+    if (isGallWorkInvocation(rawArgs)) {
+      return await runGallWork(rawArgs.slice(1));
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+
   const maxTurns = extractMaxTurns(rawArgs);
   if (maxTurns.error) { console.error(`Error: ${maxTurns.error}`); return 2; }
   if (maxTurns.maxTurns !== undefined) process.env.ZCODE_MAX_TURNS = String(maxTurns.maxTurns);
