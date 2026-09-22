@@ -575,6 +575,9 @@ export function patchRuntimeGoalFailurePause(runtime: string): string {
  * option but never checks it in the main loop; once the model step count
  * reaches the cap the loop throws a non-retryable error whose context reason
  * is "error_max_turns" so consumers can map it to a max-turns result.
+ * The cap comes from config.maxTurns, else env ZCODE_MAX_TURNS (set by the
+ * launcher `--max-turns N` flag), since the app-server protocol carries no
+ * maxTurns field.
  */
 export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
   if (runtime.includes('reason:"error_max_turns"')) return runtime;
@@ -600,7 +603,7 @@ export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
     throw new Error("ZCode runtime is incompatible with the max turns patch (error factory anchor missing).");
   }
   const [, makeError, codes] = errorFactory;
-  const guard = `let $zMax=this.config?.maxTurns;if(typeof $zMax==="number"&&$zMax>0&&e.modelStepCount>=$zMax)throw ${makeError}(${codes}.ModelError,"Reached maximum number of turns ("+$zMax+").",{context:{reason:"error_max_turns",maxTurns:$zMax,modelStepCount:e.modelStepCount},recoverable:!1,retryable:!1});`;
+  const guard = `let $zMax=this.config?.maxTurns??Number(process.env.ZCODE_MAX_TURNS);if(typeof $zMax==="number"&&$zMax>0&&e.modelStepCount>=$zMax)throw ${makeError}(${codes}.ModelError,"Reached maximum number of turns ("+$zMax+").",{context:{reason:"error_max_turns",maxTurns:$zMax,modelStepCount:e.modelStepCount},recoverable:!1,retryable:!1});`;
   const head = loopMatch[0];
   const patched = runtime.replace(head, head.replace(`${abortCheck}(e.turnAbortSignal);`, `${abortCheck}(e.turnAbortSignal);${guard}`));
   if (!patched.includes('reason:"error_max_turns"')) {
