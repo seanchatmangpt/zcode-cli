@@ -429,13 +429,26 @@ export async function runConstruct(
   spawnImpl: typeof spawnChild = spawnChild
 ): Promise<ConstructOutcome> {
   const runtimePath = join(packageRoot, "vendor", "zcode.cjs");
+  // --mode yolo is the headless worker's permission client stand-in: the
+  // runtime's built-in default permission mode is "build" (and a synced
+  // dispatcher setting.json may carry mode "build" too), which routes every
+  // Bash call to the permission broker. A headless --prompt turn has no
+  // permission client, so the DenyPermissionBroker refuses each step with
+  // "No permission client configured for Bash" -- the BLOCKED:
+  // BASH_PERMISSION_CLIENT_ABSENT failure (xaas sj-001
+  // zcode-headless-execution-refusal). The lease itself is the worker's
+  // authority: worktree-confined by the doctrinal prompt, heartbeated, and
+  // falsified after the fact by the fabric's verifier court on the captured
+  // head. The CLI flag (highest precedence) pins that authority explicitly
+  // instead of leaving the turn to an interactive default.
+  const permissionArgs = ["--mode", "yolo"];
   const node = process.env.ZCODE_NODE?.trim() || process.execPath;
   const started = Date.now();
 
   return await new Promise<ConstructOutcome>((resolveOutcome) => {
     let child: ChildProcess;
     try {
-      child = spawnImpl(node, [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--json"], {
+      child = spawnImpl(node, [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--json", ...permissionArgs], {
         cwd: packageRoot,
         env: {
           ...process.env,
