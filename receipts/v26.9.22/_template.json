@@ -1,0 +1,32 @@
+{
+  "identity": {
+    "subject": "REPLACE_SUBJECT",
+    "repo": "REPLACE_REPO_PATH",
+    "subject_sha": "0000000000000000000000000000000000000000",
+    "base_sha": "0000000000000000000000000000000000000000"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "REPLACE_GRANT",
+    "actor": "REPLACE_ACTOR"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": ["REPLACE_PATH"],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "REPLACE_CMD",
+        "exit": 1,
+        "cwd": "REPLACE_CWD"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/REPLACE_SLUG.json"
+  },
+  "standing": {
+    "value": "UNKNOWN",
+    "derived_from": "REPLACE_DERIVED_FROM"
+  }
+}

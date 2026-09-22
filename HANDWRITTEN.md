@@ -15,6 +15,8 @@ residue and why each row cannot be generated yet.
 | `scripts/gen-ocel.ts` | Runs `ggen sync run` and byte-copies pack outputs to `src/generated/` | UNSUPPORTED (generator-capability) | Pack templates fix their own output paths (`src/pi_ocel_tap/...`); the consumer relocates them, it never edits them |
 | `scripts/gen-zcode-loop.ts`, `scripts/zcode-events.ts` | Draft of `ontology/zcode-loop.ttl` from the runtime's enums in `vendor/zcode.cjs` | DRAFT | The wire-to-object mapping table is authored judgement; the ontology is the reviewed source after the first run |
 | `test/ocel-*.test.ts`, `test/support/ocel.ts` | Contract, conformance and reuse tests | Handwritten by design | Tests are the falsifiers for the generated code |
+| `src/gall-work.ts` (+ `test/gall-work.test.ts`, `test/runtime/gall-work-e2e.test.ts`, `src/launcher.ts` dispatch hook) | Native gall-work lease lifecycle client (claim/persist/construct/close) against the xaas execution fabric; ported from `w9-sweep/zcode-pr3@454ed62` onto main 2026-09-22 | UNSUPPORTED (generator-capability) | No pack projects a lease-protocol client; the contract fixture `test/fixtures/gall-work.contract.json` is sha256-pinned byte-identical to `~/xaas/priv/zcode_plugin/gall-work.contract.json` |
+| `scripts/validate-receipts.ts` | Wraps `~/.claude/dfcm/validate_receipt.py` over `receipts/**/*.json`, fail-closed on zero files or any refusal | UNSUPPORTED (generator-capability) | No pack projects receipt validation over the dfcm schema; added 2026-09-22 |
 
 ## Not done here
 
