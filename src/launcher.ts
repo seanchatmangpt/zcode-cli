@@ -32,6 +32,7 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
+import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -471,6 +472,20 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(args: string[]): Promise<number> {
+  try {
+    // Native gall-work lifecycle (claim -> persist -> construct -> close).
+    // It runs before the config bootstrap so a dispatcher-launched worker
+    // stays hermetic, and it manages its own runtime turn for the construct
+    // stage. There is no `/xaas claim_next` prompt fallback: a failure here
+    // is a typed non-zero exit, never a re-dispatch as a prompt.
+    if (isGallWorkInvocation(args)) {
+      return await runGallWork(args.slice(1));
+    }
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+
   if (!existsSync(runtimePath)) {
     console.error(
       "ZCode runtime is missing. Reinstall the package or run `bun run sync:local` in the source checkout."
