@@ -34,7 +34,7 @@ The synchronization command:
 3. verifies its SHA-512 from the manifest;
 4. extracts `resources/glm`;
 5. applies the version-independent runtime patch plan and injects the local
-   `@zcode/tui` adapter;
+   `@zcode/tui` adapter, retaining upstream text and marking the runtime as modified;
 6. extracts the strict global CLI option contract and validates the official
    CLI version;
 7. records provenance, CLI capabilities and each patch result in
@@ -50,19 +50,48 @@ The published package is controlled by the `files` allowlist in `package.json`.
 It contains only:
 
 - `bin/zcode.js`, the bundled executable Node.js launcher;
-- `vendor/`, the verified official `zcode.cjs` runtime, official bundled
-  plugins and the compiled local `@zcode/tui` adapter;
+- `vendor/`, the extracted and patched `zcode.cjs` runtime, included built-in
+  plugins (including document, PDF, presentation and spreadsheet plugins with
+  their original licenses) and the compiled local `@zcode/tui` adapter;
 - `setting.example.json`, `provider.example.json` and `zcode-runtime.lock.json`;
 - the English and Simplified Chinese configuration guides and provider field
   references in `docs/`;
+- `docs/THIRD_PARTY_CONTENT.md` and the license texts, upstream notices and
+  source provenance in `LICENSES/`;
 - `README.md`, `LICENSE` and the required npm `package.json`.
 
 Tests, GitHub workflows, build scripts, launcher/TUI TypeScript sources, local
 config, `.release/` artifacts and development `node_modules` are not published.
-npm installs only the declared pi-tui runtime dependency. The launcher and TUI
+npm installs the declared pi-tui and `playwright-core` dependencies. The launcher and TUI
 are compiled to JavaScript with `tsdown`; its launcher banner adds the Node.js
 shebang directly, with no post-build rewrite. The compiled TUI is injected into
 `vendor/` before publication.
+
+## Commit preview packages
+
+`.github/workflows/release-commit.yml` builds previews for pull requests, pushes
+to `main`, and manual workflow runs. It checks out the PR's head commit, builds
+the locked runtime, runs the release checks, and install-tests the npm tarball.
+The exact tested tarball is uploaded to pkg.pr.new without repacking it.
+
+Install the [pkg-pr-new GitHub App](https://github.com/apps/pkg-pr-new) on this
+repository before the first preview publication. No npm token or npm publish
+permission is needed. The publisher is pinned in `devDependencies` and `bun.lock`.
+
+The app updates a PR comment with a commit-specific preview link. The workflow
+summary also gives the command to test an existing session:
+
+```bash
+npx --yes https://pkg.pr.new/zcode-app-cli@<commit-sha> --resume <session-id>
+```
+
+Use the exact URL emitted by the successful workflow. This runs the preview
+without replacing the globally installed CLI. It uses the user's normal session
+store, so the tester can verify their affected sessions. Record the preview URL
+with the test result: preview tarballs retain the source package version, while
+their URLs identify the commit. They do not update npm's `latest` tag or create
+a release tag. The tested tarball is also retained as a workflow artifact for
+14 days, including when pkg.pr.new publication fails.
 
 ## Versioning
 
@@ -175,8 +204,14 @@ from `zcode-runtime.lock.json`, verifies its SHA-512, builds and injects the TUI
 then runs runtime and PTY smoke tests. `release:pack` runs the offline
 `prepack` guard, creates `.release/zcode-app-cli-<version>.tgz`, audits every
 included path and executable mode, installs it into a temporary directory, and
-runs the installed `zcode --version`. Its final size, integrity and file count
-are written to `.release/release.json`.
+runs the installed `zcode --version`. It also checks the runtime modification
+notice and initializes the included plugins using an isolated temporary home,
+verifying that Browser Use and the four document plugins are enabled and their
+original license files are present. Installation is limited to three minutes,
+the version check to 15 seconds, and plugin initialization to 30 seconds;
+timed-out checks terminate their subprocesses before cleanup. Only after all
+checks pass are the final size, integrity and file count written to
+`.release/release.json`.
 
 Inspect that manifest and then publish explicitly:
 
@@ -209,7 +244,13 @@ example, syncing `3.3.5-12` against ZCode App `3.4.0` produces `3.4.0-12`.
 Before enabling publication:
 
 1. confirm that `zcode-app-cli` is the npm package name you control;
-2. confirm redistribution rights for the extracted ZCode runtime;
+2. review the licenses of the selected Desktop artifact and its dependencies.
+   The public first-party source is Apache-2.0, but its source revision is not
+   the provenance record for the extracted binary. Keep the license and copied
+   notices in `LICENSES/`, the runtime modification notice, and the artifact
+   metadata. The four document-related plugins are included in this project's
+   non-commercial distribution with their original skill license files. See
+   [Third-party content](./THIRD_PARTY_CONTENT.md);
 3. under the GitHub repository's **Settings** → **Actions** → **General**,
    enable **Allow GitHub Actions to create and approve pull requests**;
 4. open the package on npmjs.com and select **Settings** →
