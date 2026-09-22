@@ -37,6 +37,15 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  capacityFromBody,
+  capacityFromStatus,
+  callWithCapacityBackoff,
+  ConcurrencyCap,
+  defaultFabricConcurrencyLimit,
+  isProviderCapacityRefusal,
+  type CapacitySignal
+} from "./provider-backoff.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -231,9 +240,18 @@ export interface FabricCallOutcome {
   ok: boolean;
   result?: Record<string, unknown>;
   error?: string;
+  /** Provider capacity classification when the failure was capacity-shaped. */
+  capacity?: CapacitySignal;
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+// Local parallelism bound for fabric calls (claim/heartbeat/close from the
+// lifecycle run concurrently only within one process; the cap keeps this
+// process's contribution to provider saturation bounded and typed).
+const fabricConcurrencyCap = new ConcurrencyCap(
+  Number(process.env.ZCODE_FABRIC_MAX_CONCURRENT?.trim() || defaultFabricConcurrencyLimit)
+);
 
 export async function fabricCall(
   target: FabricTarget,
@@ -242,55 +260,81 @@ export async function fabricCall(
   timeoutMs = 15_000,
   fetchImpl: FetchLike = fetch
 ): Promise<FabricCallOutcome> {
-  let response: Response;
-  try {
-    response = await fetchImpl(target.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        ...(target.authorization ? { authorization: target.authorization } : {})
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name: tool, arguments: args }
-      }),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch (error) {
-    return { ok: false, error: `fabric_unreachable: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  if (!response.ok) {
-    return { ok: false, error: `fabric_http_${response.status}` };
-  }
-  let body: {
-    result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
-    error?: { message?: string };
-  };
-  try {
-    body = await response.json() as typeof body;
-  } catch (error) {
-    return { ok: false, error: `fabric_bad_response: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  if (body.error) {
-    return { ok: false, error: body.error.message ?? "fabric_rpc_error" };
-  }
-  const text = body.result?.content?.[0]?.text ?? "";
-  if (body.result?.isError) {
+  const send = async (): Promise<FabricCallOutcome> => {
+    let response: Response;
     try {
-      const parsed = JSON.parse(text) as { error?: string };
-      return { ok: false, error: parsed.error ?? (text || "fabric_tool_error") };
-    } catch {
-      return { ok: false, error: text || "fabric_tool_error" };
+      response = await fetchImpl(target.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(target.authorization ? { authorization: target.authorization } : {})
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: tool, arguments: args }
+        }),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (error) {
+      return { ok: false, error: `fabric_unreachable: ${error instanceof Error ? error.message : String(error)}` };
     }
-  }
-  try {
-    return { ok: true, result: JSON.parse(text) as Record<string, unknown> };
-  } catch {
-    return { ok: false, error: `fabric_bad_tool_payload: ${text.slice(0, 200)}` };
-  }
+    if (!response.ok) {
+      const capacity = capacityFromStatus(response.status);
+      if (capacity) return { ok: false, error: `fabric_capacity:${capacity.code}`, capacity };
+      return { ok: false, error: `fabric_http_${response.status}` };
+    }
+    let body: {
+      result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+      error?: { message?: string };
+    };
+    try {
+      body = await response.json() as typeof body;
+    } catch (error) {
+      return { ok: false, error: `fabric_bad_response: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    if (body.error) {
+      return { ok: false, error: body.error.message ?? "fabric_rpc_error" };
+    }
+    const text = body.result?.content?.[0]?.text ?? "";
+    if (body.result?.isError) {
+      // A fabric tool refusal can itself be the provider's capacity envelope
+      // (e.g. {"error":{"code":1302},"message":"High concurrency usage"}):
+      // classify it as capacity so the bounded backoff above applies instead
+      // of sealing a generic failure receipt.
+      const capacity = capacityFromBody(text);
+      if (capacity) return { ok: false, error: `fabric_capacity:${capacity.code}`, capacity };
+      try {
+        const parsed = JSON.parse(text) as { error?: string };
+        return { ok: false, error: parsed.error ?? (text || "fabric_tool_error") };
+      } catch {
+        return { ok: false, error: text || "fabric_tool_error" };
+      }
+    }
+    try {
+      return { ok: true, result: JSON.parse(text) as Record<string, unknown> };
+    } catch {
+      return { ok: false, error: `fabric_bad_tool_payload: ${text.slice(0, 200)}` };
+    }
+  };
+
+  return await fabricConcurrencyCap.run(() =>
+    callWithCapacityBackoff(send, {
+      capacityOf: (outcome) => outcome.capacity ?? false,
+      onRetry: (info) => {
+        console.error(`gall-work: fabric ${tool} capacity retry ${info.attempt} (${info.code}) in ${info.delayMs}ms`);
+      }
+    })
+  ).catch((error) => {
+    if (isProviderCapacityRefusal(error)) {
+      // Typed refusal after bounded retries: the lifecycle seals a typed
+      // failure receipt. There is no prompt fallback.
+      return { ok: false, error: `fabric_capacity:${error.code}:attempts=${error.attempts}` };
+    }
+    throw error;
+  });
 }
 
 // ---------------------------------------------------------------------------
