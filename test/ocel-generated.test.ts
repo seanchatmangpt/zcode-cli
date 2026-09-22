@@ -194,3 +194,23 @@ describe("event-shape contract (fails when the runtime stream shape changes)", (
     for (const fx of fixtures()) for (const r of fx.records) expect(declared.has(r.type)).toBe(true);
   });
 });
+
+// Shared golden chain vectors: test/py/test_golden_chain.py reads the same file and asserts the same literals.
+describe("golden chain vectors (shared with python)", () => {
+  const golden = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "ocel-golden-chain.json"), "utf8"));
+  for (const v of golden.vectors) {
+    test(`${v.id}: ts digests and outcome equal the literal vector`, async () => {
+      const r = await import("../src/generated/receipt.ts");
+      const chain: any[] = [];
+      const digests: string[] = [];
+      let error: string | null = null;
+      try {
+        for (const o of v.ops) {
+          const e = o[0] === "pending" ? r.appendPending(chain, o[1], o[2], o[3]) : o[0] === "outcome" ? r.appendOutcome(chain, o[1], o[2], o[3], o[4]) : r.seal(chain, o[1], o[2], o[3]);
+          digests.push(e.hash);
+        }
+      } catch (x: any) { error = x.message; }
+      expect({ digests, verify: r.verify(chain), unpaired: r.unpaired(chain), error }).toEqual(v.expected);
+    });
+  }
+});

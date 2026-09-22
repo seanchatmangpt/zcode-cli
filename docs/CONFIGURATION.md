@@ -440,6 +440,46 @@ show up in the TUI's `/mcp` panel as `connected · http · N tools`, and it
 was genuinely callable by name from a live task after starting (or
 restarting) `zcode`.
 
+### Headless session registration: the project `.mcp.json`
+
+As of the runtime rebuild on this tree (2026-09-21), **headless** sessions —
+`zcode --prompt "..."` runs and automation entry points such as XaaS's
+`node bin/zcode.js gall-work --lease <n>` — register MCP servers from a
+project-level `.mcp.json` file in the working directory. Interactive sessions
+do not read this file; they resolve `mcp.servers` from user-scope settings
+(`~/.zcode/cli/setting.json` as of the same rebuild — the "Direct MCP server
+registration" section above documents the pre-rebuild `config.json` location
+and predates today's change). The asymmetry is load-bearing for leased-worker
+flows: a worker session runs from a consumer repo with no interactive session
+open, so an integration like the xaas-fabric `xaas-execution` MCP server must
+be registered in the repo's `.mcp.json`, not only in the operator's user-scope
+settings.
+
+Schema — the installed xaas-fabric plugin cache ships exactly this file:
+
+```json
+{
+  "mcpServers": {
+    "xaas-execution": {
+      "type": "http",
+      "url": "http://localhost:4000/internal-api/execution/mcp",
+      "headers": {
+        "Authorization": "Bearer ${user_config.zcode_xaas_token}"
+      }
+    }
+  }
+}
+```
+
+`${user_config.*}` placeholders are interpolated from user config at load
+time. A plain `${ENV_VAR}` placeholder is not supported in this position; see
+the plugin-install limitation below for the related preflight behavior.
+
+Credential rule: a project `.mcp.json` carries the Bearer token, so it is
+machine-local and must never enter version control. This repository lists
+both `.mcp.json` and `setting.json` in `.gitignore`; any consumer repo that
+receives one needs the same two entries.
+
 ### Plugin marketplace install path
 
 ZCode also supports installing an MCP server bundled inside a plugin, via a
@@ -525,3 +565,11 @@ servers needing real secrets today.
   registration.
 - `test/runtime/launcher.test.ts` — canonical, currently-passing source for
   the local-marketplace-plus-plugin-install shape used above.
+
+## Turn cap (`--max-turns`)
+
+`zcode --max-turns N ...` (or `ZCODE_MAX_TURNS=N` in the environment, which also reaches `zcode app-server`)
+caps model steps per turn. On reaching N the turn fails with `error_max_turns`
+("Reached maximum number of turns (N)."). The launcher lowers the flag to the env var; the
+sync-runtime max-turns patch reads `config.maxTurns ?? ZCODE_MAX_TURNS` inside `runRegularTurnLoop`.
+Live driver: `node scripts/max-turns-live.mjs <N> <out.jsonl>`.
