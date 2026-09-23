@@ -32,6 +32,7 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
+import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
@@ -62,7 +63,9 @@ export function resolveZCodeBaseUrl(env: NodeJS.ProcessEnv): string {
 }
 
 export function resolveNodeExecutable(): string {
-  return process.env.ZCODE_NODE?.trim() || process.execPath;
+  // 3.14+ vendored runtime needs node >= 22.19 (node:sqlite); a stale PATH
+  // node (or a bun host) must not be handed to the runtime unprobed.
+  return resolveRuntimeNode(process.env.ZCODE_NODE?.trim() || undefined);
 }
 
 function safeVersion(value: unknown): string | undefined {

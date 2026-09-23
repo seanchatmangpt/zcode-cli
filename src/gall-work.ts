@@ -38,6 +38,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { OcelRecorder, STREAM_SOURCE, leaseIdentityFromEnv, ocelDirectory, ocelEnabled } from "./ocel-tap.ts";
+import { resolveRuntimeNode } from "./runtime-node.ts";
 import {
   capacityFromBody,
   capacityFromStatus,
@@ -489,7 +490,7 @@ export async function runConstruct(
   // head. The CLI flag (highest precedence) pins that authority explicitly
   // instead of leaving the turn to an interactive default.
   const permissionArgs = ["--mode", "yolo"];
-  const node = process.env.ZCODE_NODE?.trim() || process.execPath;
+  const node = resolveRuntimeNode(process.env.ZCODE_NODE?.trim() || undefined);
   const started = Date.now();
 
   // OCEL tap (ZCODE-26922-06): when ZCODE_OCEL=1, the construct turn feeds
