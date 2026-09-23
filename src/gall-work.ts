@@ -37,6 +37,16 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { OcelRecorder, STREAM_SOURCE, leaseIdentityFromEnv, ocelDirectory, ocelEnabled } from "./ocel-tap.ts";
+import {
+  capacityFromBody,
+  capacityFromStatus,
+  callWithCapacityBackoff,
+  ConcurrencyCap,
+  defaultFabricConcurrencyLimit,
+  isProviderCapacityRefusal,
+  type CapacitySignal
+} from "./provider-backoff.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -231,9 +241,18 @@ export interface FabricCallOutcome {
   ok: boolean;
   result?: Record<string, unknown>;
   error?: string;
+  /** Provider capacity classification when the failure was capacity-shaped. */
+  capacity?: CapacitySignal;
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+// Local parallelism bound for fabric calls (claim/heartbeat/close from the
+// lifecycle run concurrently only within one process; the cap keeps this
+// process's contribution to provider saturation bounded and typed).
+const fabricConcurrencyCap = new ConcurrencyCap(
+  Number(process.env.ZCODE_FABRIC_MAX_CONCURRENT?.trim() || defaultFabricConcurrencyLimit)
+);
 
 export async function fabricCall(
   target: FabricTarget,
@@ -242,55 +261,81 @@ export async function fabricCall(
   timeoutMs = 15_000,
   fetchImpl: FetchLike = fetch
 ): Promise<FabricCallOutcome> {
-  let response: Response;
-  try {
-    response = await fetchImpl(target.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        ...(target.authorization ? { authorization: target.authorization } : {})
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name: tool, arguments: args }
-      }),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch (error) {
-    return { ok: false, error: `fabric_unreachable: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  if (!response.ok) {
-    return { ok: false, error: `fabric_http_${response.status}` };
-  }
-  let body: {
-    result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
-    error?: { message?: string };
-  };
-  try {
-    body = await response.json() as typeof body;
-  } catch (error) {
-    return { ok: false, error: `fabric_bad_response: ${error instanceof Error ? error.message : String(error)}` };
-  }
-  if (body.error) {
-    return { ok: false, error: body.error.message ?? "fabric_rpc_error" };
-  }
-  const text = body.result?.content?.[0]?.text ?? "";
-  if (body.result?.isError) {
+  const send = async (): Promise<FabricCallOutcome> => {
+    let response: Response;
     try {
-      const parsed = JSON.parse(text) as { error?: string };
-      return { ok: false, error: parsed.error ?? (text || "fabric_tool_error") };
-    } catch {
-      return { ok: false, error: text || "fabric_tool_error" };
+      response = await fetchImpl(target.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(target.authorization ? { authorization: target.authorization } : {})
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: tool, arguments: args }
+        }),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (error) {
+      return { ok: false, error: `fabric_unreachable: ${error instanceof Error ? error.message : String(error)}` };
     }
-  }
-  try {
-    return { ok: true, result: JSON.parse(text) as Record<string, unknown> };
-  } catch {
-    return { ok: false, error: `fabric_bad_tool_payload: ${text.slice(0, 200)}` };
-  }
+    if (!response.ok) {
+      const capacity = capacityFromStatus(response.status);
+      if (capacity) return { ok: false, error: `fabric_capacity:${capacity.code}`, capacity };
+      return { ok: false, error: `fabric_http_${response.status}` };
+    }
+    let body: {
+      result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+      error?: { message?: string };
+    };
+    try {
+      body = await response.json() as typeof body;
+    } catch (error) {
+      return { ok: false, error: `fabric_bad_response: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    if (body.error) {
+      return { ok: false, error: body.error.message ?? "fabric_rpc_error" };
+    }
+    const text = body.result?.content?.[0]?.text ?? "";
+    if (body.result?.isError) {
+      // A fabric tool refusal can itself be the provider's capacity envelope
+      // (e.g. {"error":{"code":1302},"message":"High concurrency usage"}):
+      // classify it as capacity so the bounded backoff above applies instead
+      // of sealing a generic failure receipt.
+      const capacity = capacityFromBody(text);
+      if (capacity) return { ok: false, error: `fabric_capacity:${capacity.code}`, capacity };
+      try {
+        const parsed = JSON.parse(text) as { error?: string };
+        return { ok: false, error: parsed.error ?? (text || "fabric_tool_error") };
+      } catch {
+        return { ok: false, error: text || "fabric_tool_error" };
+      }
+    }
+    try {
+      return { ok: true, result: JSON.parse(text) as Record<string, unknown> };
+    } catch {
+      return { ok: false, error: `fabric_bad_tool_payload: ${text.slice(0, 200)}` };
+    }
+  };
+
+  return await fabricConcurrencyCap.run(() =>
+    callWithCapacityBackoff(send, {
+      capacityOf: (outcome) => outcome.capacity ?? false,
+      onRetry: (info) => {
+        console.error(`gall-work: fabric ${tool} capacity retry ${info.attempt} (${info.code}) in ${info.delayMs}ms`);
+      }
+    })
+  ).catch((error) => {
+    if (isProviderCapacityRefusal(error)) {
+      // Typed refusal after bounded retries: the lifecycle seals a typed
+      // failure receipt. There is no prompt fallback.
+      return { ok: false, error: `fabric_capacity:${error.code}:attempts=${error.attempts}` };
+    }
+    throw error;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +462,8 @@ export interface ConstructOutcome {
   outputTail: string;
   durationMs: number;
   spawnError?: string;
+  /** Receipt sealed by the OCEL tap when ZCODE_OCEL=1 (ZCODE-26922-06). */
+  ocelReceiptPath?: string;
 }
 
 const constructOutputTailBytes = 4096;
@@ -429,21 +476,66 @@ export async function runConstruct(
   spawnImpl: typeof spawnChild = spawnChild
 ): Promise<ConstructOutcome> {
   const runtimePath = join(packageRoot, "vendor", "zcode.cjs");
+  // --mode yolo is the headless worker's permission client stand-in: the
+  // runtime's built-in default permission mode is "build" (and a synced
+  // dispatcher setting.json may carry mode "build" too), which routes every
+  // Bash call to the permission broker. A headless --prompt turn has no
+  // permission client, so the DenyPermissionBroker refuses each step with
+  // "No permission client configured for Bash" -- the BLOCKED:
+  // BASH_PERMISSION_CLIENT_ABSENT failure (xaas sj-001
+  // zcode-headless-execution-refusal). The lease itself is the worker's
+  // authority: worktree-confined by the doctrinal prompt, heartbeated, and
+  // falsified after the fact by the fabric's verifier court on the captured
+  // head. The CLI flag (highest precedence) pins that authority explicitly
+  // instead of leaving the turn to an interactive default.
+  const permissionArgs = ["--mode", "yolo"];
   const node = process.env.ZCODE_NODE?.trim() || process.execPath;
   const started = Date.now();
+
+  // OCEL tap (ZCODE-26922-06): when ZCODE_OCEL=1, the construct turn feeds
+  // the ontology-generated tap and seals a receipt bound to the exact
+  // subject and lease identity. The turn emits stream-json -- the surface
+  // the tap consumes -- instead of the bare --json result envelope.
+  const ocel = ocelEnabled(process.env)
+    ? new OcelRecorder(
+        STREAM_SOURCE,
+        ocelDirectory(process.env),
+        leaseIdentityFromEnv({
+          XAAS_WORKER: "1",
+          XAAS_LEASE_CWD: request.cwd,
+          XAAS_EPOCH_ID: request.epochId,
+          ...(request.descriptor
+            ? { XAAS_WORK_ORDER_IRI: request.descriptor.work_order_iri, XAAS_BASE_SHA: request.descriptor.base_sha }
+            : {})
+        })
+      )
+    : undefined;
 
   return await new Promise<ConstructOutcome>((resolveOutcome) => {
     let child: ChildProcess;
     try {
-      child = spawnImpl(node, [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--json"], {
-        cwd: packageRoot,
-        env: {
-          ...process.env,
-          XAAS_WORKER: "1",
-          XAAS_LEASE_CWD: request.cwd
-        },
-        stdio: ["ignore", "pipe", "pipe"]
-      });
+      child = spawnImpl(
+        node,
+        [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--output-format", "stream-json", ...permissionArgs],
+        {
+          cwd: packageRoot,
+          env: {
+            ...process.env,
+            XAAS_WORKER: "1",
+            XAAS_LEASE_CWD: request.cwd,
+            // Lease identity for the OCEL tap (ZCODE-26922-06): receipts sealed
+            // for this turn carry the exact work order, epoch and base subject.
+            ...(request.descriptor
+              ? {
+                  XAAS_WORK_ORDER_IRI: request.descriptor.work_order_iri,
+                  XAAS_BASE_SHA: request.descriptor.base_sha
+                }
+              : {}),
+            XAAS_EPOCH_ID: request.epochId
+          },
+          stdio: ["ignore", "pipe", "pipe"]
+        }
+      );
     } catch (error) {
       resolveOutcome({
         exitCode: null,
@@ -460,6 +552,7 @@ export async function runConstruct(
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
       process.stdout.write(text);
       tail = (tail + text).slice(-constructOutputTailBytes);
+      ocel?.write(text);
     };
     child.stdout?.on("data", absorb);
     child.stderr?.on("data", absorb);
@@ -473,7 +566,17 @@ export async function runConstruct(
     const settle = (): void => {
       if (!exit) return;
       clearInterval(heartbeat);
-      resolveOutcome({ ...exit, outputTail: tail, durationMs: Date.now() - started });
+      let ocelReceiptPath: string | undefined;
+      if (ocel) {
+        try {
+          ocelReceiptPath = ocel.finish().receiptPath;
+        } catch (error) {
+          // A failed tap must not fail the leased turn; the close evidence
+          // simply carries no receipt path.
+          console.error(`gall-work: ocel tap failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      resolveOutcome({ ...exit, outputTail: tail, durationMs: Date.now() - started, ocelReceiptPath });
     };
 
     child.once("error", (error) => {
@@ -751,6 +854,7 @@ export async function runGallWork(
       duration_ms: construct.durationMs,
       output_tail: construct.outputTail,
       heartbeat_seconds: request.heartbeatSeconds,
+      ...(construct.ocelReceiptPath ? { ocel_receipt: construct.ocelReceiptPath } : {}),
       ...semanticEvidence
     }
   });

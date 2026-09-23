@@ -1,0 +1,16 @@
+{
+  "wo": "ZCODE-26922-05",
+  "base_sha": "da17824",
+  "merge_sha": "see integration branch (wo5/upstream d194d98 + 8cb486c merged)",
+  "merged": { "origin/main (kingsword09)": "dc82485", "skipped": "origin/release/zcode-upstream 05d3f49 (superseded)" },
+  "command": [
+    "git fetch origin && git merge origin/main (hand-resolved: package.json, scripts/sync-runtime.ts, test/runtime/launcher.test.ts)",
+    "jq -r .appVersion zcode-runtime.lock.json  (= 3.14.1)",
+    "bun run sync:locked",
+    "bun run typecheck",
+    "bun run test:unit | test:tui | test:runtime | test:node"
+  ],
+  "exit": 0,
+  "output_excerpt": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event.",
+  "standing": "PARTIAL_ALIVE"
+}

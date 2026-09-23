@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { assertSessionModelReady } from "../src/session-model-recovery.ts";
 
 import {
   applyRuntimePatchPlan,
@@ -12,6 +13,7 @@ import {
   hasRuntimeCliHelpContract,
   hasRuntimeHttpNoContentGuard,
   hasRuntimeNetworkRetryGuard,
+  hasRuntimeSqliteBusyTimeout,
   hasRuntimeStreamEofFinishGuard,
   installRuntimeProviderConfig,
   manifestUrl,
@@ -27,6 +29,8 @@ import {
   patchRuntimeLoginModelDefaults,
   patchRuntimeNetworkRetryClassification,
   patchRuntimeOAuthHttpErrors,
+  patchRuntimeSessionModelRecovery,
+  patchRuntimeSqliteBusyTimeout,
   patchRuntimeStreamEofFinishGuard,
   patchRuntimeTerminalToolProjection,
   patchRuntimeTuiBridge,
@@ -37,6 +41,7 @@ import {
   selectRuntimeLock,
   serviceManifestUrl,
   serviceReleasePlatform,
+  sqliteBusyTimeoutMs,
   supportsMultiMessageFileRewind,
   writeRuntimeCompatibilityFailure
 } from "../scripts/sync-runtime.ts";
@@ -48,6 +53,32 @@ import {
 } from "../scripts/release-version.ts";
 
 describe("runtime synchronization", () => {
+  test("adds session recovery at native restore and execution boundaries and can run twice", async () => {
+    const runtime = 'async function app(options){let read=()=>runtime,restore=label(async()=>{let ok=saved&&registry.validateSelection(saved);return read().setSessionModelSelection(ok?.ok?saved:void 0),saved},"restorePersistedModelSelection"),prepare=label(async args=>{await options.prepareUserExecutionBoundary(args)},"preparePromptBoundary");return{restore,prepare,getModelOption:label(model=>lookup(context.providerRegistry,model),"getModelOption")}}';
+    const patched = patchRuntimeSessionModelRecovery(runtime);
+    expect(patched).toContain('readSessionModelState:label(async()=>await');
+    expect(patched).toContain('read().$zRestoredSessionModel={selection:saved,registry:registry}');
+    expect(patched).toContain('assertSessionModelReady({registry:options.runtime.$zRestoredSessionModel?.registry');
+    expect(patchRuntimeSessionModelRecovery(patched)).toBe(patched);
+    expect(() => patchRuntimeSessionModelRecovery(runtime.replace('"restorePersistedModelSelection"', '"renamed"')))
+      .toThrow("restore/facade anchors missing");
+    const saved = { providerId: "old", modelId: "model" };
+    const registry = {
+      validateSelection: (selection: { providerId: string }) => selection.providerId === "valid" ? { ok: true } : { ok: false, code: "provider-not-found" },
+      getModel: () => undefined
+    };
+    let current: unknown;
+    const core = { getSessionModelSelection: () => current, setSessionModelSelection: (value: unknown) => { current = value; } };
+    const create = new Function("label", "registry", "saved", "runtime", "require", "__dirname", patched + ";return app;")(
+      (fn: unknown) => fn, registry, saved, core,
+      (id: string) => id === "node:path" ? { join } : { assertSessionModelReady }, "/fixture"
+    );
+    // The input facade does not receive providerRegistry; the restore closure owns it.
+    const facade = await create({ runtime: core, sessionId: "test", prepareUserExecutionBoundary: async () => { await facade.restore(); } });
+    await expect(facade.prepare({})).rejects.toThrow("the provider is unavailable");
+    await expect(facade.prepare({ intent: { modelSelection: { providerId: "valid", modelId: "model" } } })).resolves.toBeUndefined();
+  });
+
   test("projects native planEnabled separately from permission mode", async () => {
     const source = 'const a=fn=>fn;const modes=["plan","build","edit","yolo"];a(format,"formatAvailableCommandCenterModes");function format(){return modes.join(", ")}const planning=()=>e.runtime.getPlanEnabled();const app={getMode:a(()=>e.runtime.getMode(),"getMode"),setMode:a(async mode=>{let previous=e.runtime.getMode();await e.runtime.setExecutionState({mode:mode},e.traceContext);return{mode:e.runtime.getMode(),previousMode:previous,traceId:e.traceContext.traceId}},"setMode")};';
     let mode = "edit", planEnabled = false;
@@ -300,8 +331,68 @@ describe("runtime synchronization", () => {
     expect(hasRuntimeHttpNoContentGuard("runtime without the HTTP wrapper")).toBe(false);
   });
 
-  test("classifies wrapped transport failures without retrying in place after output", () => {
+  test("sets the SQLite write timeout after both migration paths without changing startup budgets", async () => {
     const runtime = [
+      'const deferred=Symbol();class Store{constructor(t={},n){this.dbPath=t.dbPath??"fixture.sqlite";let r=t.startupLockTimeoutMs??5e3;',
+      'this.db=new sqlite.DatabaseSync(this.dbPath,{timeout:r});',
+      'try{n!==deferred&&migrateSync(this.db,this.dbPath,r)}catch(e){this.db.close();throw e}}',
+      'static async openStartup(t={},n={}){let o=new Store(t,deferred);try{return await migrateAsync(o.db,o.dbPath,n),o}catch(e){try{o.close()}catch{}throw e}}',
+      'close(){this.db.close()}}'
+    ].join("");
+    const patched = patchRuntimeSqliteBusyTimeout(runtime);
+    expect(hasRuntimeSqliteBusyTimeout(runtime)).toBe(false);
+    expect(hasRuntimeSqliteBusyTimeout(patched)).toBe(true);
+    expect(hasRuntimeSqliteBusyTimeout(`unrelated "pragma busy_timeout = ${sqliteBusyTimeoutMs}"`)).toBe(false);
+    const opened: { options: unknown; path: string }[] = [];
+    const statements: string[] = [];
+    let migrationFailure = false;
+    type Database = { exec: (sql: string) => void; close: () => void };
+    const sqlite = {
+      DatabaseSync: function DatabaseSync(this: Database, path: string, options: unknown) {
+        opened.push({ options, path });
+        this.exec = (sql: string) => statements.push(sql);
+        this.close = () => { statements.push("close"); };
+      }
+    };
+    const Store = new Function("sqlite", "migrateSync", "migrateAsync", `${patched};return Store;`)(
+      sqlite,
+      (_db: Database, _path: string, timeout: number) => {
+        statements.push(`sync migration budget: ${timeout}`);
+        if (migrationFailure) throw new Error("migration failed");
+      },
+      async (db: Database) => {
+        db.exec("pragma busy_timeout = 25");
+        try { if (migrationFailure) throw new Error("migration failed"); }
+        finally { db.exec("pragma busy_timeout = 5000"); }
+      }
+    );
+    new Store({ startupLockTimeoutMs: 2500 });
+    expect(opened).toEqual([{ options: { timeout: 2500 }, path: "fixture.sqlite" }]);
+    expect(statements).toEqual(["sync migration budget: 2500", `pragma busy_timeout = ${sqliteBusyTimeoutMs}`]);
+    statements.length = 0;
+    await Store.openStartup();
+    expect(statements).toEqual(["pragma busy_timeout = 25", "pragma busy_timeout = 5000", `pragma busy_timeout = ${sqliteBusyTimeoutMs}`]);
+
+    // Failed migration paths must close the connection, not hand it to callers.
+    migrationFailure = true;
+    statements.length = 0;
+    await expect(Store.openStartup()).rejects.toThrow("migration failed");
+    expect(statements).toEqual(["pragma busy_timeout = 25", "pragma busy_timeout = 5000", "close"]);
+    statements.length = 0;
+    expect(() => new Store()).toThrow("migration failed");
+    expect(statements).toEqual(["sync migration budget: 5000", "close"]);
+    expect(patchRuntimeSqliteBusyTimeout(patched)).toBe(patched);
+    expect(() => patchRuntimeSqliteBusyTimeout("incompatible runtime")).toThrow(/migration anchors/);
+    expect(() => patchRuntimeSqliteBusyTimeout(runtime.replace("await migrateAsync", "await changed"))).not.toThrow();
+    expect(() => patchRuntimeSqliteBusyTimeout(runtime.replace("o.dbPath,n", "o.dbPath"))).toThrow(/migration anchors/);
+    expect(() => patchRuntimeSqliteBusyTimeout(runtime + runtime)).toThrow(/ambiguous/);
+    const partial = patched.replace(`,o.db.exec("pragma busy_timeout = ${sqliteBusyTimeoutMs}")`, "");
+    expect(hasRuntimeSqliteBusyTimeout(partial)).toBe(false);
+    expect(() => patchRuntimeSqliteBusyTimeout(partial)).toThrow(/migration anchors/);
+  });
+
+  test.each(["legacy", "budgeted"])("classifies transport failures without retrying after output (%s)", budget => {
+    let runtime = [
       "var yt2={ModelRequestFailed:'model_request_failed',ProviderNotConfigured:'provider_not_configured'},",
       "it2={Cancelled:'cancelled',NetworkError:'network_error',AuthFailed:'auth_failed',ServerError:'server_error',Unknown:'unknown'},",
       "nn2={NetworkError:'network_error',AuthRefresh:'auth_refresh',ServerError:'server_error'},",
@@ -334,12 +425,18 @@ describe("runtime synchronization", () => {
       "function* walk(e){let t=e,r=new WeakSet;for(let n=0;n<=6;n+=1){if(!t||typeof t!=='object'||r.has(t))return;r.add(t);yield t;t=t.cause}}",
       "function recoverable(e){for(let t of walk(e)){if(t.retryable===!0)return!0;let r=pP(t.context);if(r.retryable===!0)return!0}return!1}"
     ].join("");
+    if (budget === "budgeted") runtime = runtime.replace(
+      "function z9o(e){return e.emittedRetryBoundaryEvent||e.attempt>=e.maxAttempts",
+      'function budgetAllows(budget,attempt,max){return budget==="unbounded"||attempt<max}function inspectError(error){return {providerErrorCode:error.code}}function z9o(e){let code=inspectError(e.error).providerErrorCode;return e.emittedRetryBoundaryEvent||!budgetAllows(e.retryBudget,e.attempt,e.maxAttempts)'
+    );
     const patched = patchRuntimeNetworkRetryClassification(runtime);
 
     expect(hasRuntimeNetworkRetryGuard(runtime)).toBe(false);
     expect(hasRuntimeNetworkRetryGuard(patched)).toBe(true);
     expect(patched).toContain("function $zTransportChain(e,t){");
-    expect(patched).toContain("return e.emittedRetryBoundaryEvent||e.attempt>=e.maxAttempts");
+    expect(patched).toContain(budget === "legacy"
+      ? "return e.emittedRetryBoundaryEvent||e.attempt>=e.maxAttempts"
+      : "return e.emittedRetryBoundaryEvent||!budgetAllows(e.retryBudget,e.attempt,e.maxAttempts)");
     expect(patched).not.toContain("e.emittedRetryBoundaryEvent&&!$zTransportChain");
     expect(() => new Function(patched)).not.toThrow();
     expect(patchRuntimeNetworkRetryClassification(patched)).toBe(patched);
@@ -398,6 +495,10 @@ describe("runtime synchronization", () => {
     expect(gate(beforeOutput)).toBe(true);
     expect(gate({ ...beforeOutput, emittedRetryBoundaryEvent: true })).toBe(false);
     expect(gate({ ...beforeOutput, attempt: 6 })).toBe(false);
+    if (budget === "budgeted") {
+      expect(gate({ ...beforeOutput, attempt: 6, retryBudget: "unbounded" })).toBe(true);
+      expect(gate({ ...beforeOutput, attempt: 6, retryBudget: "unbounded", emittedRetryBoundaryEvent: true })).toBe(false);
+    }
     expect(gate({ ...beforeOutput, failure: { ...failure, reason: "cancelled" } })).toBe(false);
     expect(recoverable({ cause: wrapped, context: { retryable: failure.retryable } })).toBe(true);
 
@@ -756,8 +857,8 @@ describe("runtime synchronization", () => {
     expect(patched).toContain("listSkills:g.listSkills");
     expect(patched).toContain("setMode:g.setMode");
     expect(patched).toContain("readSessionModel:g.readSessionModel");
-    expect(patched).toContain('type:"runtime/model_selection"');
-    expect(patched).toContain('...n.options?{options:n.options}:{}');
+    expect(patched).toContain("await $zSessionModelApp.readSessionModelState()");
+    expect(patched).toContain('setModel(s.selection,{transient:!0})');
     expect(patched).not.toContain('modelRef:String(e)');
     expect(patched).toContain("subscribeSessionEvents:g.subscribeSessionEvents");
     expect(patched).toContain("sendBackgroundTaskMessage:g.sendBackgroundTaskMessage");
@@ -1273,6 +1374,14 @@ describe("runtime synchronization", () => {
     expect(nativeSteerPatched).toContain('l1t(await(X.result??X.completion),Q,R5(t))');
     expect(nativeSteerPatched).not.toContain('l1t(X.result,Q,R5(t))');
     expect(patchRuntimeTuiBridge(nativeSteerPatched)).toBe(nativeSteerPatched);
+    const presentationSteerRuntime = nativeSteerRuntime.replace(
+      "input:A,inputId:$?.inputId",
+      'input:A,inputPresentation:$?.inputPresentation??($?.inputSource?void 0:"user_steer"),inputId:$?.inputId'
+    );
+    const presentationSteerPatched = patchRuntimeTuiBridge(presentationSteerRuntime);
+    expect(presentationSteerPatched).toContain('inputPresentation:$?.inputPresentation??($?.inputSource?void 0:"user_steer")');
+    expect(presentationSteerPatched).not.toContain('pendingInputId:$?.pendingInputId');
+    expect(patchRuntimeTuiBridge(presentationSteerPatched)).toBe(presentationSteerPatched);
     expect(() => patchRuntimeTuiBridge(
       nativeSteerRuntime.replace(
         "return t.runtime.admitPrompt(A,[],{...$,delivery:d,traceContext:$?.traceContext})",
@@ -1594,7 +1703,7 @@ describe("runtime synchronization", () => {
     expect(() => patchRuntimeGoalFailurePause("incompatible runtime")).toThrow(/incompatible/);
   });
 
-  test("reclassifies registry stream EOF as retryable", () => {
+  test.each(["legacy", "budgeted"])("reclassifies registry stream EOF as retryable (%s)", budget => {
     const runtime = [
       "function detectFallback(e){return}",
       "function findProviderError(e){return}",
@@ -1615,10 +1724,14 @@ describe("runtime synchronization", () => {
       "await Ac({...k,attempt:u,durationMs:de-c,requestHeaderCount:U,requestHeaders:F,responseHeaderCount:Object.keys(le).length,responseHeaders:le,providerRequestId:m2e(le),finishReason:x.finishReason,usage:x.usage,timeToFirstProviderEventMs:Z,timeToFirstContentMs:J,timeToFirstTextMs:Q,streamMaxIdleMs:X||void 0,streamStallCount:V,streamOutputCommitted:z,timestamp:new Date(de).toISOString(),type:\"model_request_completed\"},_A(e)),O=!0}",
       "r&&P&&await Yrt({modelIoFullRetentionEnabled:e.modelIoFullRetentionEnabled,attempt:u,debugDir:e.debugDir,isDev:n,normalizedToolCalls:S.snapshotNormalizedToolCalls(),options:P,recordModelIO:r,request:b,requestId:k.requestId,resolved:H,result:W,startedAt:c});return}"
     ].join("");
-    const source = `${runtime}${runner.replace(
+    let source = `${runtime}${runner.replace(
       'providerId:String(k.model.providerId),providerKind:k.providerKind,source:x.lastErrorChunk??x.lastFinishChunk})',
       'providerId:String(k.providerId),providerKind:H.providerKind,source:x.lastErrorChunk??x.lastFinishChunk})??fallback({captcha:H.accountAccess?.mode==="start-plan",providerId:String(k.providerId),providerKind:H.providerKind})'
-    )}`;
+    )}label(streamRunner,"runStreamText");`;
+    if (budget === "budgeted") source = source.replace(
+      "let retryState=createRetryState({maxAttempts:e.retry.maxAttempts});",
+      "let retryBudget=e.request.modelRetryBudget,retryState=createRetryState({maxAttempts:e.retry.maxAttempts});"
+    );
 
     expect(hasRuntimeStreamEofFinishGuard(source)).toBe(false);
     const patched = patchRuntimeStreamEofFinishGuard(source);
@@ -1637,6 +1750,7 @@ describe("runtime synchronization", () => {
     expect(() => patchRuntimeStreamEofFinishGuard("incompatible runtime")).toThrow(
       /stream EOF guard patch/
     );
+    expect(() => patchRuntimeStreamEofFinishGuard(source.replace('label(streamRunner,"runStreamText");', ""))).toThrow(/label missing/);
 
     // The guard must classify the SDK's synthetic "other" finish (null
     // finish_reason) and a missing reason as EOF, while trusting a provider

@@ -1,0 +1,15 @@
+{
+  "wo": "ZCODE-26922-10",
+  "base_sha": "f5e2a36",
+  "merge_sha": "df9cd24",
+  "command": [
+    "bun run typecheck",
+    "bun test test/provider-backoff.test.ts",
+    "bun test test/gall-work.test.ts test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
+    "bun test test/ocel-conformance.test.ts test/ocel-tap.test.ts",
+    "grep -rn 'jest.mock|jest.fn' test/provider-backoff.test.ts"
+  ],
+  "exit": 0,
+  "output_excerpt": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4).",
+  "standing": "ALIVE"
+}

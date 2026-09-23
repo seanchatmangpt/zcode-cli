@@ -9,9 +9,13 @@ import { join } from "node:path";
 
 import { appendOutcome, appendPending, seal, verify as tsVerify, type Chain } from "../src/generated/receipt.ts";
 import { OcelRecorder, STREAM_SOURCE, normalizeRecord, APP_SERVER_SOURCE } from "../src/ocel-tap.ts";
-import { fixtures, repoRoot, toolchain } from "./support/ocel.ts";
+import { assertBundleWhenRequired, fixtures, repoRoot, toolchain } from "./support/ocel.ts";
 
 const have = (bin: string) => toolchain(bin, spawnSync("which", [bin]).status === 0);
+test("bundle present when ZCODE_REQUIRE_BUNDLE=1", () => {
+  assertBundleWhenRequired();
+});
+
 const py = join(repoRoot, "src", "generated", "py");
 
 function tsRun(lines: string[]) {

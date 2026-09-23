@@ -1,0 +1,13 @@
+{
+  "wo": "ZCODE-26922-07",
+  "base_sha": "ac67546b8765f02e142bd3208d8ad5422ef32f2a",
+  "receipt_commit": "064d171 (the receipt names its parent: the exact verified head, not the container commit)",
+  "command": [
+    "bun install --frozen-lockfile && bun run release:build  (observed: exits at test:all, machine-bound test:runtime tier)",
+    "per-phase ladder run at ac67546: typecheck / sync:locked / test:unit / test:tui / test:node / gen-ocel --check",
+    "docs/sjira/v26.9.21/receipts/ZOCEL-010.md written naming Exact Head Commit ac67546"
+  ],
+  "exit": 1,
+  "output_excerpt": "release:build exits 1 at the test:all step: test:runtime retains 9 failures classified sandbox-bound (18 on the pre-merge tree; the two subagent-harness failures pre-date the merge). Every other ladder phase is green at the exact head: typecheck 0, sync:locked 0 (all required patches apply+verify on 3.14.1; anchor-drift + loop-gaps 9 pass), test:unit 790 pass 0 fail, test:tui 44 pass, test:node 5 pass, gen-ocel fixed point. The ZOCEL-010 receipt names the exact head commit ac67546 (subject, not container). Standing PARTIAL_ALIVE: release:build full-exit-0 requires a non-sandboxed machine for the TUI/runtime smoke tier (upstream hosted CI is the suited court).",
+  "standing": "PARTIAL_ALIVE"
+}

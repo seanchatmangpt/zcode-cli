@@ -1,0 +1,20 @@
+{
+  "wo": "ZCODE-26922-01",
+  "base_sha": "cd95c2fea8612e3b3151cb422d26d9002834a321",
+  "merge_sha": "39f1ecb",
+  "merged": {
+    "fin/consumer-hardening": "3ade256",
+    "fin/maxturns-live": "30cf7b6",
+    "fin/snapshot-verify": "0baae04",
+    "feat/headless-mcp-contract": "61fe2e8"
+  },
+  "command": [
+    "bun run typecheck",
+    "bun test test/ocel-*.test.ts test/max-turns.test.ts test/mcp-user-scope-registration.test.ts",
+    "uv run --with pytest python -m pytest -q test/py",
+    "bun scripts/gen-ocel.ts --check"
+  ],
+  "exit": 0,
+  "output_excerpt": "typecheck: tsc --noEmit clean. bun test: 82 pass, 3 skip, 0 fail (85 tests, 8 files). pytest: 2 passed. gen-ocel: 'src/generated matches a fresh ggen sync run'. All four merges clean (maxturns auto-merged scripts/sync-runtime.ts hunk read and verified: ZCODE_MAX_TURNS env fallback + launcher --max-turns flag). Note: system python3 has no pytest module; pytest run via uv, exit 0.",
+  "standing": "ALIVE"
+}

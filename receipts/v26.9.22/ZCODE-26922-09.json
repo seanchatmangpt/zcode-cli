@@ -1,0 +1,15 @@
+{
+  "wo": "ZCODE-26922-09",
+  "base_sha": "587a1a6",
+  "command": [
+    "d17-5 triage: uncommitted OCEL event-sink experiment committed to worktree-wf_d1f79f3f-d17-5 (2a003a9, preserved not merged: superseded by launcher-level tap design)",
+    "gh pr close 1/3 -R seanchatmangpt/zcode-cli (contained via integrate/gall-into-main, verified ancestor)",
+    "gh pr close 2 -R seanchatmangpt/zcode-cli (superseded: 31-line sketch vs native 749-line gall-work; verified via git diff 454ed62 c53b9be)",
+    "git push fork --delete feat/v26.9.19-work-envelope-v2 (lease/2 has no consumer; verified no src refs)",
+    "git worktree remove (26 worktrees: merged-lineage wt/*, /private/tmp/xaas-*, .claude d17-1..5 after preserve, merged wo worktrees)",
+    "git branch -rd origin/fix/issue-160-model-recovery origin/gall-pr3 origin/pr-3 (dead: ls-remote 0 hits) + fork envelope-v2 (removed by push --delete)"
+  ],
+  "exit": 0,
+  "output_excerpt": "worktree list count = 3 (main checkout, release/v26.9.22 integration, wo9) <= 6 acceptance. PRs #1/#3 closed as contained, #2 closed as superseded with verified supersession diff. envelope-v2 remote branch deleted (fork is canonical per decision #4; fork/main fast-forward + push happens at the final step). Dead tracking refs: 4 removed (3 origin + 1 fork). d17-5 uncommitted OCEL sink experiment preserved on its branch (2a003a9) before pruning -- nothing destroyed. d17-1/-3/-4 branches remain as archive (stale 3.14.0 parallel lines, superseded content verified by survey + git cherry).",
+  "standing": "ALIVE"
+}
