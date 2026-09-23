@@ -1,0 +1,407 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# GALL-FRI-0925 stop court — canonical RDF for the Friday 2026-09-25 08:00 PT
+# GoalCheckpoint ladder (G0–G12). This graph is hand-authored canonical source
+# (法面 input), not a projection; edit this file, never a ticket.
+#
+# Classes/shapes/gates live in ggen_igniter semantic-jira-pack:
+#   sj:GoalCheckpoint            — ontology.ttl (subClassOf sj:Checkpoint)
+#   sj:GoalCheckpointShape       — shapes/work-order.shacl.ttl (closed)
+#   gates/070_stop_court.rq      — selected rows = open/malformed checkpoints;
+#                                  zero rows = STOP(G) holds
+#   templates/prose-extraction.md.eex — the prose→SemanticCheckpoint contract
+#                                  this graph itself instantiates (the G3
+#                                  worked example: the accepted Friday WBPR
+#                                  prose compiled into these propositions).
+#
+# Standing law: every checkpoint is UNKNOWN until its court returns receipted
+# evidence at an exact subject (receipts/receipts/v26.9.22/g<N>.json, validated
+# by ~/.claude/dfcm/validate_receipt.py). STOP = 070_stop_court.rq returns zero
+# rows over this graph. Subject SHAs below are observed-at values from
+# 2026-09-22; each court binds the exact subjectSha at run time.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:GoalCheckpoint a rdfs:Class .
+sj:Receipt a rdfs:Class .
+
+# ---- shared vocabulary ----
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition, schema-valid per ~/.claude/dfcm/receipt.schema.json." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "A cold independent process re-executes the recorded commands and reproduces the standing." .
+sj:observation-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Independent observation evidence" ;
+    dcterms:description "An observer other than the executor witnesses the postcondition." .
+
+# ---- G0: future bounded ----
+sj:court-g0 a sj:Court ;
+    rdfs:label "G0 court — accepted prose compiled" ;
+    dcterms:description "Verifies docs/sjira/v26.9.22/000-stop-court.md exists, is compiled from the accepted Friday WBPR prose through templates/prose-extraction.md.eex, and that every proposition here carries acceptance+falsifier+exclusion." .
+sj:acc-g0 a sj:AcceptanceCriterion ;
+    rdfs:label "Accepted future state projected into this graph" ;
+    dcterms:description "000-stop-court.md (the compiled Friday WBPR) is on disk; stop-court.ttl carries 13 typed GoalCheckpoints each with gapClass, acceptance, falsifier, exclusion, successor policy and LLM-retirement requirement; g0 receipt binds both file digests." .
+sj:fal-g0 a sj:Falsifier ;
+    rdfs:label "Proposition only in prose" ;
+    dcterms:description "A required proposition discoverable only in conversation or prose (absent from this graph) falsifies G0." .
+sj:cp-g0 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G0" ;
+    dcterms:title "Future bounded — accepted Friday WBPR compiled into semantic propositions" ;
+    dcterms:description "There is an accepted Vision/WBPR describing the future state being manufactured; its prose is projected into the explicit propositions of this graph." ;
+    sj:subject "zcode-cli:docs/sjira/v26.9.22/stop-court.ttl" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "first_mile" ;
+    sj:requiresCourt sj:court-g0 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g0 ;
+    sj:falsifier sj:fal-g0 ;
+    sj:exclusion "Additional ideas, better UX, and additional future capabilities do not keep G0 open." ;
+    sj:successorPolicy "Post-STOP prose opens a successor checkpoint (GC-026923); it never reopens G0." ;
+    sj:llmRetirementRequirement "Compilation of ADMITTED prose is a pack template; no model call on the KNOWN path." ;
+    sj:replayIdentity "gall-fri-0925:G0" ;
+    sj:nextCheckpoint sj:cp-g1 .
+
+# ---- G1: semantic closure ----
+sj:court-g1 a sj:Court ;
+    rdfs:label "G1 court — classification ledger complete" ;
+    dcterms:description "Verifies successors.md classifies every 48h-discovered item and that no required proposition lives outside this graph + work-orders.ttl." .
+sj:acc-g1 a sj:AcceptanceCriterion ;
+    rdfs:label "Every proposition classified" ;
+    dcterms:description "successors.md assigns each discovered item exactly one of {close-now (gate-bound), successor, BLOCKED, UNSUPPORTED, REFUSED}; the 070 stop-court gate executes over this graph without error." .
+sj:fal-g1 a sj:Falsifier ;
+    rdfs:label "Orphan requirement" ;
+    dcterms:description "A requirement required by the accepted prose that is present in no graph row (only in prose or conversation) falsifies G1." .
+sj:cp-g1 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G1" ;
+    dcterms:title "Semantic closure — every proposition classified" ;
+    dcterms:description "Every proposition required by the accepted prose is classified as bootstrap, first mile, deterministic core, last mile, or explicit successor." ;
+    sj:subject "zcode-cli:docs/sjira/v26.9.22/successors.md" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "first_mile" ;
+    sj:requiresCourt sj:court-g1 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g1 ;
+    sj:falsifier sj:fal-g1 ;
+    sj:exclusion "Items merely mentioned as possible future improvements do not keep G1 open." ;
+    sj:successorPolicy "Unclassifiable new items become successor rows; G1 closes on the classification, not on the backlog." ;
+    sj:llmRetirementRequirement "Classification is a deterministic sort over a fixed item list; no model call." ;
+    sj:replayIdentity "gall-fri-0925:G1" ;
+    sj:nextCheckpoint sj:cp-g2 .
+
+# ---- G2: cold bootstrap ----
+sj:court-g2 a sj:Court ;
+    rdfs:label "G2 court — cold-start reconstruction" ;
+    dcterms:description "Runs zcode-cli scripts/cold-start-court.ts with no conversational/session context and validates the emitted bootstrap receipt." .
+sj:acc-g2 a sj:AcceptanceCriterion ;
+    rdfs:label "Cold process reconstructs the world" ;
+    dcterms:description "From repos, canonical graphs, and durable receipts only, the court reconstructs subjects, exact versions, capability inventory, authority boundaries, and the current sJira frontier, emitting receipts/v26.9.22/g2-cold-start.json (schema-valid)." .
+sj:fal-g2 a sj:Falsifier ;
+    rdfs:label "Reconstruction needs a mind" ;
+    dcterms:description "Any reconstruction step requiring chat context, AGENTS.md prose, agent scratch state, or a model call falsifies G2." .
+sj:cp-g2 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G2" ;
+    dcterms:title "Cold bootstrap — system reconstructs itself without conversational context" ;
+    dcterms:description "Starting with durable artifacts and no conversation/session context, the system reconstructs ontology, exact subjects/versions, capability inventory, authority boundaries, receipts and current sJira frontier." ;
+    sj:subject "zcode-cli:scripts/cold-start-court.ts" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "bootstrap" ;
+    sj:requiresCourt sj:court-g2 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-g2 ;
+    sj:falsifier sj:fal-g2 ;
+    sj:exclusion "AGENTS.md completeness, skill prose quality, and Claude/ZCode memory do not keep G2 open." ;
+    sj:successorPolicy "Deeper bootstrap gaps open bootstrap-class successors; G2 closes on the demonstrated reconstruction." ;
+    sj:llmRetirementRequirement "The court itself is a deterministic script; zero model inference." ;
+    sj:replayIdentity "gall-fri-0925:G2" ;
+    sj:nextCheckpoint sj:cp-g3 .
+
+# ---- G3: first-mile compilation ----
+sj:court-g3 a sj:Court ;
+    rdfs:label "G3 court — prose compiled to work" ;
+    dcterms:description "Re-renders the prose-extraction contract against the accepted Friday prose and verifies deterministic, replayable output after semantic admission." .
+sj:acc-g3 a sj:AcceptanceCriterion ;
+    rdfs:label "Fresh prose compiles deterministically" ;
+    dcterms:description "This court graph is the worked example: the accepted Friday WBPR prose compiled through the extraction contract into typed GoalCheckpoints; re-rendering the contract produces byte-identical structure; the g3 receipt binds template digest and output digests." .
+sj:fal-g3 a sj:Falsifier ;
+    rdfs:label "Interpretation after admission" ;
+    dcterms:description "Repeated LLM interpretation required after the semantics have been admitted falsifies G3." .
+sj:cp-g3 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G3" ;
+    dcterms:title "First-mile compilation — prose → semantics → finite delta → sJira" ;
+    dcterms:description "A genuinely new WBPR/Vision can be taken from prose → semantic elements → admitted target state → finite delta → sJira work orders." ;
+    sj:subject "ggen_igniter:semantic-jira-pack/templates/prose-extraction.md.eex" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "first_mile" ;
+    sj:requiresCourt sj:court-g3 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-g3 ;
+    sj:falsifier sj:fal-g3 ;
+    sj:exclusion "Repeated LLM interpretation AFTER semantics are admitted does not keep G3 open; broad backlog completeness does not either." ;
+    sj:successorPolicy "Wider prose-coverage (more systems) opens first_mile successors." ;
+    sj:llmRetirementRequirement "The LLM's single lawful use is the one-time semantic-novelty extraction of NEW prose; the compile step is a template." ;
+    sj:replayIdentity "gall-fri-0925:G3" ;
+    sj:nextCheckpoint sj:cp-g4 .
+
+# ---- G4: sJira finite work graph ----
+sj:court-g4 a sj:Court ;
+    rdfs:label "G4 court — work graph admission" ;
+    dcterms:description "Runs SHACL admission (semantic-jira-pack shapes) over zcode-cli work-orders.ttl and xaas docs/sjira/v26.9.22/ index; every required order must carry the full field set." .
+sj:acc-g4 a sj:AcceptanceCriterion ;
+    rdfs:label "Every required order fully admitted" ;
+    dcterms:description "ZOCEL-014/015/016 and SJ-010/011 each have exact subject, target postcondition, dependencies, capability, evidence horizon, authority ceiling, acceptance predicate, falsifier and exclusions; SHACL court passes and a mutated order (field deleted) is refused." .
+sj:fal-g4 a sj:Falsifier ;
+    rdfs:label "Vacuous admission" ;
+    dcterms:description "An order missing a required field that the admission court still admits falsifies G4." .
+sj:cp-g4 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G4" ;
+    dcterms:title "sJira finite work graph — every required order fully specified" ;
+    dcterms:description "Every required WorkOrder has exact subject, target postcondition, dependencies, capability, evidence horizon, authority ceiling, acceptance predicate, falsifier and exclusions." ;
+    sj:subject "zcode-cli:docs/sjira/v26.9.22/work-orders.ttl" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "first_mile" ;
+    sj:requiresCourt sj:court-g4 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g4 ;
+    sj:falsifier sj:fal-g4 ;
+    sj:exclusion "Broad backlog completeness does not keep G4 open." ;
+    sj:successorPolicy "New orders enter the v26.9.23 graph; G4 closes on THIS cycle's required orders." ;
+    sj:llmRetirementRequirement "Admission is SHACL + SPARQL gates; zero model inference." ;
+    sj:replayIdentity "gall-fri-0925:G4" ;
+    sj:nextCheckpoint sj:cp-g5 .
+
+# ---- G5: SA2A conservation ----
+sj:court-g5 a sj:Court ;
+    rdfs:label "G5 court — exact-tuple conservation" ;
+    dcterms:description "Projects a WorkOrder through the SA2A request shape into an XaaS lease request and verifies subject, postcondition, evidence, authority and consequence bounds survive; mutates one element and requires refusal." .
+sj:acc-g5 a sj:AcceptanceCriterion ;
+    rdfs:label "Tuple survives routing unlost" ;
+    dcterms:description "For ZOCEL-014, the SA2A projection (projection-sa2a) and the gall-work lease request carry the same subject identity, postcondition, evidence requirement, authority ceiling and consequence class; a mutated projection (subject swapped) is refused by the court." .
+sj:fal-g5 a sj:Falsifier ;
+    rdfs:label "Silent tuple loss" ;
+    dcterms:description "A routing step that drops or rewrites subject/intent/evidence/authority/consequence while the court still passes falsifies G5." .
+sj:cp-g5 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G5" ;
+    dcterms:title "SA2A conservation — semantic tuple survives capability resolution" ;
+    dcterms:description "sJira's required semantic tuple survives capability resolution and routing through SA2A into XaaS without losing subject, intent/postcondition, evidence, authority or consequence bounds." ;
+    sj:subject "ggen-marketplace:packs/sa2a-bridge-pack" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "core" ;
+    sj:requiresCourt sj:court-g5 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g5 ;
+    sj:falsifier sj:fal-g5 ;
+    sj:exclusion "The number of possible provider implementations does not keep G5 open." ;
+    sj:successorPolicy "Cross-repo edge courts (C08) are successors; G5 closes on the demonstrated conservation." ;
+    sj:llmRetirementRequirement "Projection is a pack template + shape check; zero model inference." ;
+    sj:replayIdentity "gall-fri-0925:G5" ;
+    sj:nextCheckpoint sj:cp-g6 .
+
+# ---- G6: no-LLM execution ----
+sj:court-g6 a sj:Court ;
+    rdfs:label "G6 court — no-LLM episode" ;
+    dcterms:description "Witnesses a full gall-work lease lifecycle (claim → heartbeat → close) against the live fabric at localhost:4000 with all LLM-backed workers disabled, and validates the emitted receipt against ~/.claude/dfcm/receipt.schema.json." .
+sj:acc-g6 a sj:AcceptanceCriterion ;
+    rdfs:label "KNOWN work class runs end-to-end without a model" ;
+    dcterms:description "One KNOWN work class runs derived-frontier → SA2A capability → gall-work claim → heartbeat → close → deterministic receipt with all LLM workers disabled; the receipt is schema-valid and bound to the exact subject SHA." .
+sj:fal-g6 a sj:Falsifier ;
+    rdfs:label "Model reasoning inside the episode" ;
+    dcterms:description "Any step of the episode requiring model reasoning falsifies G6; a fabric-unavailable BLOCKED receipt is a typed outcome, not a failure of the gate, and is recorded as BLOCKED with broken_term." .
+sj:cp-g6 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G6" ;
+    dcterms:title "No-LLM execution — one KNOWN class runs with LLM workers disabled" ;
+    dcterms:description "At least one KNOWN work class runs from derived sJira frontier → SA2A capability → XaaS/BRCE → deterministic/generator/runtime implementation with all LLM workers disabled." ;
+    sj:subject "zcode-cli:src/gall-work.ts" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "core" ;
+    sj:requiresCourt sj:court-g6 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:observation-evidence ;
+    sj:acceptance sj:acc-g6 ;
+    sj:falsifier sj:fal-g6 ;
+    sj:exclusion "Claude→ZCode takeover sophistication does not keep G6 open." ;
+    sj:successorPolicy "Wider KNOWN classes route without models via v26.9.23 successors." ;
+    sj:llmRetirementRequirement "The episode itself is the retirement witness for its work class." ;
+    sj:replayIdentity "gall-fri-0925:G6" ;
+    sj:nextCheckpoint sj:cp-g7 .
+
+# ---- G7: last-mile consequence ----
+sj:court-g7 a sj:Court ;
+    rdfs:label "G7 court — closed consequence" ;
+    dcterms:description "Independently observes the G6 episode's postcondition, verifies the receipt, confirms the OCEL event exists, and recomputes standing from the receipt alone." .
+sj:acc-g7 a sj:AcceptanceCriterion ;
+    rdfs:label "Consequence observed, receipted, recomputable" ;
+    dcterms:description "The lease closed in G6 has: an independent observation record, a schema-valid receipt, a present OCEL event (scripts/ocel-verify.ts green), and standing recomputed by a second process from the receipt alone." .
+sj:fal-g7 a sj:Falsifier ;
+    rdfs:label "Executed ≠ complete" ;
+    dcterms:description "Claiming completion from unit-test passage, PR state, or receipt-file existence without the observed postcondition falsifies G7." .
+sj:cp-g7 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G7" ;
+    dcterms:title "Last-mile consequence — executed does not count" ;
+    dcterms:description "The required postcondition is independently observed, falsifier checked, receipt valid, OCEL consequence recorded and standing recomputable." ;
+    sj:subject "zcode-cli:receipts/v26.9.22" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "last_mile" ;
+    sj:requiresCourt sj:court-g7 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:observation-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-g7 ;
+    sj:falsifier sj:fal-g7 ;
+    sj:exclusion "Passing unit tests alone, PR state, and generated files alone do not keep G7 open." ;
+    sj:successorPolicy "Post-STOP verification deepening (chaos/stress tiers) opens successors." ;
+    sj:llmRetirementRequirement "Observation and standing recomputation are deterministic scripts." ;
+    sj:replayIdentity "gall-fri-0925:G7" ;
+    sj:nextCheckpoint sj:cp-g8 .
+
+# ---- G8: closed frontier ----
+sj:court-g8 a sj:Court ;
+    rdfs:label "G8 court — frontier recomputes" ;
+    dcterms:description "Runs the pack frontier gate before and after the G6 close and diffs: the closed order must leave the frontier and its dependents must become eligible without manual edits." .
+sj:acc-g8 a sj:AcceptanceCriterion ;
+    rdfs:label "Receipt changes derived frontier" ;
+    dcterms:description "050_frontier.rq output before vs after the G6 close shows the closed order removed and its dependent unlocked deterministically; the diff is the g8 receipt's consequence evidence." .
+sj:fal-g8 a sj:Falsifier ;
+    rdfs:label "Static frontier bug" ;
+    dcterms:description "A frontier that does not change after a receipted close (requiring manual unlocking) falsifies G8." .
+sj:cp-g8 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G8" ;
+    dcterms:title "Closed frontier — receipt deterministically unlocks successors" ;
+    dcterms:description "The receipt changes admitted state and deterministically unlocks/closes the appropriate sJira dependencies." ;
+    sj:subject "ggen_igniter:semantic-jira-pack/gates/050_frontier.rq" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "last_mile" ;
+    sj:requiresCourt sj:court-g8 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-g8 ;
+    sj:falsifier sj:fal-g8 ;
+    sj:exclusion "Further scheduler/planner optimizations do not keep G8 open." ;
+    sj:successorPolicy "Frontier selection improvements are v26.9.23 successors." ;
+    sj:llmRetirementRequirement "Frontier derivation is a SPARQL gate; zero model inference." ;
+    sj:replayIdentity "gall-fri-0925:G8" ;
+    sj:nextCheckpoint sj:cp-g9 .
+
+# ---- G9: learning ratchet ----
+sj:court-g9 a sj:Court ;
+    rdfs:label "G9 court — two-episode ratchet" ;
+    dcterms:description "Replays two episodes with matching preconditions and verifies the second routes as KNOWN with materially less semantic exploration (measured by steps/receipts consumed, not by assertion)." .
+sj:acc-g9 a sj:AcceptanceCriterion ;
+    rdfs:label "Episode 2 routes KNOWN cheaper" ;
+    dcterms:description "Episode 1 produces an admitted experience record; an equivalent Episode 2 resolves via the recorded route (capability + acceptance reused) with strictly fewer semantic steps; both episode receipts are bound." .
+sj:fal-g9 a sj:Falsifier ;
+    rdfs:label "Rediscovery repeats" ;
+    dcterms:description "Episode 2 requiring equivalent semantic exploration to Episode 1 falsifies the ratchet." .
+sj:cp-g9 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G9" ;
+    dcterms:title "Learning ratchet — novel result becomes reusable route" ;
+    dcterms:description "Episode 1 can produce admitted MachineExperience; an equivalent Episode 2 with matching preconditions routes as KNOWN and requires materially less semantic exploration." ;
+    sj:subject "ash_a2a:lib/ash_a2a/semantic/machine_experience.ex" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "last_mile" ;
+    sj:requiresCourt sj:court-g9 ;
+    sj:requiresEvidence sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-g9 ;
+    sj:falsifier sj:fal-g9 ;
+    sj:exclusion "Solving every possible novel class does not keep G9 open; OCEL-mined plan weights are a successor, not a G9 requirement." ;
+    sj:successorPolicy "C02 (planner cost model from OCEL outcomes) is a named successor order." ;
+    sj:llmRetirementRequirement "The ratchet's whole point: episode 2's path consumes zero model reasoning." ;
+    sj:replayIdentity "gall-fri-0925:G9" ;
+    sj:nextCheckpoint sj:cp-g10 .
+
+# ---- G10: replay ----
+sj:court-g10 a sj:Court ;
+    rdfs:label "G10 court — cold replay" ;
+    dcterms:description "Starts a cold independent process restricted to canonical artifacts (repos, graphs, receipts) and reconstructs the G6–G8 episode without consulting any LLM transcript." .
+sj:acc-g10 a sj:AcceptanceCriterion ;
+    rdfs:label "Episode reconstructs from canonical artifacts" ;
+    dcterms:description "The g10 receipt records a cold replay of the episode: commands re-executed, standing re-derived, and the reconstruction never reads a conversation, workflow journal, or agent scratch state." .
+sj:fal-g10 a sj:Falsifier ;
+    rdfs:label "Replay needs a transcript" ;
+    dcterms:description "A replay that consults an LLM transcript, chat history, or session-local state falsifies G10." .
+sj:cp-g10 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G10" ;
+    dcterms:title "Replay — cold independent process reconstructs the episode" ;
+    dcterms:description "A cold independent process can reconstruct the episode from canonical artifacts and receipts without consulting an LLM transcript." ;
+    sj:subject "zcode-cli:receipts/v26.9.22" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:gapClass "last_mile" ;
+    sj:requiresCourt sj:court-g10 ;
+    sj:requiresEvidence sj:replay-evidence ;
+    sj:acceptance sj:acc-g10 ;
+    sj:falsifier sj:fal-g10 ;
+    sj:exclusion "Keeping every historical chat/workflow alive does not keep G10 open." ;
+    sj:successorPolicy "Byte-identical replay hardening (C21 out-of-subject receipts) is a successor." ;
+    sj:llmRetirementRequirement "Replay is shell + validators only." ;
+    sj:replayIdentity "gall-fri-0925:G10" ;
+    sj:nextCheckpoint sj:cp-g11 .
+
+# ---- G11: per-repo bounded standing ----
+sj:court-g11 a sj:Court ;
+    rdfs:label "G11 court — checkpoint matrix" ;
+    dcterms:description "Verifies docs/sjira/v26.9.22/checkpoint-matrix.md gives every in-scope repo a typed row (status ∈ ALIVE|BLOCKED|UNSUPPORTED|REFUSED|SUCCESSOR) bound to an exact SHA and evidence ceiling, and that critical-path repos are ALIVE." .
+sj:acc-g11 a sj:AcceptanceCriterion ;
+    rdfs:label "Zero unclassified repos on the critical path" ;
+    dcterms:description "Every repository touched by this checkpoint has a row with exact subject/SHA, evidence ceiling, status and exclusions; every critical-path repo is ALIVE; zero unclassified UNKNOWN rows on the critical path." .
+sj:fal-g11 a sj:Falsifier ;
+    rdfs:label "Unbounded ambiguity" ;
+    dcterms:description "A critical-path repo with no typed row (or an unbounded UNKNOWN) falsifies G11." .
+sj:cp-g11 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G11" ;
+    dcterms:title "Per-repo bounded standing — matrix over the portfolio" ;
+    dcterms:description "Every repository touched by this checkpoint has a Semantic GALL checkpoint naming exact subject/SHA, evidence ceiling, status and exclusions; critical path ALIVE; every other repo explicitly successor/BLOCKED/UNSUPPORTED/REFUSED." ;
+    sj:subject "zcode-cli:docs/sjira/v26.9.22/checkpoint-matrix.md" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "OBSERVED_VERIFIED" ;
+    sj:gapClass "bootstrap" ;
+    sj:requiresCourt sj:court-g11 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g11 ;
+    sj:falsifier sj:fal-g11 ;
+    sj:exclusion "Making every repository globally ALIVE does not keep G11 open." ;
+    sj:successorPolicy "Per-repo GALL qualification beyond the critical path attaches to each repo's own next milestone." ;
+    sj:llmRetirementRequirement "Row derivation is git observation + typed classification." ;
+    sj:replayIdentity "gall-fri-0925:G11" ;
+    sj:nextCheckpoint sj:cp-g12 .
+
+# ---- G12: external Friday deliverable ----
+sj:court-g12 a sj:Court ;
+    rdfs:label "G12 court — bounded external deliverable" ;
+    dcterms:description "Verifies the Western Digital proposal is frozen at 5–8 pages, every significant claim is typed (observed proof with exact-head evidence | bounded architectural inference | WD-dependent UNKNOWN), and repo-local evidence binds to each observed claim." .
+sj:acc-g12 a sj:AcceptanceCriterion ;
+    rdfs:label "Every claim typed and evidence-bound" ;
+    dcterms:description "The frozen proposal contains no untyped claim: observed claims cite receipts at exact SHAs; inferences are labelled bounded; WD-dependent items are labelled UNKNOWN with the dependency named." .
+sj:fal-g12 a sj:Falsifier ;
+    rdfs:label "Untyped claim" ;
+    dcterms:description "A claim presented as observed without a receipt, or an inference presented as observed, falsifies G12." .
+sj:cp-g12 a sj:GoalCheckpoint, sj:Checkpoint ;
+    dcterms:identifier "G12" ;
+    dcterms:title "External Friday deliverable — bounded WD proposal" ;
+    dcterms:description "Western Digital submission is frozen as a bounded 5–8-page proposal: every significant claim is either observed proof, bounded architectural inference, or explicit WD-dependent UNKNOWN." ;
+    sj:subject "zcode-cli:docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "OBSERVED_VERIFIED" ;
+    sj:gapClass "last_mile" ;
+    sj:requiresCourt sj:court-g12 ;
+    sj:requiresEvidence sj:receipt-evidence ;
+    sj:acceptance sj:acc-g12 ;
+    sj:falsifier sj:fal-g12 ;
+    sj:exclusion "WD production integration, WD production MTTR/performance, live data, and deployment do not keep G12 open." ;
+    sj:successorPolicy "A WD engagement opens its own goal checkpoint with its own evidence ceiling." ;
+    sj:llmRetirementRequirement "Claim-typing is a deterministic check over the proposal's claim table; the LLM's lawful role was authoring the narrative only." ;
+    sj:replayIdentity "gall-fri-0925:G12" .
