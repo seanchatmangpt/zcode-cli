@@ -6,13 +6,14 @@ export interface ReleaseVersion {
   build: number;
 }
 
+// Accepts both release schemes: legacy `<app-version>-<build>` (3.14.1-27) and
+// calver `26.9.23`, where the version itself is the release identity (build 0).
 export function parseReleaseVersion(version: string): ReleaseVersion | undefined {
-  const match = releaseVersionPattern.exec(version.trim());
-  if (!match) return undefined;
-  return {
-    appVersion: match[1]!,
-    build: Number(match[2])
-  };
+  const trimmed = version.trim();
+  const match = releaseVersionPattern.exec(trimmed);
+  if (match) return { appVersion: match[1]!, build: Number(match[2]) };
+  if (appVersionPattern.test(trimmed)) return { appVersion: trimmed, build: 0 };
+  return undefined;
 }
 
 export function syncedReleaseVersion(appVersion: string, currentVersion: string): string {
@@ -20,7 +21,8 @@ export function syncedReleaseVersion(appVersion: string, currentVersion: string)
   if (!appVersionPattern.test(normalizedAppVersion)) {
     throw new Error(`Unsupported ZCode App version: ${appVersion}`);
   }
-  const build = parseReleaseVersion(currentVersion)?.build ?? 1;
+  const current = parseReleaseVersion(currentVersion);
+  const build = current && current.build > 0 ? current.build : 1;
   return `${normalizedAppVersion}-${build}`;
 }
 
@@ -29,7 +31,11 @@ export function nextBuildVersion(currentVersion: string): string {
   if (!current) {
     throw new Error(`Expected an <app-version>-<build> version, found: ${currentVersion}`);
   }
-  return `${current.appVersion}-${current.build + 1}`;
+  if (current.build > 0) return `${current.appVersion}-${current.build + 1}`;
+  // Calver release (e.g. 26.9.23): bump the calendar patch component.
+  const components = current.appVersion.split(".");
+  components[components.length - 1] = String(Number(components[components.length - 1]!) + 1);
+  return components.join(".");
 }
 
 export function compareReleaseVersions(left: string, right: string): number {

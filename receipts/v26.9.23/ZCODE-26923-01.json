@@ -120,5 +120,88 @@
       "S6 (owner: L9 scope): calver 26.9.23 breaks `<app-version>-<build>` version-format assumptions in runtime tests (environment-isolation, model-catalog-tui fixture) — update parsers/tests for calver.",
       "S7 (owner: runtime test scope): fixture or gate-isolate live-provider tests (429/1302 retry flow) and GALL-006 fresh-consumer subprocess tests so test:runtime does not depend on ambient endpoint/subprocess availability."
     ]
+  },
+  "r1": {
+    "identity": {
+      "subject": "R1: repair the three wave-attributed regressions named by L10 (S1 typecheck, S2 lock-shape test, S6 calver version parsers)",
+      "repo": "/Users/sac/dev/zcode-cli",
+      "base_sha": "04f1f0de08cb661baf056b6ac0815b5a832a1dcc",
+      "base_note": "Post-L10 main head; the R1 commit contains exactly the three repair files plus this appended r1 section, so its own SHA is unknowable pre-commit and is excluded rather than fabricated (same convention as the L10 commit)."
+    },
+    "authority": {
+      "ceiling": "DO",
+      "grant": "operator order 2026-09-23: repair lane R1 for the zcode-cli v26.9.23 wave — narrow fixes for S1/S2/S6 only, commit prefix fix(v26.9.23): R1",
+      "actor": "zcode-cli v26.9.23 wave — repair lane R1",
+      "notes": "No push/tag executed; branch main advanced locally only."
+    },
+    "repairs": [
+      {
+        "id": "S1",
+        "files": ["test/sync-runtime-alias.test.ts"],
+        "fix": "Widened the fixture validateSelection return type to { ok: boolean; code?: string; providerId?: string; modelId?: string } (the interface L1's failure-payload assertions already exercised behaviorally). No assertion weakened; all five alias tests unchanged and passing."
+      },
+      {
+        "id": "S2",
+        "files": ["test/sync-runtime.test.ts"],
+        "fix": "Lock-shape test now reads platform/arch from zcode-runtime.lock.json instead of hardcoding linux/x64/.deb, and asserts the URL contract per pinned platform (darwin -> cdn-zcode .zip mac artifact; linux -> .deb; unknown platform throws). Lock appVersion asserted as an App-version shape (3.14.3) decoupled from the calver CLI release (26.9.23) — the coupling the old test asserted no longer exists under the calver order. No platform data faked; the committed darwin/arm64 lock passes on its own content."
+      },
+      {
+        "id": "S6",
+        "files": ["scripts/release-version.ts", "test/sync-runtime.test.ts"],
+        "fix": "parseReleaseVersion now admits both release shapes: legacy <app-version>-<build> (3.14.1-27, unchanged) and calver 26.9.23 (parsed as { appVersion, build: 0 }). nextBuildVersion bumps the calendar patch component for calver (26.9.23 -> 26.9.24; fixes scripts/smoke-tui.ts, which unblocked the environment-isolation version error). syncedReleaseVersion keeps legacy behavior byte-identical (bare current -> build 1; -<build> current -> same build). compareReleaseVersions orders both shapes (calver 26.9.x > legacy 3.14.x). Calver coverage added to the parser test; all legacy expectations preserved verbatim."
+      }
+    ],
+    "replay": {
+      "commands": [
+        {
+          "cmd": "bun run typecheck",
+          "exit": 0,
+          "cwd": "/Users/sac/dev/zcode-cli",
+          "summary": "PASS after S1 — was exit 1 (3x TS2769)."
+        },
+        {
+          "cmd": "bun run test:unit",
+          "exit": 1,
+          "cwd": "/Users/sac/dev/zcode-cli",
+          "summary": "805 pass / 1 fail across 101 files. Red-only-on-preexisting: the single failure is the S5 gall-work lease timeout (240s, pre-existing, no wave attribution). S2 lock-shape test and S6 parser test (incl. new calver assertions) pass."
+        },
+        {
+          "cmd": "ZCODE_REQUIRE_BUNDLE=1 bun run test:runtime",
+          "exit": 1,
+          "cwd": "/Users/sac/dev/zcode-cli",
+          "summary": "38 pass / 15 fail across 12 files (unchanged count vs L10 baseline, but composition shifted: S6's environment-isolation version error is gone — the test now fails deeper in smoke-tui at the TUI skill-suggestion step, a newly exposed 3.14.3 vendor failure outside R1's three classes). Wave-attributed remaining: model-catalog-tui (first install: false) — L1's '3.14+ reloads the model catalog natively' postcondition is falsified by the observed picker not reloading the edited personal config (vendor is a gitignored local build, so repair = patch-semantics + vendor rebuild, outside R1 scope); session-model-recovery x3 (legacy-provider/regular/startup, missing-reasoning/fullscreen/startup, empty:true) — deterministic, startup-recovery picker does not open where L4's enriched provider-unavailable banner renders instead. Pre-existing: subagent-builtin-provider x2 (F1 PONG wording), provider-business-error-retry x2 + gall-fresh-consumer x5 + portable-receipt x1 (S7 environmental)."
+        },
+        {
+          "cmd": "bun run receipts:validate",
+          "exit": 1,
+          "cwd": "/Users/sac/dev/zcode-cli",
+          "summary": "17/27 admitted; all 10 refusals are legacy v26.9.22 flat-format receipts (S4), byte-for-byte the same refusal set as the L10 baseline. This receipt PASSES."
+        },
+        {
+          "cmd": "bun scripts/check-runtime.ts",
+          "exit": 0,
+          "cwd": "/Users/sac/dev/zcode-cli",
+          "summary": "PASS — Runtime checks passed for zcode-app-cli 26.9.23 / zcode-runtime 0.16.9 with Node v22.22.3 and pi-tui."
+        }
+      ],
+      "durable_location": "receipts/v26.9.23/ZCODE-26923-01.json"
+    },
+    "remaining_red": {
+      "wave_attributed": [
+        "model-catalog-tui (first install: false): L1 model-catalog-reload native-reload postcondition falsified on 3.14.3; successor = reinstate injected reload delegation or correct the postcondition + rebuild vendor (L1 scope).",
+        "session-model-recovery x3 (startup-entry + empty:true): startup auto-repair picker does not open; L4's enriched provider-unavailable banner renders instead; deterministic across runs (L4 scope).",
+        "environment-isolation TUI smoke leg: S6 version throw repaired, but the newly exposed deeper failure is the TUI skill-suggestion step in smoke-tui on the 3.14.3 vendor — needs its own successor item (undetermined wave-vs-environmental)."
+      ],
+      "pre_existing": [
+        "S4: 10 legacy v26.9.22 receipts refused by receipts:validate.",
+        "S5: gall-work lease unit test 240s timeout.",
+        "S7: provider-business-error-retry x2, GALL-006 fresh-consumer x5, portable-receipt x1 (ambient endpoint/subprocess dependence).",
+        "F1/S3: subagent-builtin-provider x2 literal SUBAGENT_RETURNED_PONG wording flake."
+      ]
+    },
+    "standing": {
+      "value": "PARTIAL_ALIVE",
+      "derived_from": "Repair rule: ALIVE over wave-attributed gates iff typecheck + test:unit + test:runtime are green or red-only-on-preexisting. Observed after repair: typecheck exit 0; test:unit exit 1 but red-only-on-preexisting (S5); test:runtime exit 1 with wave-attributed red remaining (model-catalog-tui L1, session-model-recovery x3 L4, smoke-tui skill step) — so ALIVE is refused and PARTIAL_ALIVE holds. R1 cleared: gate (a) typecheck fully green (S1), test:unit red-only-preexisting (S2), environment-isolation's calver version error (S6). Successors carried forward: L1 catalog-reload repair + vendor rebuild, L4 startup-recovery picker, smoke-tui skill-suggestion successor, S3/S4/S5/S7 unchanged."
+    }
   }
 }

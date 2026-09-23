@@ -157,15 +157,21 @@ describe("runtime synchronization", () => {
   test("pins the exact remote runtime used by release workflows", async () => {
     const packageJson = await Bun.file(new URL("../package.json", import.meta.url)).json();
     const lock = await Bun.file(new URL("../zcode-runtime.lock.json", import.meta.url)).json();
-    const release = parseReleaseVersion(String(packageJson.version));
 
-    expect(lock).toMatchObject({
-      schemaVersion: 1,
-      appVersion: release?.appVersion,
-      platform: "linux",
-      arch: "x64"
-    });
-    expect(lock.url).toMatch(/^https:\/\/cdn-zcode\.z\.ai\/.+\.deb$/u);
+    // The calver CLI release (26.9.23) is decoupled from the pinned Desktop App
+    // version: the lock tracks the App release stream (e.g. 3.14.3), not package.json.
+    expect(lock).toMatchObject({ schemaVersion: 1 });
+    expect(String(lock.appVersion)).toMatch(/^\d+\.\d+\.\d+$/u);
+
+    // The lock pins one concrete platform; its artifact URL must agree with it.
+    const artifactContracts: Record<string, { arches: string[]; url: RegExp }> = {
+      darwin: { arches: ["arm64", "x64"], url: /^https:\/\/cdn-zcode\.z\.ai\/\S*mac\S*\.zip$/u },
+      linux: { arches: ["x64", "arm64"], url: /^https:\/\/cdn-zcode\.z\.ai\/.+\.deb$/u }
+    };
+    const contract = artifactContracts[String(lock.platform)];
+    if (!contract) throw new Error(`Lock pins an unrepresented platform: ${lock.platform}`);
+    expect(contract.arches).toContain(lock.arch);
+    expect(String(lock.url)).toMatch(contract.url);
     expect(Buffer.from(String(lock.sha512), "base64")).toHaveLength(64);
     expect(packageJson.files).toContain("zcode-runtime.lock.json");
   });
@@ -183,6 +189,12 @@ describe("runtime synchronization", () => {
     expect(compareReleaseVersions("3.3.5-12", "3.4.0-1")).toBe(-1);
     expect(compareReleaseVersions("3.3.5-12", "3.3.5-12")).toBe(0);
     expect(() => syncedReleaseVersion("3.4", "3.3.5-12")).toThrow(/Unsupported/);
+    // Calver releases (26.9.23) carry the release identity in the version itself.
+    expect(parseReleaseVersion("26.9.23")).toEqual({ appVersion: "26.9.23", build: 0 });
+    expect(nextBuildVersion("26.9.23")).toBe("26.9.24");
+    expect(compareReleaseVersions("26.9.24", "26.9.23")).toBe(1);
+    expect(compareReleaseVersions("26.9.23", "3.14.1-27")).toBe(1);
+    expect(syncedReleaseVersion("3.4.0", "26.9.23")).toBe("3.4.0-1");
   });
 
   test("parseArgs uses the CI-safe Linux default", () => {

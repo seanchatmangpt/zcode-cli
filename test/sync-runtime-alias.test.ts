@@ -19,7 +19,12 @@ const registryFixture = [
 
 function buildRegistryFixture(runtime: string) {
   const Registry = new Function(`${runtime};return dX;`)() as new () => {
-    validateSelection(selection: { providerId: string; modelId: string }): { ok: boolean; code?: string };
+    validateSelection(selection: { providerId: string; modelId: string }): {
+      ok: boolean;
+      code?: string;
+      providerId?: string;
+      modelId?: string;
+    };
     getModel(providerId: string, modelId: string): { modelId: string } | undefined;
   };
   return new Registry();
