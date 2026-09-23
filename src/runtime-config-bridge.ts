@@ -54,6 +54,12 @@ export function providerMigrationNeeded(env: NodeJS.ProcessEnv = process.env): b
   return existsSync(legacyCliConfigPath(env)) && !existsSync(providerMigrationMarkerPath(env));
 }
 
+/** Diagnostics: does the parsed provider registry contain a family-keyed rule (e.g. "zai"), rather than only account-scoped rules? */
+export function providerRegistryContainsFamilyKey(registryConfig: unknown, family: string): boolean {
+  const rules = record(record(record(registryConfig)?.config)?.providerConfigRules)?.providerRules;
+  return Array.isArray(rules) && rules.some(rule => record(rule)?.providerId === family);
+}
+
 /** Uses the upstream parser and file-locked repository, rather than editing shared JSON. */
 export async function migrateLegacyProviders(options: {
   Repository: new (options: { filePath: string; pollingIntervalMs: false; onRecovery: (event: unknown) => void }) => Repository;
@@ -96,33 +102,41 @@ export async function migrateLegacyProviders(options: {
       skipped.push(id);
     }
   }
-  let recovery = false;
-  const repository = new options.Repository({ filePath: providerConfigPath(env), pollingIntervalMs: false, onRecovery: () => { recovery = true; } });
-  try {
-    const current = await repository.read();
-    if (recovery) throw new Error("The shared provider config needs recovery; it was left unchanged.");
-    if (candidates.some(candidate => candidate.providers.rules().some(rule => !current.providers.has(rule.providerId)))) {
-      await repository.update(snapshot => {
-        let { providers, models } = snapshot;
-        for (const candidate of candidates) for (const rule of candidate.providers.rules()) {
-          if (providers.has(rule.providerId)) continue;
-          providers = providers.setRule(rule);
-          for (const model of candidate.models.rules()) {
-            if (model.providerId === rule.providerId && !models.getExactRule(model.providerId, model.modelId)) {
-              models = models.setExact(model.providerId, model.modelId, model.config);
-            }
-          }
-          imported.push(rule.providerId);
-        }
-        // Desktop's importer does not select a default model. Preserve that
-        // behavior and any existing order, default selection and overrides.
-        return { ...snapshot, providers, models };
-      });
-    }
-  } finally {
-    repository.dispose();
-  }
   const marker = providerMigrationMarkerPath(env), temporary = `${marker}.${process.pid}.tmp`;
+  // Pre-flight: with zero importable candidates there is nothing to merge, so
+  // record the completed no-op without opening the shared provider config —
+  // otherwise a registry that reports recovery on read would re-trip on every start.
+  if (candidates.length > 0) {
+    let recovery = false;
+    const repository = new options.Repository({ filePath: providerConfigPath(env), pollingIntervalMs: false, onRecovery: () => { recovery = true; } });
+    try {
+      const current = await repository.read();
+      // Fail closed: recovery on read leaves both the registry and the marker untouched.
+      if (recovery) throw new Error(`The shared provider config needs recovery; it was left unchanged.`
+        + ` Expected migration marker: ${marker} (absent) for provider config ${providerConfigPath(env)}.`
+        + ` Repair: fix or remove the provider config file, then relaunch — the migration reruns while the marker is absent.`);
+      if (candidates.some(candidate => candidate.providers.rules().some(rule => !current.providers.has(rule.providerId)))) {
+        await repository.update(snapshot => {
+          let { providers, models } = snapshot;
+          for (const candidate of candidates) for (const rule of candidate.providers.rules()) {
+            if (providers.has(rule.providerId)) continue;
+            providers = providers.setRule(rule);
+            for (const model of candidate.models.rules()) {
+              if (model.providerId === rule.providerId && !models.getExactRule(model.providerId, model.modelId)) {
+                models = models.setExact(model.providerId, model.modelId, model.config);
+              }
+            }
+            imported.push(rule.providerId);
+          }
+          // Desktop's importer does not select a default model. Preserve that
+          // behavior and any existing order, default selection and overrides.
+          return { ...snapshot, providers, models };
+        });
+      }
+    } finally {
+      repository.dispose();
+    }
+  }
   await mkdir(dirname(marker), { recursive: true, mode: 0o700 });
   try {
     await writeFile(temporary, JSON.stringify({ schemaVersion: 1, imported, skipped, completedAt: new Date().toISOString() }), { mode: 0o600 });
