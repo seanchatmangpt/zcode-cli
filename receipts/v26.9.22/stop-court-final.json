@@ -1,0 +1,65 @@
+{
+  "identity": {
+    "subject": "GALL-FRI-0925 stop court qualified — STOP predicate holds (13/13 gates receipt-ALIVE, 070 gate zero rows)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "aae13e39bf91f51acba5700bcde66b4dcbdcb079",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "Operator-approved GALL-FRI-0925 plan 2026-09-22 (ExitPlanMode approval); fabric leases Ji64gcAYuH1SUtb_wUvQxBXV7bwNuXZY (epoch bb1771f5), Madf8brkCOYnavwiAZ1J-0MxtXfD0_D1 (epoch 0c31c933), HzXjQB6boBN3NkWAGUmpqo2ZVetgiryw (epoch b409b031, refused)",
+    "actor": "gall-fri-0925 integrator (zcode session, serial integration authority)"
+  },
+  "consequence": {
+    "commits": [
+      "d83d6c809dcfaad23d64ea1142c5a8640d2a9337",
+      "ffe804646eb851d3d3b145d26a9557d566ada45b",
+      "396ee89",
+      "aae13e39bf91f51acba5700bcde66b4dcbdcb079"
+    ],
+    "files_changed": [
+      "docs/sjira/v26.9.22/STOP-FRI-0925.md",
+      "docs/sjira/v26.9.22/stop-court.ttl",
+      "docs/sjira/v26.9.22/000-stop-court.md",
+      "docs/sjira/v26.9.22/successors.md",
+      "docs/sjira/v26.9.22/checkpoint-matrix.md",
+      "docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md",
+      "scripts/cold-start-court.ts",
+      "receipts/v26.9.22/ (g0-g12 + g2-cold-start, all validator-ADMITTED)"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix run -e 'gate=File.read!(\"priv/ggen/semantic-jira-pack/gates/070_stop_court.rq\"); rows=load(stop-court.ttl) |> Query.run(gate); validate_file(stop-court.ttl, shapes)'",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "final_open_rows=0; shacl_conforms=true — the STOP predicate"
+      },
+      {
+        "cmd": "for f in g0 g1 g2-cold-start g3 g4 g5 g6 g7 g8 g9 g10 g11 g12; do python3 ~/.claude/dfcm/validate_receipt.py receipts/v26.9.22/$f.json; done",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "13/13 ADMITTED"
+      },
+      {
+        "cmd": "bun run typecheck && bun test test/gall-work",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "typecheck clean; 22/22 tests pass at aae13e3"
+      },
+      {
+        "cmd": "mix test test/ggen_igniter_semantic_jira_shacl_test.exs (and pack gate/stop-court tripwires)",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "21/21 SHACL; gates tripwire (13 execute); stop-court anti-vacuity green at d83d6c8"
+      }
+    ],
+    "durable_location": "docs/sjira/v26.9.22/STOP-FRI-0925.md; receipts/v26.9.22/; fabric receipt rows for epochs bb1771f5/0c31c933/b409b031"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "STOP(GALL-FRI-0925) = ∧G0..G12 with every checkpoint receipt-bound ALIVE (13 receipts ADMITTED by the independent validator), the court graph SHACL-conformant, the stop gate returning zero rows, RemainingFrontier fully typed in successors.md, RequiredUnknown = ∅ on the critical path, and RequiredLLM = ∅ on the KNOWN path (G6 episode: llm_reasoning_steps 0, zero files changed). Falsifiers attempted and survived: mutated work order refused (G4), mutated subject refused by fabric (G5, sealed refused), tampered OCEL fixture refused (G7), stop-court gate tripwires refuse malformed and unpromoted states (pack tests). Post-freeze discoveries are typed successors and do not reopen this checkpoint. broken_term: none."
+  }
+}
