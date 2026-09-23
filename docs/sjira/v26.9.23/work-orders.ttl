@@ -1,0 +1,223 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for ZCODE work orders v26.9.23: align zcode-cli to ZCode.app 3.14.3 and
+# cut release v26.9.23 (calver — a deliberate scheme change from v3.14.1-N) as one
+# ten-lane wave. Vocabulary is the semantic-jira-pack ontology; class and individual
+# definitions below are the same sj: vocabulary as v26.9.21/v26.9.22's canonical graphs,
+# declared once. This graph is hand-authored canonical source (法面 input), not a
+# projection; the ticket under jira/ is a hand-projection of it pending a
+# semantic-jira-pack re-run. Edit this file, never a ticket.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Action a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:ProjectionSpec a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+sj:source-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Source evidence" ;
+    dcterms:description "Exact canonical-source identity evidence." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+
+sj:projection-jira a sj:ProjectionSpec ;
+    rdfs:label "Jira/Markdown ticket" ;
+    dcterms:description "Deterministic jira/markdown ticket projection; authority is NONE." ;
+    sj:projectionType "jira" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-wbpr a sj:ProjectionSpec ;
+    rdfs:label "Working-backwards plan" ;
+    dcterms:description "Deterministic working-backwards plan projection; authority is NONE." ;
+    sj:projectionType "wbpr" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-prd a sj:ProjectionSpec ;
+    rdfs:label "Product requirements document" ;
+    dcterms:description "Deterministic product requirements document projection; authority is NONE." ;
+    sj:projectionType "prd" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-ard a sj:ProjectionSpec ;
+    rdfs:label "Architecture requirements document" ;
+    dcterms:description "Deterministic architecture requirements document projection; authority is NONE." ;
+    sj:projectionType "ard" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-vision a sj:ProjectionSpec ;
+    rdfs:label "Vision document" ;
+    dcterms:description "Deterministic vision document projection; authority is NONE." ;
+    sj:projectionType "vision" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-fond a sj:ProjectionSpec ;
+    rdfs:label "FOND planning projection" ;
+    dcterms:description "Deterministic fond planning projection projection; authority is NONE." ;
+    sj:projectionType "fond" ;
+    sj:extension "pddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-hddl a sj:ProjectionSpec ;
+    rdfs:label "HDDL task/method projection" ;
+    dcterms:description "Deterministic hddl task/method projection projection; authority is NONE." ;
+    sj:projectionType "hddl" ;
+    sj:extension "hddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-sa2a a sj:ProjectionSpec ;
+    rdfs:label "SA2A work/execution package" ;
+    dcterms:description "Deterministic sa2a work/execution package projection; authority is NONE." ;
+    sj:projectionType "sa2a" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-worker a sj:ProjectionSpec ;
+    rdfs:label "Bounded worker input envelope" ;
+    dcterms:description "Deterministic bounded worker input envelope projection; authority is NONE." ;
+    sj:projectionType "worker" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-verification a sj:ProjectionSpec ;
+    rdfs:label "Verification plan" ;
+    dcterms:description "Deterministic verification plan projection; authority is NONE." ;
+    sj:projectionType "verification" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-executive a sj:ProjectionSpec ;
+    rdfs:label "Executive status view" ;
+    dcterms:description "Deterministic executive status view projection; authority is NONE." ;
+    sj:projectionType "executive" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-machine a sj:ProjectionSpec ;
+    rdfs:label "Machine status view" ;
+    dcterms:description "Deterministic machine status view projection; authority is NONE." ;
+    sj:projectionType "machine" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-receipt a sj:ProjectionSpec ;
+    rdfs:label "Receipt requirement summary" ;
+    dcterms:description "Deterministic receipt requirement summary projection; authority is NONE." ;
+    sj:projectionType "receipt" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-replay a sj:ProjectionSpec ;
+    rdfs:label "Replay manifest" ;
+    dcterms:description "Deterministic replay manifest projection; authority is NONE." ;
+    sj:projectionType "replay" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+# ---- ZCODE-26923-01 ----
+sj:zcode-26923-01
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26923-01: Align to ZCode.app 3.14.3 + release v26.9.23" ;
+    dcterms:identifier "ZCODE-26923-01" ;
+    dcterms:title "Align to ZCode.app 3.14.3 + release v26.9.23" ;
+    dcterms:description "Release cut aligning zcode-cli to ZCode.app 3.14.3, executed as one ten-lane wave on main (L1 patch coverage, L2 sync gates, L3 provider bridge, L4 session recovery, L5 ocel enums, L6 launcher tap, L7 runtime lock, L8 docs, L9 release cut — ticket/version/HANDWRITTEN/receipt skeleton, L10 verifier). Version scheme deliberately moves from 3.14.1-N to calver 26.9.23. Acceptance is the L10 verifier gates green at the exact merged head; merge to default branch, push and tag v26.9.23 are operator-ordered and happen only after those gates." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "198f0dc45879bdda238352c0bcae25a60cf649eb" ;
+    sj:subject "zcode-cli:v26.9.23" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator order 2026-09-23: release zcode-cli v26.9.23 (merge to default branch + push + tag). No lane holds ambient execution authority; the verifier lane closes the receipt before any remote effect." ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.9.23:ZCODE-26923-01" ;
+    sj:pathScope "src", "scripts", "test", "package.json", "HANDWRITTEN.md", "docs/sjira/v26.9.23", "receipts/v26.9.23" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26923-01 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:hosted-ci-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26923-01-overall, sj:acc-zcode-26923-01-l1, sj:acc-zcode-26923-01-l2, sj:acc-zcode-26923-01-l3, sj:acc-zcode-26923-01-l4, sj:acc-zcode-26923-01-l5, sj:acc-zcode-26923-01-l6, sj:acc-zcode-26923-01-l7, sj:acc-zcode-26923-01-l8, sj:acc-zcode-26923-01-l9, sj:acc-zcode-26923-01-l10 ;
+    sj:falsifier sj:fal-zcode-26923-01-1, sj:fal-zcode-26923-01-2, sj:fal-zcode-26923-01-3 ;
+    sj:projection sj:projection-jira, sj:projection-wbpr, sj:projection-prd, sj:projection-ard, sj:projection-vision, sj:projection-fond, sj:projection-hddl, sj:projection-sa2a, sj:projection-worker, sj:projection-verification, sj:projection-executive, sj:projection-machine, sj:projection-receipt, sj:projection-replay ;
+    sj:nextAction sj:run-court-zcode-26923-01 ;
+    sj:nextCheckpoint sj:cp-zcode-26923-01 .
+
+sj:court-zcode-26923-01 a sj:Court ;
+    rdfs:label "ZCODE-26923-01 exact-subject court" ;
+    dcterms:description "Independent court for Align to ZCode.app 3.14.3 + release v26.9.23: runs the lane acceptance commands at an exact head on main and binds candidateSha, subjectSha, tool versions and receipt identity before the tag is cut." .
+
+sj:acc-zcode-26923-01-overall a sj:AcceptanceCriterion ;
+    rdfs:label "Verifier gates green" ;
+    dcterms:description "At the exact merged main head: cd /Users/sac/dev/zcode-cli && bun run typecheck exits 0; ZCODE_REQUIRE_TOOLCHAINS=1 bun run test:unit reports 0 fail; bun run sync:locked exits 0; bun run receipts:validate exits 0 with every receipt ADMITTED (fail-closed on zero files). All four green is the acceptance for the whole order; any red => standing NOT ALIVE, tag must not be cut. Earns: VERIFIER_GATES_GREEN." .
+sj:acc-zcode-26923-01-l1 a sj:AcceptanceCriterion ;
+    rdfs:label "L1 patch coverage" ;
+    dcterms:description "Patch-coverage lane: the lane's tests over the ZCode.app 3.14.3 patch set exit 0 with 0 fail (bun test over the lane's test files), proving every carried patch still anchors on the 3.14.3 runtime bundle. Any STALE/unanchored patch => FAIL. Earns: PATCH_COVERAGE_3_14_3." .
+sj:acc-zcode-26923-01-l2 a sj:AcceptanceCriterion ;
+    rdfs:label "L2 sync gates" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun run sync:locked exits 0: build, sync-runtime against zcode-runtime.lock.json, and test/sync-runtime-anchor-drift.test.ts + test/sync-runtime-loop-gaps.test.ts under ZCODE_REQUIRE_TOOLCHAINS=1 ZCODE_REQUIRE_BUNDLE=1 all green. Earns: SYNC_GATES_GREEN." .
+sj:acc-zcode-26923-01-l3 a sj:AcceptanceCriterion ;
+    rdfs:label "L3 provider bridge" ;
+    dcterms:description "Provider-bridge lane: bun run typecheck exits 0 with the lane's src/ changes in tree and the lane's tests report 0 fail, covering the bridge between the CLI provider surface and the 3.14.3 registry layout. Earns: PROVIDER_BRIDGE_GREEN." .
+sj:acc-zcode-26923-01-l4 a sj:AcceptanceCriterion ;
+    rdfs:label "L4 session recovery" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun test test/session-model-recovery.test.ts exits 0 with 0 fail, covering recovery of invalid saved selections (including the L4 provider-not-found registry-repair guidance for bare family keys). Earns: SESSION_RECOVERY_GREEN." .
+sj:acc-zcode-26923-01-l5 a sj:AcceptanceCriterion ;
+    rdfs:label "L5 ocel enums" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun scripts/gen-ocel.ts --check exits 0 with no STALE line and the enum-drift/conformance OCEL tests report 0 fail, proving src/generated matches ontology/zcode-loop.ttl against the 3.14.3 runtime enums. Earns: OCEL_ENUMS_CURRENT." .
+sj:acc-zcode-26923-01-l6 a sj:AcceptanceCriterion ;
+    rdfs:label "L6 launcher tap" ;
+    dcterms:description "Launcher-tap lane: bun test over the lane's launcher/tap test files exits 0 with 0 fail (tap wiring, stream-json and app-server capture paths). Earns: LAUNCHER_TAP_GREEN." .
+sj:acc-zcode-26923-01-l7 a sj:AcceptanceCriterion ;
+    rdfs:label "L7 runtime lock" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json exits 0: the committed lock matches the 3.14.3 bundle identity (sha, toolchains, bundle paths). Earns: RUNTIME_LOCK_CONSISTENT." .
+sj:acc-zcode-26923-01-l8 a sj:AcceptanceCriterion ;
+    rdfs:label "L8 docs" ;
+    dcterms:description "Docs lane: changed docs carry the calver scheme (26.9.23) with no stale release-scheme claims, and any doc named by a changed lane reflects that lane's behavior. Verified by grep over the changed docs for the old active-version claim returning nothing unexpected. Earns: DOCS_ALIGNED." .
+sj:acc-zcode-26923-01-l9 a sj:AcceptanceCriterion ;
+    rdfs:label "L9 release cut" ;
+    dcterms:description "cd /Users/sac/dev/zcode-cli && node -e \"console.log(require('./package.json').version)\" prints exactly 26.9.23; docs/sjira/v26.9.23/ (work-orders.ttl + jira/ZCODE-26923-01.md) and receipts/v26.9.23/ZCODE-26923-01.json exist at HEAD; HANDWRITTEN.md has a row for every src file gaining handwritten lines in this wave (L3/L4 checked; currently src/session-model-recovery.ts). Earns: RELEASE_CUT_SKELETON." .
+sj:acc-zcode-26923-01-l10 a sj:AcceptanceCriterion ;
+    rdfs:label "L10 verifier closes receipt and tag" ;
+    dcterms:description "receipts/v26.9.23/ZCODE-26923-01.json is finalized by the verifier lane with all five R-fields (identity.subject_sha = the exact tagged head), every replay command showing its observed exit, and standing derived from those runs; then, only with acc-overall green, merge to default branch, push, and tag v26.9.23 at that head under operator order 2026-09-23. git rev-parse v26.9.23^{commit} equals identity.subject_sha. Earns: RECEIPT_CLOSED_AND_TAGGED." .
+
+sj:fal-zcode-26923-01-1 a sj:Falsifier ;
+    rdfs:label "Tag off subject" ;
+    dcterms:description "Observation: git rev-parse v26.9.23^{commit} differing from the receipt's identity.subject_sha, or a dirty tree at the tagged head, refutes the release claim." .
+sj:fal-zcode-26923-01-2 a sj:Falsifier ;
+    rdfs:label "Green claim over red gate" ;
+    dcterms:description "Observation: any lane gate exiting nonzero at the pinned head while the receipt claims it green refutes the verification (admission_vacuous); the receipt must carry the failure, not a pass." .
+sj:fal-zcode-26923-01-3 a sj:Falsifier ;
+    rdfs:label "Version drift" ;
+    dcterms:description "Observation: package.json version other than 26.9.23 at the tagged head, or lock/docs still asserting the 3.14.x active scheme, refutes the release cut." .
+
+sj:cp-zcode-26923-01 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26923-01 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-26923-01 court returns a receipt at the exact tagged head; the frontier then advances to dependents of this work order." .

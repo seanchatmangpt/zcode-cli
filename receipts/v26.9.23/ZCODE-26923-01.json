@@ -1,0 +1,90 @@
+{
+  "identity": {
+    "subject": "ZCODE-26923-01: Align to ZCode.app 3.14.3 + release v26.9.23",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "c47c335a609cb1d38a57033fe50ec9346ae85a91",
+    "base_sha": "198f0dc45879bdda238352c0bcae25a60cf649eb"
+  },
+  "authority": {
+    "ceiling": "DO",
+    "grant": "operator order 2026-09-23: release zcode-cli v26.9.23 (merge to default branch + push + tag)",
+    "actor": "zcode-cli v26.9.23 wave — lane L9 (release cut); final content owned by lane L10 (verifier)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "package.json",
+      "HANDWRITTEN.md",
+      "docs/sjira/v26.9.23/work-orders.ttl",
+      "docs/sjira/v26.9.23/jira/ZCODE-26923-01.md",
+      "docs/sjira/v26.9.23/README.md",
+      "receipts/v26.9.23/ZCODE-26923-01.json"
+    ],
+    "remote_effects": [
+      "TODO(verifier L10): merge to default branch + push + tag v26.9.23, only after the overall verifier gate is green (operator order 2026-09-23)"
+    ]
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "TODO(verifier L10): git rev-parse HEAD  # record the exact merged head into identity.subject_sha",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — not yet run by L10; exit -1 is the not-run sentinel, replace every command below with observed cmd/exit/summary before promotion"
+      },
+      {
+        "cmd": "TODO(verifier L10): bun run typecheck",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — overall verifier gate 1"
+      },
+      {
+        "cmd": "TODO(verifier L10): ZCODE_REQUIRE_TOOLCHAINS=1 bun run test:unit",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — overall verifier gate 2; record pass/fail counts"
+      },
+      {
+        "cmd": "TODO(verifier L10): bun run sync:locked",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — overall verifier gate 3 (build + sync-runtime --lock + anchor-drift/loop-gaps under ZCODE_REQUIRE_BUNDLE=1)"
+      },
+      {
+        "cmd": "TODO(verifier L10): bun run receipts:validate",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — overall verifier gate 4; fail-closed, all receipts must be ADMITTED"
+      },
+      {
+        "cmd": "TODO(verifier L10): bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — L7 runtime-lock gate"
+      },
+      {
+        "cmd": "TODO(verifier L10): bun scripts/gen-ocel.ts --check",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — L5 ocel-enum gate; no STALE line allowed"
+      },
+      {
+        "cmd": "TODO(verifier L10): node -e \"console.log(require('./package.json').version)\"  # must print 26.9.23",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — L9 calver assertion"
+      },
+      {
+        "cmd": "TODO(verifier L10): git rev-parse v26.9.23^{commit}  # must equal identity.subject_sha",
+        "exit": -1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "TODO — tag-subject identity, after the operator-ordered tag"
+      }
+    ],
+    "durable_location": "receipts/v26.9.23/ZCODE-26923-01.json"
+  },
+  "standing": {
+    "value": "UNKNOWN",
+    "derived_from": "Skeleton created by lane L9 at base 198f0dc (subject_sha snapshot c47c335 before wave merge). No verifier gate has been executed against the release subject in this receipt yet, so standing is UNKNOWN, never ALIVE. THIS FILE IS OWNED BY LANE L10 (verifier): L10 replaces every TODO replay command with observed cmd/exit/summary, pins identity.subject_sha to the exact merged head, records consequence.commits, and only then derives the final standing from those runs. exit -1 is the not-run sentinel; an ALIVE promotion with any -1 or nonzero exit remaining would be admission_vacuous and must be refused."
+  }
+}
