@@ -19,6 +19,15 @@ export interface SessionModelState {
   issue?: { code: string; message: string };
 }
 
+const REGISTRY_PATH = "~/.zcode/v2/provider_config.json";
+
+/** A provider id without a scope prefix is a bare family key; its rules live in the resolver registry, not the model catalog. */
+function providerNotFoundGuidance(providerId: string): string {
+  if (providerId.startsWith("builtin:") || providerId.startsWith("account:")) return "";
+  return ` The provider id ${JSON.stringify(providerId)} is a bare family key with no provider rules in ${REGISTRY_PATH};`
+    + " either add a family-keyed personal provider there or select the account-scoped provider for this account.";
+}
+
 /** sessionEntries already unwraps the stored modelSelection; legacy sibling fields are not authoritative. */
 function inspectSelection(registry: Registry, value: unknown): SessionModelState {
   const selection = value && typeof value === "object" && !Array.isArray(value)
@@ -40,7 +49,8 @@ function inspectSelection(registry: Registry, value: unknown): SessionModelState
     "reasoning-level-not-supported": "the saved reasoning level is no longer supported",
     "selection-missing": "no model selection was saved"
   }[code] ?? "the saved selection is invalid";
-  return { ...state, issue: { code, message: `Saved model ${JSON.stringify(model)} cannot be used: ${reason}.` } };
+  const guidance = code === "provider-not-found" && selection ? providerNotFoundGuidance(selection.providerId) : "";
+  return { ...state, issue: { code, message: `Saved model ${JSON.stringify(model)} cannot be used: ${reason}.${guidance}` } };
 }
 
 /** Inspect without changing the session, its credentials, or the shared default. */

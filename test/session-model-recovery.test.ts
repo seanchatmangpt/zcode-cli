@@ -45,3 +45,34 @@ test("store failures remain errors rather than being mistaken for missing models
     sessionEntries: async () => { throw new Error("Database is unavailable"); }
   } })).rejects.toThrow("Database is unavailable");
 });
+
+test("a bare family-key provider id enriches provider-not-found with registry repairs", async () => {
+  const state = await readSessionModelState({ registry, sessionId: "existing", sessionStore: {
+    sessionEntries: async () => [{ data: { ...selection, providerId: "anthropic", modelId: "claude" } }]
+  } });
+  expect(state?.issue?.code).toBe("provider-not-found");
+  expect(state?.issue?.message).toContain('provider id "anthropic" is a bare family key');
+  expect(state?.issue?.message).toContain("~/.zcode/v2/provider_config.json");
+  expect(state?.issue?.message).toContain("add a family-keyed personal provider");
+  expect(state?.issue?.message).toContain("select the account-scoped provider");
+  expect(() => assertSessionModelReady({ registry, sessionId: "existing",
+    restored: { selection: { providerId: "anthropic", modelId: "claude" } } }))
+    .toThrow(/~\/\.zcode\/v2\/provider_config\.json/);
+});
+
+test.each(["builtin:zai", "account:acme"])("a scoped provider id gets no family-key guidance (%s)", async providerId => {
+  const state = await readSessionModelState({ registry, sessionId: "existing", sessionStore: {
+    sessionEntries: async () => [{ data: { ...selection, providerId } }]
+  } });
+  expect(state?.issue?.code).toBe("provider-not-found");
+  expect(state?.issue?.message).toBe(`Saved model ${JSON.stringify(`${providerId}/glm-5.3`)} cannot be used: the provider is unavailable.`);
+  expect(() => assertSessionModelReady({ registry, sessionId: "existing",
+    restored: { selection: { ...selection, providerId } } })).not.toThrow(/provider_config/);
+});
+
+test("non provider-not-found issues stay byte-stable without guidance", async () => {
+  const state = await readSessionModelState({ registry, sessionId: "existing", sessionStore: {
+    sessionEntries: async () => [{ data: { ...selection, modelId: "glm-4" } }]
+  } });
+  expect(state?.issue?.message).toBe('Saved model "zai/glm-4" cannot be used: the model is not in the current provider catalog.');
+});
