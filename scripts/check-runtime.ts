@@ -28,6 +28,7 @@ import {
   patchRuntimeOfficialMcpAvailability,
   patchRuntimeSqliteBusyTimeout,
   patchRuntimeStreamEofFinishGuard,
+  parseRuntimeLock,
   parseRuntimePatchReports,
   runtimePatchPlan,
   supportsMultiMessageFileRewind
@@ -50,6 +51,12 @@ const extractionMetadata: unknown = await Bun.file(join(root, "vendor", "extract
 const metadataRecord = extractionMetadata && typeof extractionMetadata === "object"
   ? extractionMetadata as Record<string, unknown>
   : {};
+const runtimeLock = parseRuntimeLock(await Bun.file(join(root, "zcode-runtime.lock.json")).json());
+if (runtimeLock.appVersion !== metadataRecord.appVersion) {
+  throw new Error(
+    `Runtime lock appVersion ${runtimeLock.appVersion} does not match vendor/extraction.json appVersion ${String(metadataRecord.appVersion)}; run \`bun run sync\` again.`
+  );
+}
 const patchReports = new Map(
   (parseRuntimePatchReports(metadataRecord.runtimePatches) ?? []).map((report) => [report.id, report])
 );
