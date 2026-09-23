@@ -150,7 +150,6 @@ sj:zocel-014
     dcterms:identifier "ZOCEL-014" ;
     dcterms:title "ocel-registry-bridge — wire the xaas OcelAshEmitter to the zcode-ocel-pack generated registry" ;
     dcterms:description "Successor of xaas SJ-002, standing UNSUPPORTED today (capability absent). Xaas.Telemetry.OcelAshEmitter (lib/xaas/telemetry/ocel_ash_emitter.ex) emits OCEL events without any binding to the zcode-ocel-pack generated registry (src/generated/ocel.ts event table, verifyChain, src/generated/schemas.json in seanchatmangpt/zcode-cli). Bridge the emitter to that generated registry so an xaas-emitted event validates differentially against the zcode-generated schema. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
-    dcterms:issued "2026-09-22"^^xsd:date ;
     sj:repository "seanchatmangpt/xaas" ;
     sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
     sj:subject "xaas:ocel-registry-bridge" ;
@@ -202,7 +201,6 @@ sj:zocel-015
     dcterms:identifier "ZOCEL-015" ;
     dcterms:title "execution-mcp-audit — apply AuditMcpToolCall (or equivalent) to /internal-api/execution/mcp tool calls" ;
     dcterms:description "Audit asymmetry in seanchatmangpt/xaas: router.ex pipes :audit_mcp_tool_call (XaasWeb.Plugs.AuditMcpToolCall) through the /mcp scope only; the execution fabric route post(\"/execution/mcp\", ExecutionFabricController, :mcp) (full path /internal-api/execution/mcp) is unaudited, so execution-plane tool calls leave no audit row while /mcp tool calls do. Apply the same audit coverage (AuditMcpToolCall or equivalent) to the execution-mcp route. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
-    dcterms:issued "2026-09-22"^^xsd:date ;
     sj:repository "seanchatmangpt/xaas" ;
     sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
     sj:subject "xaas:execution-mcp-audit" ;
@@ -254,7 +252,6 @@ sj:zocel-016
     dcterms:identifier "ZOCEL-016" ;
     dcterms:title "ocel-verify-ci — wire scripts/ocel-verify.ts into package.json scripts / CI" ;
     dcterms:description "scripts/ocel-verify.ts in seanchatmangpt/zcode-cli verifies a recorded .jsonocel plus sibling .receipt.json (generated verifier, table and chain; prints chain-verified and deviations: 0) but is invoked only ad hoc: it appears in no package.json script and no .github/workflows workflow at base e0a77911b804040d5bd3412a86bf94957ad5a2c6. Wire it into package.json scripts / CI so OCEL receipts are verified on every test boundary. Checked-in fixtures exist at test/fixtures/zcode-ocel/ (turn-list.jsonocel, app-server-list.jsonocel, each with a sibling .receipt.json). Standing stays UNKNOWN until a court receipt exists." ;
-    dcterms:issued "2026-09-22"^^xsd:date ;
     sj:repository "seanchatmangpt/zcode-cli" ;
     sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
     sj:subject "zcode-cli:ocel-verify-ci" ;
