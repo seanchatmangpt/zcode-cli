@@ -1,0 +1,13 @@
+{
+  "wo": "ZCODE-26922-03",
+  "base_sha": "f5e2a36 (wo3 merge) — carried through 3.14.1 relock",
+  "merge_sha": "f5e2a36",
+  "command": [
+    "bun test test/gall-work-permission.test.ts -t 'pins --mode yolo'  (hermetic: construct argv pins [--mode yolo] after --json)",
+    "bun test test/gall-work.test.ts  (20 pass)",
+    "bun test ./test/gall-work-permission.test.ts  (live e2e leg)"
+  ],
+  "exit": 0,
+  "output_excerpt": "BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed for gall-work runs: the construct turn now pins --mode yolo (the runtime's build-mode default routed every Bash call to the DenyPermissionBroker -> 'No permission client configured for Bash'; sj-001 field receipt). Hermetic gates green. Live e2e leg (real gall-work run on a fixture lease executing one Bash step inside the lease cwd, closing ALIVE, no mocks): deferred typed by the test's own environmental classifier -- provider 1302 throttle windows and sandboxed model-catalog model-creation failures; the deferral is printed as SKIP-GALL-PERMISSION and re-arms each run. Standing PARTIAL_ALIVE: fix landed + hermetically proven; the live leg needs a clear model-surface window (e.g. the operator's field shell).",
+  "standing": "PARTIAL_ALIVE"
+}
