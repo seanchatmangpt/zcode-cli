@@ -25,24 +25,29 @@ import { join } from "node:path";
 //      resolveAppRuntimeConfig), so configured == registered.
 const bundle = join(import.meta.dir, "..", "vendor", "zcode.cjs");
 
-const mcpSourceMergeAnchor = `n("project",e.projectConfig),n("user",e.userConfig)`;
-const userConfigDefaultLoadAnchor = `e.skipUserConfig?{config:{},diagnostics:[],path:WE(),loaded:!1}:Iae(e.userConfigPath)`;
-const cliSettingsFileAnchor = `IZr="setting.json",TZr="~/.zcode/cli"`;
-const runtimeConfigMcpServersAnchor = `mcp:{enabled:n.runtimeConfig?.mcp?.enabled??r.config.features.mcp,servers:S`;
+// Anchors are structural (minifier identifiers wildcarded) so they hold for
+// any runtime build: only the SHAPE of the scope-ordered merge, the opt-in
+// user-config skip, the settings file identity, and the runtime-config mcp
+// merge are pinned -- not particular minified names (3.14.1 renamed them all).
+const mcpSourceMergeAnchor = /[A-Za-z_$][\w$]*\("project",e\.projectConfig\),[A-Za-z_$][\w$]*\("user",e\.userConfig\)/u;
+const userConfigDefaultLoadAnchor = /[A-Za-z_$][\w$]*\.skipUserConfig\?\{config:\{\},diagnostics:\[\],path:[A-Za-z_$][\w$]*\(\),loaded:!1\}:[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\.userConfigPath\)/u;
+const cliSettingsFileAnchor = /[A-Za-z_$][\w$]*="setting\.json",[A-Za-z_$][\w$]*="~\/\.zcode\/cli"/u;
+const runtimeConfigMcpServersAnchor = /mcp:\{enabled:[A-Za-z_$][\w$]*\.runtimeConfig\?\.mcp\?\.enabled\?\?[A-Za-z_$][\w$]*\.config\.features\.mcp,servers:[A-Za-z_$][\w$]*/u;
 
 test.skipIf(!existsSync(bundle))("user scope participates in MCP server resolution on the synced bundle", () => {
   const runtime = readFileSync(bundle, "utf8");
-  expect(runtime).toContain(mcpSourceMergeAnchor);
-  expect(runtime).toContain(userConfigDefaultLoadAnchor);
-  expect(runtime).toContain(cliSettingsFileAnchor);
-  expect(runtime).toContain(runtimeConfigMcpServersAnchor);
+  expect(mcpSourceMergeAnchor.test(runtime)).toBe(true);
+  expect(userConfigDefaultLoadAnchor.test(runtime)).toBe(true);
+  expect(cliSettingsFileAnchor.test(runtime)).toBe(true);
+  expect(runtimeConfigMcpServersAnchor.test(runtime)).toBe(true);
 });
 
 test("drift: a resolver without the user scope is rejected", () => {
   // The law is the presence of "user" in the ordered scope application, so the
   // tripwire fires on the smallest drift: the user scope dropped from the
   // merge chain while project scope remains.
-  const drifted = `n("system",ma),n("project",e.projectConfig),n("env",e.envConfig)`;
-  expect(drifted).not.toContain(`n("user",e.userConfig)`);
-  expect(mcpSourceMergeAnchor).toContain(`n("user",e.userConfig)`);
+  const drifted = `o("system",Lm),o("project",e.projectConfig),o("env",e.envConfig)`;
+  expect(mcpSourceMergeAnchor.test(drifted)).toBe(false);
+  // The live anchor still demands the user scope between project and env.
+  expect(mcpSourceMergeAnchor.test('o("project",e.projectConfig),o("user",e.userConfig),o("env",e.envConfig)')).toBe(true);
 });

@@ -583,7 +583,10 @@ export function patchRuntimeGoalFailurePause(runtime: string): string {
 export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
   if (runtime.includes('reason:"error_max_turns"')) return runtime;
 
-  const labelPattern = /a\(([A-Za-z_$][\w$]*),"runRegularTurnLoop"\)/u;
+  // 3.14.x renamed the label-registration helper (a(...) -> r(...)), so
+  // anchor on the helper-agnostic call shape and keep the loop-head check
+  // as the uniqueness court.
+  const labelPattern = /[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*),"runRegularTurnLoop"\)/u;
   const label = labelPattern.exec(runtime);
   if (!label) {
     throw new Error("ZCode runtime is incompatible with the max turns patch (runRegularTurnLoop registration anchor missing).");
@@ -619,6 +622,9 @@ export function patchRuntimeStreamingLedgerForwarding(runtime: string): string {
   const pattern = /(function [A-Za-z_$][\w$]*\(e\)\{)if\(e\.type===([A-Za-z_$][\w$]*)\.StreamingToolLedgerUpdated\)return!1;(if\(e\.type!==\2\.ModelStreaming\)return!0;)/u;
   if (!pattern.test(runtime)) {
     if (/function [A-Za-z_$][\w$]*\(e\)\{if\(e\.type!==([A-Za-z_$][\w$]*)\.ModelStreaming\)return!0;/u.test(runtime)) return runtime;
+    // 3.14+ consumes streaming ledger events natively: an event-kind handler
+    // entry exists in the projection table, so there is nothing to inject.
+    if (/[A-Za-z_$][\w$]*\.StreamingToolLedgerUpdated\]:/u.test(runtime)) return runtime;
     throw new Error("ZCode runtime is incompatible with the streaming ledger forwarding patch.");
   }
   return runtime.replace(pattern, "$1$3");
@@ -885,10 +891,15 @@ export function patchRuntimeTuiBridge(runtime: string): string {
       // extracted query helper's identically named bridge parameter.
       const callPattern = new RegExp(`${escapeRegExpName(queryHelper[1]!)}\\(([A-Za-z_$][\\w$]*),([A-Za-z_$][\\w$]*)\\),\\1\\.subscribeSessionEvents=`, "u");
       const call = callPattern.exec(patched);
-      if (!call || countRegExpMatches(patched, callPattern) !== 1) {
-        throw new Error("ZCode runtime is incompatible with the TUI bridge (skill-list host anchor missing).");
+      if (call && countRegExpMatches(patched, callPattern) === 1) {
+        patched = patched.replace(call[0], `${call[1]}.listSkills=async()=>await ${listSkillsFactory[1]}(${listSkillsFactory[2]}),${call[0]}`);
+      } else {
+        // 3.14 attaches app queries in a helper whose submitter call site has
+        // moved; degrade to the host-less bridge method rather than refusing
+        // the whole TUI bridge. Skill listing stays functional for runtimes
+        // whose host exposes skills globally.
+        assignments.push(`${bridge}.listSkills=async()=>await ${listSkillsFactory[1]}(${listSkillsFactory[2]})`);
       }
-      patched = patched.replace(call[0], `${call[1]}.listSkills=async()=>await ${listSkillsFactory[1]}(${listSkillsFactory[2]}),${call[0]}`);
     } else {
       assignments.push(`${bridge}.listSkills=async()=>await ${listSkillsFactory[1]}(${listSkillsFactory[2]})`);
     }
@@ -1123,6 +1134,17 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
   const factoryStart = list ? runtime.lastIndexOf("function ", list.index) : -1;
   const option = execWarmed(runtime, /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u);
   const registryList = execWarmed(runtime, /listModels:([A-Za-z_$][\w$]*)\(\(\)=>([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry\),"listModels"\)/u);
+  // 3.14+ owns model-option delegation and catalog reload natively. Two
+  // shapes: (a) the controller carries no `listModelOptions:` delegation
+  // entry at all, or (b) patchRuntimeTuiBridge's synthetic optionFields block
+  // contributed one (recognizable: the same object also delegates
+  // promoteQueuedInput, a marker only that block injects). In both cases the
+  // registry service already refreshes the active session's catalog, so
+  // degrade to a no-op instead of refusing the sync.
+  if (list && registryList && runtime.includes('"ProviderRegistryService"')
+    && (!option || runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`))) {
+    return runtime;
+  }
   // Shipped 3.12.3: the TUI bridge is built by method assignment
   // (B.listModelOptions=async()=>...) and patchRuntimeTuiBridge has already
   // registered listModelOptions into the adapter options object, so the
@@ -1223,9 +1245,12 @@ export function patchRuntimeSharedConfig(runtime: string): string {
 export function patchRuntimeSessionModelRecovery(runtime: string): string {
   const marker = "$zRestoredSessionModel";
   if (runtime.includes(marker) && runtime.includes('"readSessionModelState"')) return runtime;
-  const facade = /getModelOption:([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)=>[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*)\.providerRegistry,\2\),"getModelOption"\)/u.exec(runtime);
-  const restore = /let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)\.validateSelection\(\2\);return ([A-Za-z_$][\w$]*)\(\)\.setSessionModelSelection\(\1\?\.ok\?\2:void 0\),\2\},"restorePersistedModelSelection"/u.exec(runtime);
-  const boundary = /([A-Za-z_$][\w$]*)\(async ([A-Za-z_$][\w$]*)=>\{await ([A-Za-z_$][\w$]*)\.prepareUserExecutionBoundary\(\2\)\},"preparePromptBoundary"\)/u.exec(runtime);
+  // See execWarmed: a cold regex exec against the multi-megabyte 3.14.x
+  // runtime can spuriously miss (every anchor of this patch missed on a real
+  // 3.14.1 bundle under Bun/JSC), so all three anchors are warmed.
+  const facade = execWarmed(runtime, /getModelOption:([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)=>[A-Za-z_$][\w$]*\(([A-Za-z_$][\w$]*)\.providerRegistry,\2\),"getModelOption"\)/u);
+  const restore = execWarmed(runtime, /let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)\.validateSelection\(\2\);return ([A-Za-z_$][\w$]*)\(\)\.setSessionModelSelection\(\1\?\.ok\?\2:void 0\),\2\},"restorePersistedModelSelection"/u);
+  const boundary = execWarmed(runtime, /([A-Za-z_$][\w$]*)\(async ([A-Za-z_$][\w$]*)=>\{await ([A-Za-z_$][\w$]*)\.prepareUserExecutionBoundary\(\2\)\},"preparePromptBoundary"\)/u);
   if (!facade || !restore || !boundary) throw new Error("ZCode runtime is incompatible with session model recovery (restore/facade anchors missing).");
   const helper = 'require(require("node:path").join(__dirname,"cli-config.cjs"))';
   const context = facade[3], getRuntime = `${restore[4]}()`, inputContext = boundary[3], inputOptions = boundary[2];
@@ -1928,8 +1953,15 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     id: "model-catalog-reload",
     requirement: "required",
     apply: patchRuntimeModelCatalogReload,
-    verify: (runtime) => /reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
-      && runtime.includes(".reloadModelOptions=async()=>")
+    verify: (runtime) => (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
+      && runtime.includes(".reloadModelOptions=async()=>"))
+      // 3.14+: catalog reload is native (see patchRuntimeModelCatalogReload);
+      // the bridge delegation present is the synthetic tui-bridge entry.
+      || (runtime.includes('"ProviderRegistryService"')
+        && (() => {
+          const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
+          return option !== null && runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`);
+        })())
   },
   {
     id: "goal-failure-pause",
