@@ -79,6 +79,8 @@ export interface RuntimePatchDefinition {
   requirement: RuntimePatchRequirement;
   apply: (runtime: string) => string;
   verify?: (runtime: string) => boolean;
+  /** Explain a designed degradation in the extraction report (e.g. a native no-op). */
+  note?: (before: string, after: string) => string | undefined;
 }
 
 export function parseRuntimePatchReports(value: unknown): RuntimePatchReport[] | undefined {
@@ -469,7 +471,7 @@ export function patchRuntimeBuiltinProviderAliases(runtime: string): string {
     // the registry is consulted, so the fallback resolves both the raw
     // builtin ids and the account-plan shapes onto the family key ("zai").
     const familyResolve = (target: string): string => (
-      `(()=>{if(${target}.startsWith("builtin:")&&${target}.endsWith("-coding-plan"))return ${target}.slice(8,-11);`
+      `(()=>{if(${target}.startsWith("builtin:")&&${target}.endsWith("-coding-plan"))return ${target}.slice(8,-12);`
       + `if(${target}.startsWith("account:")){let $zPlan=${target}.slice(8);`
       + `if($zPlan.endsWith("-individual-coding-plan"))return $zPlan.slice(0,-23);`
       + `if($zPlan.endsWith("-team-coding-plan"))return $zPlan.slice(0,-17);`
@@ -1119,6 +1121,24 @@ export function patchRuntimeTuiBridge(runtime: string): string {
     patched = patched.replace(optionsAssignment, `${optionFields.join(",")},${optionsAssignment}`);
   }
   return patched;
+}
+
+/**
+ * Postcondition for the model-catalog-reload capability. Either the injected
+ * bridge delegation exists (3.12/3.13 runtimes) or the runtime owns catalog
+ * reload natively (3.14+: ProviderRegistryService.refresh reached through the
+ * registered "refreshProviderRegistry" runtime method), with the TUI bridge
+ * listModelOptions delegation present (synthetic entries carry the
+ * promoteQueuedInput marker injected by patchRuntimeTuiBridge).
+ */
+export function hasRuntimeModelCatalogReload(runtime: string): boolean {
+  if (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
+    && runtime.includes(".reloadModelOptions=async()=>")) return true;
+  const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
+  return runtime.includes('"ProviderRegistryService"')
+    && runtime.includes('"refreshProviderRegistry"')
+    && /refresh\([^)]*="explicit"\)/u.test(runtime)
+    && (!option || runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`));
 }
 
 export function patchRuntimeModelCatalogReload(runtime: string): string {
@@ -1953,15 +1973,11 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     id: "model-catalog-reload",
     requirement: "required",
     apply: patchRuntimeModelCatalogReload,
-    verify: (runtime) => (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
-      && runtime.includes(".reloadModelOptions=async()=>"))
-      // 3.14+: catalog reload is native (see patchRuntimeModelCatalogReload);
-      // the bridge delegation present is the synthetic tui-bridge entry.
-      || (runtime.includes('"ProviderRegistryService"')
-        && (() => {
-          const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
-          return option !== null && runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`);
-        })())
+    verify: hasRuntimeModelCatalogReload,
+    note: (before, after) => (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(after)
+      ? undefined
+      : "3.14+ owns model-option delegation and catalog reload natively (ProviderRegistryService.refresh via"
+        + " the registered refreshProviderRegistry method); only the /model help text was normalized")
   },
   {
     id: "goal-failure-pause",
@@ -2081,10 +2097,12 @@ export function applyRuntimePatchPlan(
       if (patch.verify && !patch.verify(next)) {
         throw new Error("postcondition verification failed");
       }
+      const note = patch.note?.(patched, next);
       reports.push({
         id: patch.id,
         requirement: patch.requirement,
-        status: next === patched ? "already_present" : "applied"
+        status: next === patched ? "already_present" : "applied",
+        ...(note ? { message: note } : {})
       });
       patched = next;
     } catch (error) {
