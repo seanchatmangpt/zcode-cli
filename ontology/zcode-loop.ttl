@@ -311,6 +311,7 @@ zl:Internal-Interrupt a zl:InternalEvent ; zl:internalName "interrupt" ; zl:fold
 zl:Internal-Cancel a zl:InternalEvent ; zl:internalName "cancel" ; zl:foldsToWire "session.updated" .
 zl:Internal-Resume a zl:InternalEvent ; zl:internalName "resume" ; zl:foldsToWire "session.updated" .
 zl:Internal-Error a zl:InternalEvent ; zl:internalName "error" ; zl:foldsToWire "session.updated" .
+zl:Internal-DynamicWorkflowRunProgress a zl:InternalEvent ; zl:internalName "dynamic_workflow_run_progress" ; zl:foldsToWire "session.updated" .
 
 # ===== loop states: turn machine. Transition names equal OCEL event type ids, so replay folds the log. =====
 zl:TurnMachine a st:Machine ; st:machineName "ZcodeTurn" ; st:initial zl:TurnIdle .
