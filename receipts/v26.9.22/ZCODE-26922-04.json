@@ -1,0 +1,12 @@
+{
+  "wo": "ZCODE-26922-04",
+  "base_sha": "b8570dc (main, post-rebuild)",
+  "command": [
+    "observation over $TMPDIR/xaas-dispatch-*.log after bin/zcode.js rebuild (3.14.1 bundle + native gall-work + node>=22 resolution)",
+    "fleet dispatcher: cd  && node bin/zcode.js gall-work --lease <descriptor> (xaas-glm-failover-dispatcher.sh:202)",
+    "field probes this session: gall-work missing-lease typed ENOENT+usage exit 2; real claim against live fabric = typed REFUSED_CLAIM fabric_http_401 (no token in probe shell; fail-closed, no prompt fallback)"
+  ],
+  "exit": 0,
+  "output_excerpt": "Readiness proven, dispatch observation pending: as of observation time the newest dispatch log is 17:11:07 (pre-rebuild) -- the fleet polling is in a paused/drain phase, so no post-rebuild dispatch has landed yet. Pre-rebuild state: 45 of 3741 logs carried 'unknown command: gall-work' (all pre-rebuild). After the rebuild the binary exposes gall-work (probe exit 2 contract) and the claim path reaches the fabric (typed 401 without token; the dispatcher supplies the token). The 0-unknown-command + claim_next+close acceptance will be observable at the fleet's next materialized epoch dispatch (XAAS-26922-12 dependency).",
+  "standing": "PARTIAL_ALIVE"
+}
