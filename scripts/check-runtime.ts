@@ -1,18 +1,23 @@
 #!/usr/bin/env bun
 
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { formatVersionOutput, readDistributionVersion } from "../src/launcher.ts";
 import { capabilitiesFromExtractionMetadata } from "../src/runtime-capabilities.ts";
+import { requestAppServer } from "../src/app-server-client.ts";
+import { runtimeTestEnv } from "./runtime-test-env.ts";
 import {
   extractRuntimeCapabilities,
   hasRuntimeCliHelpContract,
   hasRuntimeHttpNoContentGuard,
   hasRuntimeNetworkRetryGuard,
+  hasRuntimeSqliteBusyTimeout,
   hasRuntimeStreamEofFinishGuard,
   patchRuntimeGoalFailurePause,
   patchRuntimeMaxTurnsEnforcement,
@@ -21,6 +26,7 @@ import {
   patchRuntimeLoginModelDefaults,
   patchRuntimeNetworkRetryClassification,
   patchRuntimeOfficialMcpAvailability,
+  patchRuntimeSqliteBusyTimeout,
   patchRuntimeStreamEofFinishGuard,
   parseRuntimePatchReports,
   runtimePatchPlan,
@@ -81,6 +87,8 @@ if (patchRuntimeLoginModelDefaults(runtimeSource) !== runtimeSource
   || !hasRuntimeHttpNoContentGuard(runtimeSource)
   || patchRuntimeNetworkRetryClassification(runtimeSource) !== runtimeSource
   || !hasRuntimeNetworkRetryGuard(runtimeSource)
+  || patchRuntimeSqliteBusyTimeout(runtimeSource) !== runtimeSource
+  || !hasRuntimeSqliteBusyTimeout(runtimeSource)
   || patchRuntimeStreamEofFinishGuard(runtimeSource) !== runtimeSource
   || !hasRuntimeStreamEofFinishGuard(runtimeSource)
   || (patchEnabled("cli-help-contract") && !hasRuntimeCliHelpContract(runtimeSource))
@@ -162,14 +170,17 @@ if (patchRuntimeLoginModelDefaults(runtimeSource) !== runtimeSource
   throw new Error("The runtime compatibility patches are missing; run `bun run sync` again.");
 }
 
+const checkHome = await mkdtemp(join(tmpdir(), "zcode-runtime-check-"));
+const checkEnv = runtimeTestEnv(checkHome, root);
+
 async function execute(
   command: string,
   args: string[],
   input = ""
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const child = Bun.spawn([command, ...args], {
-    cwd: root,
-    env: process.env,
+    cwd: checkHome,
+    env: checkEnv,
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe"
@@ -184,47 +195,45 @@ async function execute(
   return { code, stdout, stderr };
 }
 
-const nodeVersion = await execute(node, ["--version"]);
-const versionMatch = /^v(\d+)\.(\d+)\./.exec(nodeVersion.stdout.trim());
-if (!versionMatch || Number(versionMatch[1]) < 22 || (Number(versionMatch[1]) === 22 && Number(versionMatch[2]) < 19)) {
-  throw new Error(`Node.js >=22.19 is required; found ${nodeVersion.stdout.trim() || "unknown"}.`);
+try {
+  const nodeVersion = await execute(node, ["--version"]);
+  const versionMatch = /^v(\d+)\.(\d+)\./.exec(nodeVersion.stdout.trim());
+  if (!versionMatch || Number(versionMatch[1]) < 22 || (Number(versionMatch[1]) === 22 && Number(versionMatch[2]) < 19)) {
+    throw new Error(`Node.js >=22.19 is required; found ${nodeVersion.stdout.trim() || "unknown"}.`);
+  }
+
+  const version = await execute(node, [runtime, "--version"]);
+  if (version.code !== 0 || !/^\d+\.\d+\.\d+/.test(version.stdout.trim())) {
+    throw new Error(`Version check failed: ${version.stderr || version.stdout}`);
+  }
+
+  const response = await requestAppServer({
+    method: "session/list", params: {},
+    transport: { command: node, args: [runtime, "app-server"], cwd: checkHome, env: checkEnv }
+  }) as { sessions?: unknown[] };
+  if (!response || !Array.isArray(response.sessions)) {
+    throw new Error(`Unexpected app-server response: ${JSON.stringify(response)}`);
+  }
+
+  const tuiImport = await execute(node, [
+    "--input-type=module",
+    "--eval",
+    `const module = await import(${JSON.stringify(pathToFileURL(tui).href)}); if (typeof module.runTui !== "function") process.exit(2);`
+  ]);
+  if (tuiImport.code !== 0) throw new Error(`TUI import failed: ${tuiImport.stderr}`);
+
+  const launcher = await execute(node, [join(root, "bin", "zcode.js"), "--version"]);
+  const distributionVersion = readDistributionVersion();
+  const expectedLauncherVersion = distributionVersion
+    ? formatVersionOutput(distributionVersion, version.stdout.trim())
+    : undefined;
+  if (launcher.code !== 0 || !expectedLauncherVersion || launcher.stdout.trim() !== expectedLauncherVersion) {
+    throw new Error(`Node.js launcher check failed: ${launcher.stderr || launcher.stdout}`);
+  }
+
+  console.log(
+    `Runtime checks passed for ${expectedLauncherVersion.replace("\n", " / ")} with Node ${nodeVersion.stdout.trim()} and pi-tui.`
+  );
+} finally {
+  await rm(checkHome, { recursive: true, force: true });
 }
-
-const version = await execute(node, [runtime, "--version"]);
-if (version.code !== 0 || !/^\d+\.\d+\.\d+/.test(version.stdout.trim())) {
-  throw new Error(`Version check failed: ${version.stderr || version.stdout}`);
-}
-
-const request = JSON.stringify({ id: 1, method: "session/list", params: {} });
-const protocol = await execute(node, [runtime, "app-server"], `${request}\n`);
-if (protocol.code !== 0) throw new Error(`app-server check failed: ${protocol.stderr}`);
-// New runtimes emit storage startup notifications before the RPC response.
-const response = protocol.stdout.trim().split("\n").map((line) => JSON.parse(line)).find(
-  (message) => message.id === 1
-) as {
-  id?: number;
-  result?: { sessions?: unknown[] };
-};
-if (!response || !Array.isArray(response.result?.sessions)) {
-  throw new Error(`Unexpected app-server response: ${protocol.stdout}`);
-}
-
-const tuiImport = await execute(node, [
-  "--input-type=module",
-  "--eval",
-  `const module = await import(${JSON.stringify(pathToFileURL(tui).href)}); if (typeof module.runTui !== "function") process.exit(2);`
-]);
-if (tuiImport.code !== 0) throw new Error(`TUI import failed: ${tuiImport.stderr}`);
-
-const launcher = await execute(node, [join(root, "bin", "zcode.js"), "--version"]);
-const distributionVersion = readDistributionVersion();
-const expectedLauncherVersion = distributionVersion
-  ? formatVersionOutput(distributionVersion, version.stdout.trim())
-  : undefined;
-if (launcher.code !== 0 || !expectedLauncherVersion || launcher.stdout.trim() !== expectedLauncherVersion) {
-  throw new Error(`Node.js launcher check failed: ${launcher.stderr || launcher.stdout}`);
-}
-
-console.log(
-  `Runtime checks passed for ${expectedLauncherVersion.replace("\n", " / ")} with Node ${nodeVersion.stdout.trim()} and pi-tui.`
-);

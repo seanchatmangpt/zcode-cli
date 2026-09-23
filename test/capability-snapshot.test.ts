@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // Runs the real scripts/capability-snapshot.sh against a real temp HOME.
@@ -21,7 +22,10 @@ function put(rel: string, content: string) {
 }
 
 beforeAll(() => {
-  home = mkdtempSync(join(tmpdir(), "capsnap-"));
+  // realpath: tmpdir() is reached through the /var -> /private/var symlink,
+  // and bsdtar refuses to extract archive members through a symlinked prefix
+  // ("Cannot extract through symlink"), which would break restore --apply.
+  home = mkdtempSync(join(realpathSync(tmpdir()), "capsnap-"));
   const glm = "Applications/ZCode.app/Contents/Resources/glm";
   put(".zcode/AGENTS.md", "agents-v1");
   put(".zcode/cli/config.json", '{"token":"t1"}');
@@ -93,7 +97,7 @@ describe("capability-snapshot.sh", () => {
   });
 
   test("save fails loudly when there is nothing to snapshot", () => {
-    const empty = mkdtempSync(join(tmpdir(), "capsnap-empty-"));
+    const empty = mkdtempSync(join(realpathSync(tmpdir()), "capsnap-empty-"));
     const p = Bun.spawnSync(["bash", SCRIPT, "save"], {
       env: { ...env, HOME: empty, ZCODE_APP: join(empty, "none"), ZCODE_BACKUP_ROOT: join(empty, "b") },
       stdout: "pipe",

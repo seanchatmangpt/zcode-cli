@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { readRuntimeVersion } from "../../src/launcher.ts";
 import { hermeticTempRoot, blankedAmbientCredentials } from "../fixtures/hermetic-env.ts";
+import { runtimeTestEnv } from "../fixtures/runtime-env.ts";
 
 let home = "";
 const node = Bun.which("node");
@@ -19,14 +20,12 @@ afterAll(async () => {
   if (home) await rm(home, { recursive: true, force: true });
 });
 
-async function run(args: string[], input = "", environment: Record<string, string> = {}) {
+async function run(args: string[], input = "", environment: Record<string, string> = {}, responseId?: number) {
   if (!node) throw new Error("Node.js is required for launcher/runtime integration tests.");
   const child = Bun.spawn([process.execPath, "bin/zcode.ts", ...args], {
     cwd: root,
     env: {
-      ...process.env,
-      HOME: home,
-      USERPROFILE: home,
+      ...runtimeTestEnv(environment.HOME ?? home),
       ZCODE_NODE: node,
       ...environment
     },
@@ -35,10 +34,29 @@ async function run(args: string[], input = "", environment: Record<string, strin
     stderr: "pipe"
   });
   child.stdin.write(input);
-  child.stdin.end();
+  if (responseId === undefined) child.stdin.end();
+  const stdoutPromise = (async () => {
+    const decoder = new TextDecoder();
+    let output = "", pending = "";
+    for await (const chunk of child.stdout) {
+      const text = decoder.decode(chunk, { stream: true });
+      output += text;
+      pending += text;
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) >= 0) {
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (responseId === undefined) continue;
+        try {
+          if (JSON.parse(line).id === responseId) child.stdin.end();
+        } catch { /* Non-protocol output is retained for assertions. */ }
+      }
+    }
+    return output + decoder.decode();
+  })();
   const [code, stdout, stderr] = await Promise.all([
     child.exited,
-    new Response(child.stdout).text(),
+    stdoutPromise,
     new Response(child.stderr).text()
   ]);
   return { code, stdout, stderr };
@@ -53,7 +71,10 @@ describe("launcher/runtime integration", () => {
     await chmod(fakeNode, 0o755);
     try {
       const result = await run(["--cwd", directory, "--prompt", "offline test"], "", {
-        ...blankedAmbientCredentials(), HOME: directory, USERPROFILE: directory, ZCODE_NODE: fakeNode, ANTHROPIC_API_KEY: ""
+        ...blankedAmbientCredentials(), HOME: directory, USERPROFILE: directory, ZCODE_NODE: fakeNode, ANTHROPIC_API_KEY: "",
+        // Preflight deliberately defers when explicit model/config environment overrides exist.
+        ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: "", ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: "",
+        ZCODE_DISABLE_MODEL_CATALOG_REFRESH: ""
       });
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("No model request was sent");
@@ -147,7 +168,7 @@ describe("launcher/runtime integration", () => {
 
     const plugins = await run(["plugins", "list", "--json"]);
     expect(plugins.code).toBe(0);
-    expect(JSON.parse(plugins.stdout).plugins).toEqual(expect.arrayContaining([
+    expect(JSON.parse(plugins.stdout)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "browser-use", enabled: true })
     ]));
 
@@ -176,7 +197,10 @@ describe("launcher/runtime integration", () => {
 
       const listed = await run(["--cwd", directory, "commands", "list", "--json"]);
       expect(listed.code).toBe(0);
-      expect(JSON.parse(listed.stdout)).toMatchObject({
+      const catalog = JSON.parse(listed.stdout);
+      expect(catalog.totalDiscovered).toBe(catalog.commands.length);
+      expect(catalog.commands.filter((command: { scope: string }) => command.scope === "project")).toHaveLength(1);
+      expect(catalog).toMatchObject({
         commands: expect.arrayContaining([
           expect.objectContaining({
             argumentHint: "<topic>",
@@ -188,8 +212,7 @@ describe("launcher/runtime integration", () => {
           })
         ]),
         cwd: directory,
-        diagnostics: [],
-        totalDiscovered: 1
+        diagnostics: []
       });
 
       const inspected = await run(["--cwd", directory, "commands", "inspect", "smoke", "--json"]);
@@ -224,7 +247,8 @@ describe("launcher/runtime integration", () => {
         workspace: { workspacePath, workspaceKey: workspacePath }
       }
     };
-    const result = await run(["app-server"], `${JSON.stringify(request)}\n`);
+    // EOF means client disconnection in 3.14; close only after the response.
+    const result = await run(["app-server"], `${JSON.stringify(request)}\n`, {}, request.id);
     expect(result.code).toBe(0);
     const response = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
       .find((message) => message.id === request.id);
@@ -325,7 +349,7 @@ describe("launcher/runtime integration", () => {
     });
 
     const plugins = await run(["plugins", "list", "--json"]);
-    expect(JSON.parse(plugins.stdout).plugins).toEqual(expect.arrayContaining([
+    expect(JSON.parse(plugins.stdout)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         enabled: true,
         id: "cli-smoke-plugin@cli-smoke-marketplace",
