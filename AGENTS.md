@@ -4,8 +4,12 @@ Orientation for agents working in this repo. Every claim below was checked again
 
 ## What this repo is
 
-`zcode-app-cli` (v3.12.3-26) is a thin CLI/TUI wrapper around the official ZCode agent runtime
-(unofficial terminal client; see README "Architecture"):
+`zcode-app-cli` is a thin CLI/TUI wrapper around the official ZCode agent runtime
+(unofficial terminal client; see README "Architecture"). Releases use calendar
+versioning (`v<year>.<month>.<day>`; current wave: `v26.9.23`), replacing the
+`<appVersion>-<build>` scheme that ended at `3.14.1-27`. The vendored runtime is
+Desktop `3.14.3` (official CLI `0.16.9`), as recorded by the last sync in
+`vendor/extraction.json`:
 
 ```
 Node.js npm launcher (config / login / version metadata)
@@ -15,8 +19,9 @@ Node.js npm launcher (config / login / version metadata)
 ```
 
 The launcher owns config, login, plugin/MCP plumbing and the TUI; it does not insert a second PTY
-or relay terminal bytes. The runtime itself is `vendor/zcode.cjs`, extracted and patched from the
-upstream version pinned in `zcode-runtime.lock.json` (installer URL + sha512 + appVersion).
+or relay terminal bytes. The runtime itself is `vendor/zcode.cjs`, extracted and patched from
+upstream — either the installer pinned in `zcode-runtime.lock.json` (URL + sha512 + appVersion)
+or a local ZCode.app (`bun run sync:local`; provenance in `vendor/extraction.json`).
 
 `vendor/` is **gitignored** — a fresh clone has no runtime until you run the sync pipeline:
 
@@ -39,21 +44,24 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
 
 ## Layout
 
-- `src/` — launcher code: `launcher.ts` (runtime spawn + stdio), `config-paths.ts`, `ocel-tap.ts`
-  (OCEL event tap), `gall-work.ts` (xaas claim → close lease lifecycle), `generated/`
+- `src/` — launcher code: `launcher.ts` (runtime spawn + stdio), `config-paths.ts`,
+  `runtime-config-bridge.ts` (legacy provider migration into the shared registry),
+  `builtin-provider-families.ts`, `ocel-tap.ts` (OCEL event tap), `gall-work.ts`
+  (xaas claim → close lease lifecycle), `generated/`
 - `src/generated/` — `loop.ts`, `ocel.ts`, `receipt.ts`, `schemas.json`, `zod/`, `py/`: projections of
   `ontology/zcode-loop.ttl` via `bun scripts/gen-ocel.ts`. Never edited by hand; `bun scripts/gen-ocel.ts --check` fails on drift
 - `test/` — unit tests at the top level; `test/runtime/` for real-bundle tests; `test/tui/` scenarios;
-  `test/fixtures/` (incl. `gall-work.contract.json`), `test/support/`
+  `test/fixtures/` (incl. `gall-work.contract.json`), `test/support/`, `test/node/`, `test/py/`
 - `scripts/` — `sync-runtime.ts` (extract + patch pipeline), `gen-ocel.ts` / `gen-zcode-loop.ts` /
   `zcode-events.ts` (ontology ↔ runtime enums), `ocel-verify.ts`, `validate-receipts.ts`,
   `check-runtime.ts`, plus `smoke-*`, `bench-*`, `release-*`
 - `docs/` — `CONFIGURATION.md` (+ `.zh-CN.md`), `PROVIDER_CONFIG.md` (+ `.zh-CN.md`),
   `HOST_INTEGRATION.md`, `RELEASING.md`, `DEVELOPMENT.md`, `TUI_SCENARIO_TESTING.md`,
-  `c4-zcode-cli-xaas.md`, `sjira/`
+  `SQLITE_CONCURRENCY.md`, `THIRD_PARTY_CONTENT.md`, `c4-zcode-cli-xaas.md`, `sjira/`, `jira/`
 - `receipts/<milestone>/` — session receipts (JSON), validated by `scripts/validate-receipts.ts`; current: `receipts/v26.9.22/`
-- `docs/sjira/<milestone>/` — work orders (current: `v26.9.21`): `work-orders.ttl` is the canonical graph;
-  `jira/ZOCEL-NNN.md` are projections; `plan/ZOCEL-NNN.hddl` plans; plus `receipts/`, `execution/`, `ard/`
+- `docs/sjira/<milestone>/` — work orders (current: `v26.9.22`): `work-orders.ttl` is the canonical
+  graph; `jira/` holds ticket projections (current wave: `GALL-CHECKPOINT-*`, archive: `v26.9.18/`);
+  `plan/` HDDL plans; plus `receipts/`, `execution/`, `ard/`
 - `HANDWRITTEN.md` (repo root) — the handwritten-residue ledger
 - Root: `bin/zcode.ts` (bin entry is `bin/zcode.js`, built), `ontology/zcode-loop.ttl`,
   `packages/zcode-tui`, `provider.example.json`, `setting.example.json`
@@ -67,8 +75,8 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
   `scripts/gen-ocel.ts`, `scripts/gen-zcode-loop.ts` + `zcode-events.ts`, the `test/ocel-*.test.ts` falsifiers).
   No row, no hand-written file.
 - Do not edit `vendor/zcode.cjs` by hand. The bundle is patched by `runtimePatchPlan` in
-  `scripts/sync-runtime.ts` (21 patches registered; the last recorded sync shows 18 applied, 3 skipped
-  as incompatible — see `vendor/extraction.json`).
+  `scripts/sync-runtime.ts` (23 patches registered; the recorded 3.14.3 sync shows 16 applied,
+  2 already present upstream, 5 skipped as incompatible — see `vendor/extraction.json`).
 - `zcode-runtime.lock.json` pins the upstream runtime; change it only through the release flow in `docs/RELEASING.md`.
 
 ## Coupling to xaas

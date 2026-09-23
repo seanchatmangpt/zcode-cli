@@ -256,6 +256,40 @@ that a model supports images or native search just from its name. `/model`
 refreshes the live registry. Changing the catalog does not change a saved model
 identity or deliberately chosen reasoning level.
 
+## Provider registry and multi-agent waves
+
+The registry — the personal file merged with the upstream catalog — is the
+resolution point for three behaviors that matter when automating the CLI.
+
+**Subagent family resolution.** The Desktop subagent-spawn path resolves saved
+subagent model overrides against the registry by family key. Desktop persists
+selections such as `builtin:zai-coding-plan` and
+`account:zai-individual-coding-plan`; the CLI resolves those shapes onto the
+personal provider keyed `zai` (see
+[Configuration](CONFIGURATION.md#custom-provider)). If the
+registry holds no personal provider with that key — for example an empty
+registry where every provider is account-scoped — the spawn fails with
+`provider-not-found`. The repair is to populate the registry with a
+family-keyed personal provider (`providerId` of `zai` or `bigmodel`), for
+example by merging a prepared failover configuration.
+
+**Migration marker.** A legacy `~/.zcode/cli/config.json` is imported into the
+registry once, and completion is recorded as
+`~/.zcode/cli/migrations/provider-registry-<hash>.json`, where `<hash>` is the
+first 16 hex characters of the SHA-256 of the effective provider config path.
+While the legacy file exists and the marker for that effective path is
+missing, the next launch re-runs the migration: provider IDs already present
+in the registry are skipped, and the marker records the imported and skipped
+IDs. Because the hash keys the path, pointing
+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` at a new file makes that file eligible
+for its own migration pass.
+
+**Per-lane isolation.** `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` redirects the
+whole registry to another file. Running each agent lane of a multi-agent wave
+with its own config file isolates provider edits, API keys and default
+selections between lanes; each lane's file gets its own migration marker keyed
+to its path. The shared `setting.json` is unaffected.
+
 ## Fields belonging elsewhere
 
 The personal file is not a copy of the upstream catalog. These catalog-only

@@ -232,6 +232,30 @@ registry 将上游目录与个人文件组合。智能配置模型会自动继�
 CLI 不会仅凭模型名字猜测它支持图片或原生搜索。使用 `/model` 刷新实时目录。
 目录更新不会更改已保存的模型 ID 或用户明确选择的推理等级。
 
+## Provider registry 与多智能体并行
+
+registry（个人文件与上游目录合并后的结果）是三个自动化相关行为的解析点。
+
+**子代理家族解析。** 桌面端的子代理派生路径会按家族键在 registry 中解析已保存的
+子代理模型覆盖。桌面端持久化的选择形如 `builtin:zai-coding-plan` 与
+`account:zai-individual-coding-plan`；CLI 会把这些形状解析到键为 `zai` 的个人
+provider 上（参见[配置说明](CONFIGURATION.zh-CN.md#自定义-provider)）。如果 registry
+中没有该键对应的个人 provider——例如 registry 为空、所有 provider 都是账号作用域——
+派生会以 `provider-not-found` 失败。修复方法是向 registry 写入一个以家族键命名的
+个人 provider（`providerId` 为 `zai` 或 `bigmodel`），例如合并一份准备好的故障转移配置。
+
+**迁移标记。** 旧版 `~/.zcode/cli/config.json` 只会导入一次，完成记录写入
+`~/.zcode/cli/migrations/provider-registry-<hash>.json`，其中 `<hash>` 是生效的
+provider 配置路径 SHA-256 的前 16 个十六进制字符。只要旧文件仍存在、且该生效路径
+对应的标记缺失，下次启动就会重新执行迁移：registry 中已存在的 provider ID 会被跳过，
+标记文件记录导入与跳过的 ID。由于哈希以路径为键，把
+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指向新文件后，该文件自身也符合迁移条件。
+
+**按 lane 隔离。** `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 可以把整个 registry 重定向
+到另一个文件。多智能体并行时，让每个 lane 使用自己的配置文件，即可在 lane 之间隔离
+provider 修改、API 密钥与默认模型选择；每个 lane 的文件按其路径拥有各自的迁移标记。
+共享的 `setting.json` 不受影响。
+
 ## 不属于此文件的字段
 
 个人配置不能直接复制为上游目录格式。以下字段不接受写入此处：`revision`、

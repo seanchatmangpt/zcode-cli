@@ -25,6 +25,25 @@ rebuilding a reviewed release:
 bun run sync:locked
 ```
 
+### Local app extraction
+
+`bun run sync:local` extracts the runtime from a locally installed ZCode.app
+(`$HOME/Applications/ZCode.app`) instead of downloading the manifest installer:
+
+```bash
+bun run sync:local
+```
+
+It applies the same patch plan and capability extraction and records the
+provenance in `vendor/extraction.json`: the source application path (`source`),
+the Desktop `appVersion` and the official runtime `cliVersion` (the current
+sync records `3.14.3` / `0.16.9`), the extraction timestamp and each patch
+result. A local sync never rewrites `package.json` or
+`zcode-runtime.lock.json`: the lock keeps pinning the exact remote installer
+that published releases reproduce. When the local app is newer than the lock,
+the sync prints a notice, and the next `bun run sync` aligns the committed lock
+through the release flow below.
+
 The synchronization command:
 
 1. reads the public stable-channel manifest used by ZCode Desktop, with the
@@ -95,19 +114,21 @@ a release tag. The tested tarball is also retained as a workflow artifact for
 
 ## Versioning
 
-Package versions use `<app-version>-<build>`, for example `3.3.5-2`. The prefix
-tracks the upstream ZCode App. The globally increasing build revision tracks
-fixes and features in this project. Do not use `3.3.5+build.2`: SemVer ignores
-`+build` metadata when comparing upgrades.
+Starting with `v26.9.23`, package versions and release tags use calendar
+versioning: `<year>.<month>.<day>`, tagged `v<version>` as before (for example
+`v26.9.23`). This operator-ordered calver scheme replaces the earlier
+`<app-version>-<build>` scheme, whose last release was `3.14.1-27`. The
+upstream ZCode App version is no longer encoded in the package version: it
+stays decoupled, recorded in `zcode-runtime.lock.json` (`appVersion`) and in
+`vendor/extraction.json` (`appVersion`, `cliVersion`).
 
-Increment the project revision before publishing a local fix or feature:
-
-```bash
-bun run version:build
-```
-
-The release workflows normally perform that increment for you. The command is
-also available for local inspection and exceptional manual preparation.
+Under the retired scheme the prefix tracked the upstream ZCode App and a
+globally increasing build revision tracked fixes and features in this project
+(`bun run version:build` incremented it). That build-revision increment belongs
+to the retired scheme; do not use `+build` SemVer metadata either way, because
+SemVer ignores it when comparing upgrades. The in-tree prepare workflow still
+carries the increment for legacy `<app-version>-<build>` maintenance; calver
+releases take their version from the release date instead.
 
 ## Release flow
 

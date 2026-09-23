@@ -19,7 +19,7 @@ bun run dev
 ```
 
 `bun run dev` runs `sync:local` (rebuild + extract `resources/glm` from
-`/Applications/ZCode.app`) and then starts the client through `bun bin/zcode.ts`
+`$HOME/Applications/ZCode.app`) and then starts the client through `bun bin/zcode.ts`
 with `ZCODE_NODE=node`, so source changes take effect on the next launch
 without a manual build step.
 
@@ -52,7 +52,7 @@ not make model API calls.
 Build the current CLI, then start an isolated reproduction:
 
 ```bash
-bun run sync:local # macOS with /Applications/ZCode.app; otherwise use bun run sync:locked
+bun run sync:local # macOS with $HOME/Applications/ZCode.app; otherwise use bun run sync:locked
 bun scripts/repro-session-model.ts
 ```
 
@@ -163,8 +163,8 @@ value; an environment override remains authoritative.
 layers explicitly:
 
 ```text
-zcode-app-cli 3.3.6-4
-zcode-runtime 0.15.2
+zcode-app-cli 26.9.23
+zcode-runtime 0.16.9
 ```
 
 ## OAuth login override
