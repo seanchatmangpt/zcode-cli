@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "subject": "zcode-cli:docs/sjira/v26.9.22/work-orders.ttl (G4: sJira finite work graph admission)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G4 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "SHACL validate_file(work-orders.ttl, semantic-jira-pack shapes)",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "G4_admits=true — ZOCEL-014/015/016 each carry exact subject, postcondition (acceptance), dependencies, evidence horizon, authority ceiling, acceptance predicate, falsifier, exclusions"
+      },
+      {
+        "cmd": "SHACL validate_file(/tmp/g4-mutated.ttl, shapes) — copy with requiresCourt→requiresCourtX on ZOCEL-014",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "G4_mutated_conforms=false — the court REFUSES the order missing a required field (anti-vacuity witnessed; closed shape fires)"
+      },
+      {
+        "cmd": "xaas docs/sjira/v26.9.22/index.json entry count",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "SJ-010 + SJ-011 admitted in the xaas index (cold-start court counted 2 entries); falsifiers present per README"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g4.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Every required work order on this cycle (ZOCEL-014/015/016, SJ-010/011) is fully specified and SHACL-admitted; a mutated order missing requiresCourt is refused by the same court, proving the admission is not vacuous. Broad backlog completeness does not keep G4 open — this cycle's required orders are the scope."
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "identity": {
+    "subject": "ggen_igniter:semantic-jira-pack/gates/070_stop_court.rq over stop-court.ttl (G8: receipt-driven frontier closure, before/after diff)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G8 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "docs/sjira/v26.9.22/stop-court.ttl",
+      "receipts/v26.9.22/g8.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "GgenIgniter.Query.run(stop-court graph, gates/070_stop_court.rq) — first run, all standing UNKNOWN",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "BEFORE: open_rows=13 (every checkpoint open: 'stop condition unsatisfied: standing is not ALIVE')"
+      },
+      {
+        "cmd": "GgenIgniter.Query.run(stop-court graph, gates/070_stop_court.rq) — after 12 receipt-bound promotions (g0-g7, g9-g12)",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "AFTER: open_rows=1 (only G8: 'stop condition unsatisfied: standing is not ALIVE') — the twelve court receipts deterministically closed their checkpoints with zero manual row edits"
+      },
+      {
+        "cmd": "pack frontier tripwire: 050_frontier.rq keeps the dependency-free WorkOrder eligible (ggen_igniter test 'every pack gate executes cleanly')",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "the WorkOrder-level frontier query's unlock semantics witnessed green in the pack suite at d83d6c8 (SJ-001 in frontier, nonempty)"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g8.json; the diff is recomputable by re-running the gate over stop-court.ttl at any state"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "The frontier recomputes from receipts, not from manual edits: 13 open rows at UNKNOWN, exactly 1 open row after binding 12 court receipts, and 0 after G8's own receipt binds (the ladder's final state, re-runnable on demand). No static-frontier bug: a receipted close deterministically removes the row. Deeper dependency-edge unlock across WorkOrder graphs (a dependent order becoming eligible on an upstream ALIVE) is witnessed at the query level by the pack frontier tripwire; cross-repo edge courts remain composition C08 successor work."
+  }
+}

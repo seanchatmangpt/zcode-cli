@@ -58,7 +58,8 @@ sj:cp-g0 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Future bounded — accepted Friday WBPR compiled into semantic propositions" ;
     dcterms:description "There is an accepted Vision/WBPR describing the future state being manufactured; its prose is projected into the explicit propositions of this graph." ;
     sj:subject "zcode-cli:docs/sjira/v26.9.22/stop-court.ttl" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g0 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "first_mile" ;
     sj:requiresCourt sj:court-g0 ;
@@ -86,7 +87,8 @@ sj:cp-g1 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Semantic closure — every proposition classified" ;
     dcterms:description "Every proposition required by the accepted prose is classified as bootstrap, first mile, deterministic core, last mile, or explicit successor." ;
     sj:subject "zcode-cli:docs/sjira/v26.9.22/successors.md" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g1 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "first_mile" ;
     sj:requiresCourt sj:court-g1 ;
@@ -114,7 +116,8 @@ sj:cp-g2 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Cold bootstrap — system reconstructs itself without conversational context" ;
     dcterms:description "Starting with durable artifacts and no conversation/session context, the system reconstructs ontology, exact subjects/versions, capability inventory, authority boundaries, receipts and current sJira frontier." ;
     sj:subject "zcode-cli:scripts/cold-start-court.ts" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g2 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "bootstrap" ;
     sj:requiresCourt sj:court-g2 ;
@@ -142,7 +145,8 @@ sj:cp-g3 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "First-mile compilation — prose → semantics → finite delta → sJira" ;
     dcterms:description "A genuinely new WBPR/Vision can be taken from prose → semantic elements → admitted target state → finite delta → sJira work orders." ;
     sj:subject "ggen_igniter:semantic-jira-pack/templates/prose-extraction.md.eex" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g3 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "first_mile" ;
     sj:requiresCourt sj:court-g3 ;
@@ -170,7 +174,8 @@ sj:cp-g4 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "sJira finite work graph — every required order fully specified" ;
     dcterms:description "Every required WorkOrder has exact subject, target postcondition, dependencies, capability, evidence horizon, authority ceiling, acceptance predicate, falsifier and exclusions." ;
     sj:subject "zcode-cli:docs/sjira/v26.9.22/work-orders.ttl" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g4 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "first_mile" ;
     sj:requiresCourt sj:court-g4 ;
@@ -198,7 +203,8 @@ sj:cp-g5 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "SA2A conservation — semantic tuple survives capability resolution" ;
     dcterms:description "sJira's required semantic tuple survives capability resolution and routing through SA2A into XaaS without losing subject, intent/postcondition, evidence, authority or consequence bounds." ;
     sj:subject "ggen-marketplace:packs/sa2a-bridge-pack" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g5 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "core" ;
     sj:requiresCourt sj:court-g5 ;
@@ -226,7 +232,8 @@ sj:cp-g6 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "No-LLM execution — one KNOWN class runs with LLM workers disabled" ;
     dcterms:description "At least one KNOWN work class runs from derived sJira frontier → SA2A capability → XaaS/BRCE → deterministic/generator/runtime implementation with all LLM workers disabled." ;
     sj:subject "zcode-cli:src/gall-work.ts" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g6 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "core" ;
     sj:requiresCourt sj:court-g6 ;
@@ -254,7 +261,8 @@ sj:cp-g7 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Last-mile consequence — executed does not count" ;
     dcterms:description "The required postcondition is independently observed, falsifier checked, receipt valid, OCEL consequence recorded and standing recomputable." ;
     sj:subject "zcode-cli:receipts/v26.9.22" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g7 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "last_mile" ;
     sj:requiresCourt sj:court-g7 ;
@@ -282,7 +290,8 @@ sj:cp-g8 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Closed frontier — receipt deterministically unlocks successors" ;
     dcterms:description "The receipt changes admitted state and deterministically unlocks/closes the appropriate sJira dependencies." ;
     sj:subject "ggen_igniter:semantic-jira-pack/gates/050_frontier.rq" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g8 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "last_mile" ;
     sj:requiresCourt sj:court-g8 ;
@@ -310,7 +319,8 @@ sj:cp-g9 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Learning ratchet — novel result becomes reusable route" ;
     dcterms:description "Episode 1 can produce admitted MachineExperience; an equivalent Episode 2 with matching preconditions routes as KNOWN and requires materially less semantic exploration." ;
     sj:subject "ash_a2a:lib/ash_a2a/semantic/machine_experience.ex" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g9 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "last_mile" ;
     sj:requiresCourt sj:court-g9 ;
@@ -338,7 +348,8 @@ sj:cp-g10 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Replay — cold independent process reconstructs the episode" ;
     dcterms:description "A cold independent process can reconstruct the episode from canonical artifacts and receipts without consulting an LLM transcript." ;
     sj:subject "zcode-cli:receipts/v26.9.22" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g10 ;
     sj:evidenceCeiling "EXECUTED_VERIFIED" ;
     sj:gapClass "last_mile" ;
     sj:requiresCourt sj:court-g10 ;
@@ -366,7 +377,8 @@ sj:cp-g11 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "Per-repo bounded standing — matrix over the portfolio" ;
     dcterms:description "Every repository touched by this checkpoint has a Semantic GALL checkpoint naming exact subject/SHA, evidence ceiling, status and exclusions; critical path ALIVE; every other repo explicitly successor/BLOCKED/UNSUPPORTED/REFUSED." ;
     sj:subject "zcode-cli:docs/sjira/v26.9.22/checkpoint-matrix.md" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g11 ;
     sj:evidenceCeiling "OBSERVED_VERIFIED" ;
     sj:gapClass "bootstrap" ;
     sj:requiresCourt sj:court-g11 ;
@@ -394,7 +406,8 @@ sj:cp-g12 a sj:GoalCheckpoint, sj:Checkpoint ;
     dcterms:title "External Friday deliverable — bounded WD proposal" ;
     dcterms:description "Western Digital submission is frozen as a bounded 5–8-page proposal: every significant claim is either observed proof, bounded architectural inference, or explicit WD-dependent UNKNOWN." ;
     sj:subject "zcode-cli:docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md" ;
-    sj:standing "UNKNOWN" ;
+    sj:standing "ALIVE" ;
+    sj:receipt sj:receipt-g12 ;
     sj:evidenceCeiling "OBSERVED_VERIFIED" ;
     sj:gapClass "last_mile" ;
     sj:requiresCourt sj:court-g12 ;
@@ -405,3 +418,135 @@ sj:cp-g12 a sj:GoalCheckpoint, sj:Checkpoint ;
     sj:successorPolicy "A WD engagement opens its own goal checkpoint with its own evidence ceiling." ;
     sj:llmRetirementRequirement "Claim-typing is a deterministic check over the proposal's claim table; the LLM's lawful role was authoring the narrative only." ;
     sj:replayIdentity "gall-fri-0925:G12" .
+
+# ---- Court receipts bound at promotion (validator-ADMITTED; g8 bound at its close) ----
+sj:receipt-g0 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G0 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g0.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:1d3254902acc74bde100dc1a020fc01d756654de9b48924d85d09b128cd71eb1" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g0" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g1 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G1 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g1.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:9c06e98ca3eb082a53ac115567a1b0616519dc460aa06113bf515bfe86a210b7" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g1" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g2 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G2 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g2-cold-start.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:cc68d3307aa14e7903e6f8fe5620a1fbdc68c692430c2f573b9b2a273c5f1674" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g2" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g3 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G3 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g3.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:d54cbdea4cf10333ea4d8dff656425b0ba780e1394f671b54565490791037918" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g3" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g4 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G4 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g4.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:0d5c1cb8df3a375c3d40194c86266eae185fcca6c7b54977ec4a29214643b2c0" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g4" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g5 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G5 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g5.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:0a32d3aeb08b0d62d5f0911bd09407bbf519dc523904be581c222c089de45670" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g5" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g6 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G6 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g6.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:4496c53c31ac6ebaa327ccc0f2d87eafdbfa2012eb6095c7f3261d75cd06406b" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g6" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g7 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G7 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g7.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:7637831f4be9de55d548c8b99630e24c4b2dda6931057014657cb6015c09d337" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g7" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g8 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G8 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g8.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:f739f170103cb0c60b15353f45c7c1a07c0b65ded175f258f45a1d73de0b5ed5" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g8" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g9 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G9 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g9.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:9af5fe1a5488b5b92d8786e37c7ab416bc5c9763c34b27014c48d9bbb695173b" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g9" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g10 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G10 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g10.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:3bfd1ac5e4882e0c8284c0e3e8d5574f0d0e712f42ec1b9c0eeb7da88b79bdab" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g10" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g11 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G11 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g11.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:29b610466407c7aa25c32c8cce409528c5d16f2dfb1ef7fad841f9db5455b36e" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g11" ;
+    sj:receiptClass "verification" .
+
+sj:receipt-g12 a sj:Receipt ;
+    rdfs:label "GALL-FRI-0925 G12 court receipt" ;
+    dcterms:description "receipts/v26.9.22/g12.json - schema-valid per ~/.claude/dfcm/validate_receipt.py (ADMITTED)." ;
+    sj:workOrderDigest "sha256:cc4f8f1ab28d3812c5e3229e456df123a96753ccec6d9f4f372265645f3e0eb1" ;
+    sj:repository "/Users/sac/dev/zcode-cli" ;
+    sj:baseSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:subjectSha "ffe804646eb851d3d3b145d26a9557d566ada45b" ;
+    sj:replayIdentity "gall-fri-0925:g12" ;
+    sj:receiptClass "verification" .
+

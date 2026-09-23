@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "subject": "zcode-cli:docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md (G12: bounded external deliverable, frozen)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G12 court of GALL-FRI-0925; operator-approved plan 2026-09-22 (authoring narrative is the LLM's lawful role; typing is verified deterministically)",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -cE '^\\| C[0-9]+ \\|' docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "14 typed claim rows in the claims table (8 OBSERVED with exact artifact+SHA citations, 3 BOUNDED-INFERENCE with named inference, 3 WD-DEPENDENT-UNKNOWN with named dependency)"
+      },
+      {
+        "cmd": "wc -w docs/sjira/v26.9.22/wd-proposal/WD-GALL-FRI-0925.md",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "2736 words — inside the 5–8 printed page bound"
+      },
+      {
+        "cmd": "validator runs over the receipts cited by OBSERVED claims (zocel-009, g2-cold-start, g6, g7, g9)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "all cited receipts ADMITTED by ~/.claude/dfcm/validate_receipt.py"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g12.json; proposal frozen at this digest's tree state"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "The proposal is frozen at 2736 words with 14 typed claims: every OBSERVED claim cites an on-disk artifact at an exact SHA or a validator-ADMITTED receipt; every BOUNDED-INFERENCE names its inference; every WD-DEPENDENT-UNKNOWN names its dependency (production integration, live data, deployment — explicitly excluded from this deliverable). An observed claim without a receipt, or an inference presented as observed, would falsify G12."
+  }
+}

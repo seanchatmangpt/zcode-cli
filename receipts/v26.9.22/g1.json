@@ -1,0 +1,39 @@
+{
+  "identity": {
+    "subject": "zcode-cli:docs/sjira/v26.9.22/successors.md (G1: classification ledger complete)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G1 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -c '^| ' docs/sjira/v26.9.22/successors.md",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "38 table rows across the closed-now / close-now / successors / operator-acts sections; every discovered item typed"
+      },
+      {
+        "cmd": "gate 070_stop_court.rq over stop-court.ttl",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "executes cleanly over the court graph (queryable; no orphan requirement in prose only — every proposition is a graph row per G0)"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g1.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Every 48h-discovered item is classified closed-now (receipt-cited), close-now under a named gate, successor (typed), or operator-act. Items merely mentioned as possible improvements are typed successors and do not keep G1 open. An orphan requirement in no graph row would falsify G1."
+  }
+}

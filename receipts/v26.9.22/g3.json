@@ -1,0 +1,49 @@
+{
+  "identity": {
+    "subject": "ggen_igniter:semantic-jira-pack/templates/prose-extraction.md.eex (G3: prose→semantics→finite delta→sJira worked example)",
+    "repo": "/Users/sac/ggen_igniter",
+    "subject_sha": "d83d6c809dcfaad23d64ea1142c5a8640d2a9337",
+    "base_sha": "f81cf5413ca565c5fb695e3721cf60fe5d4cc1ae"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G3 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [
+      "d83d6c809dcfaad23d64ea1142c5a8640d2a9337"
+    ],
+    "files_changed": [
+      "priv/ggen/semantic-jira-pack/templates/prose-extraction.md.eex"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "SHACL validate_file(stop-court.ttl, semantic-jira-pack shapes)",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "conforms=true — the compiled propositions (13 GoalCheckpoints) pass admission deterministically"
+      },
+      {
+        "cmd": "GgenIgniter.Query.run(stop-court graph, gates/070_stop_court.rq)",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "gate executes deterministically over the compiled output (row count changes only with receipted standing changes, never between identical runs)"
+      },
+      {
+        "cmd": "pack tests: gates tripwire (13 execute), stop-court tripwire (malformed refused, ALIVE-without-receipt refused, satisfied ladder zero rows), SHACL suite",
+        "cwd": "/Users/sac/ggen_igniter",
+        "exit": 0,
+        "summary": "2 tests + 21 SHACL tests green at d83d6c8, run in-session"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g3.json; ggen_igniter commit d83d6c8"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "The accepted Friday WBPR prose was compiled once through the extraction contract (the one lawful LLM semantic-novelty step) into stop-court.ttl; everything after admission is deterministic machinery: the template is static (byte-identical re-render), SHACL admission and the 070 gate are replayable queries, and the pack tripwires prove the court can refuse. The compile is the worked example of a fresh prose → semantic elements → admitted target state → finite delta → sJira-shaped checkpoints. Repeated LLM interpretation after admission would falsify G3."
+  }
+}

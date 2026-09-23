@@ -1,0 +1,53 @@
+{
+  "identity": {
+    "subject": "zcode-cli:gall-fri-0925:G5-conservation (SA2A/lease tuple conservation over G6-ocel-verify-boundary, mutation probe epoch b409b031-e292-4cd7-88cd-7b6c76251ee7)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G5 court of GALL-FRI-0925: tuple-conservation observation over the live lease path; operator-approved GALL-FRI-0925 plan 2026-09-22",
+    "actor": "gall-fri-0925-g5-worker (zcode GALL-FRI-0925 session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "receipts/v26.9.22/g5.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -n 'zcode-cli:gall-fri-0925:G6-ocel-verify-boundary' docs/sjira/v26.9.22/stop-court.ttl",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "the admitted court graph carries the conforming subject (cp-g6 sj:subject)"
+      },
+      {
+        "cmd": "claim_next(epoch_id=b409b031-e292-4cd7-88cd-7b6c76251ee7) → exact_subject carried verbatim: zcode-cli:gall-fri-0925:MUTATED-SUBJECT-not-in-court:d642b8f2-c081-41e2-bf4d-2a8bbf43a65c",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "claim payload preserved the (mutated) tuple element without rewriting it — transport is faithful"
+      },
+      {
+        "cmd": "refuse(lease_token=HzXjQB6boBN3NkWAGUmpqo2ZVetgiryw, reason=REFUSED_NO_AUTHORITY)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "court refused the mutated candidate; fabric sealed {status: refused, outcome: refused, epoch_id: b409b031-e292-4cd7-88cd-7b6c76251ee7}"
+      },
+      {
+        "cmd": "diff <(claim_next(epoch bb1771f5).exact_subject) <(epoch row subject)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "conforming leg: epoch bb1771f5's subject zcode-cli:gall-fri-0925:G6-ocel-verify-boundary:26959204-4636-461a-b9b8-75ebb2e620f0 arrived in the claim payload and the g6 receipt identity byte-identical through WorkOrder→lease→receipt"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g5.json; fabric receipt rows for epochs bb1771f5 (partial_alive) and b409b031 (refused)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Conservation holds and its violation is witnessed: (a) the conforming subject survived WorkOrder→epoch→claim→receipt byte-identical; (b) a deliberately mutated subject was claimed by the transport unmodified and then REFUSED by the court with a typed reason (fabric sealed outcome refused). Zero LLM reasoning steps on either leg. Observed falsifier check (anti-vacuity, recorded here because it is a refusal that must stay a refusal, not a standing-reproducing command): `grep -c 'MUTATED-SUBJECT-not-in-court' docs/sjira/v26.9.22/stop-court.ttl` exited 1 (no match) — the mutated subject appears nowhere in the admitted court graph; a match would falsify G5's conservation claim."
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "identity": {
+    "subject": "zcode-cli:gall-fri-0925:G10-cold-replay (episode reconstruction from canonical artifacts in a stripped environment)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G10 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "cold process (env -i shell, no session state)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "receipts/v26.9.22/g10.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "env -i HOME=$HOME PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin sh -c 'cd /Users/sac/dev/zcode-cli && bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel && bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/app-server-list.jsonocel && cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json && python3 /Users/sac/.claude/dfcm/validate_receipt.py receipts/v26.9.22/g6.json'",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "cold_e1=0 cold_e2=0 cold_e3=0 cold_e4=ADMITTED — a stripped-environment shell with no conversation, workflow journal, or agent scratch state reconstructs the episode outcome from repos + fixtures + receipts alone"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g10.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "A cold independent process (env -i, minimal PATH, no chat/transcript access) re-executed the episode's verification boundary and revalidated the g6 receipt: every exit 0, validator ADMITTED. The episode is reconstructible from canonical artifacts (repos at exact SHAs, OCEL fixtures, receipt files, fabric receipt row). Consulting an LLM transcript, chat history, or session-local state would falsify G10; none was consulted."
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "subject": "zcode-cli:ocel-verify-boundary@gall-fri-0925 (G6 no-LLM episode, fabric epoch bb1771f5-645f-4b30-af90-6caaa14f3d3a)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "XaaS fabric lease Ji64gcAYuH1SUtb_wUvQxBXV7bwNuXZY on epoch bb1771f5-645f-4b30-af90-6caaa14f3d3a (claim_next → heartbeat → close_candidate); operator-approved GALL-FRI-0925 plan 2026-09-22; epoch manufactured via the fabric's own Ash create pattern (Xaas.Ultracode.Run/Epoch, authorize?: false, local dev)",
+    "actor": "gall-fri-0925-g6-worker (zcode GALL-FRI-0925 session, serial integration)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "chain-verified 39 events, deviations: 0"
+      },
+      {
+        "cmd": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/app-server-list.jsonocel",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "chain-verified 30 events, deviations: 0"
+      },
+      {
+        "cmd": "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "byte-identical; sha256 390c9a3b8677fb9b0a408e6072d32868fd45901b9fdaa4ab62ec7603b6040f6a"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g6.json; fabric receipt row for epoch bb1771f5-645f-4b30-af90-6caaa14f3d3a in Xaas.Ultracode.Receipt (local dev DB, 1 row, outcome partial_alive); provider event recorded via record_provider_event (kind tool_execution_observed)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Full no-LLM lease lifecycle observed in this session against the live fabric (localhost:4000): claim_next returned the work payload, heartbeat renewed, record_provider_event recorded, close_candidate sealed. All 3 verification commands exit 0 with zero LLM reasoning steps and zero file changes. The fabric sealed outcome partial_alive — its own verifier_suite-absent floor (a registered zcode-cli verifier suite is a named successor, not a G6 acceptance requirement). Independent observation of the same postcondition is court G7 (receipts/v26.9.22/g7.json). Fabric close response: {status: closed, outcome: partial_alive, epoch_id: bb1771f5-645f-4b30-af90-6caaa14f3d3a}."
+  }
+}

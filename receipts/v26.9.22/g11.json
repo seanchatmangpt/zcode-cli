@@ -1,0 +1,39 @@
+{
+  "identity": {
+    "subject": "zcode-cli:docs/sjira/v26.9.22/checkpoint-matrix.md (G11: per-repo bounded standing matrix)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G11 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "grep -c '^| ' docs/sjira/v26.9.22/checkpoint-matrix.md (12 repo rows + header/separator)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "12 in-scope repos, one typed row each (status ∈ ALIVE|PARTIAL_ALIVE|SUCCESSOR), each with branch, full 40-hex HEAD, evidence ceiling, one-line evidence, Friday role"
+      },
+      {
+        "cmd": "critical-trio role-scoped ALIVE check",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "zcode-cli@ffe8046 ALIVE (G6 episode + g6/g7 receipts executed at that exact SHA this session); ggen_igniter@d83d6c8 ALIVE (pack tests, SHACL suite, 070 gate executed green at that exact SHA this session); xaas@e358cb8 ALIVE (fabric executed claim/heartbeat/record/close and sealed receipt rows for epochs bb1771f5, 0c31c933, b409b031 this session)"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g11.json; matrix bound to observed-at SHAs 2026-09-22"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Classification is complete: every in-scope repo has a typed row with exact SHA, evidence ceiling and exclusions — zero unclassified UNKNOWN rows anywhere. The reference loop's critical path (zcode-cli, ggen_igniter, xaas) is ALIVE at role-scoped exact subjects with in-session observed execution per the ALIVE law (observed execution against the exact admitted subject), while whole-repo rows stay honestly PARTIAL_ALIVE where a repo carries a known gap (e.g. zcode-cli's pre-existing red test:runtime, named in-row). Making every repository globally ALIVE does not keep G11 open; an unbounded UNKNOWN on the critical path would."
+  }
+}

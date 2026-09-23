@@ -1,0 +1,53 @@
+{
+  "identity": {
+    "subject": "zcode-cli:ocel-verify-boundary@gall-fri-0925 (G7 independent observation of the G6 episode, fabric epoch bb1771f5-645f-4b30-af90-6caaa14f3d3a)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G7 court of GALL-FRI-0925: independent observation leg for the G6 episode; no lease mutation involved; operator-approved GALL-FRI-0925 plan 2026-09-22",
+    "actor": "gall-fri-0925-g7-observer (second process, post-close)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "receipts/v26.9.22/g7.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "independent re-execution after close: chain-verified 39 events, head e34a9ceebcd6a9943254c5f743c47a6cafe28d43b48431212dc91cb0a73c6256, deviations: 0"
+      },
+      {
+        "cmd": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/app-server-list.jsonocel",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "independent re-execution after close: chain-verified 30 events, head 47c70b2e660ef39514a0905490cdafc0d480cd41353031a439333d235d4e07cd, deviations: 0"
+      },
+      {
+        "cmd": "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "identity holds post-close"
+      },
+      {
+        "cmd": "python3 /Users/sac/.claude/dfcm/validate_receipt.py receipts/v26.9.22/g6.json",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "g6 receipt ADMITTED by the independent schema validator"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g7.json; chain heads reproduce episode-1 values exactly"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "The G6 episode's postcondition was independently re-observed after close by a second process: identical OCEL chain heads (39 + 30 events, zero deviations), contract identity holds, the g6 receipt is schema-valid (validator ADMITTED), the fabric's provider event + sealed receipt row are durably recorded, and standing recomputes from these receipts alone. Observed falsifier check (anti-vacuity, recorded here because its non-zero exit is the desired refusing outcome, not a standing-reproducing command): copied turn-list.jsonocel to /Users/sac/wt/zocel-runs/g7-tamper.jsonocel, byte-flipped one byte (dd seek=10), re-ran `bun scripts/ocel-verify.ts` over it — exit 1, 'unparseable log: JSON Parse error' — the verifier can refuse tampered evidence; a green result on the mutated fixture would falsify G7."
+  }
+}

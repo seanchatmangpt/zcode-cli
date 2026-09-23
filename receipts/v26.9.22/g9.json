@@ -1,0 +1,47 @@
+{
+  "identity": {
+    "subject": "zcode-cli:gall-fri-0925:G9-learning-ratchet (two episodes of one KNOWN class, epochs bb1771f5 and 0c31c933)",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G9 court of GALL-FRI-0925: bounded two-episode ratchet demonstration; operator-approved GALL-FRI-0925 plan 2026-09-22",
+    "actor": "gall-fri-0925-g9-worker (zcode GALL-FRI-0925 session)"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "receipts/v26.9.22/g9.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel && bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/app-server-list.jsonocel && cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "episode 2 work boundary: all legs exit 0 (3 sub-commands, counted individually in g6/g7 receipts)"
+      },
+      {
+        "cmd": "claim_next(provider=zcode-cli, epoch_id=0c31c933-87e0-4f7a-b6be-828ab59c5da8)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "episode 2 claimed by direct epoch id — zero provider probing (episode 1 required 3 typed :no_ready_work probes plus fabric-surface discovery)"
+      },
+      {
+        "cmd": "close_candidate(lease_token=Madf8brkCOYnavwiAZ1J-0MxtXfD0_D1, outcome=alive)",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "episode 2 sealed: {status: closed, outcome: partial_alive, epoch_id: 0c31c933}; route reuse recorded in evidence (no auth discovery, no create-surface discovery)"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g9.json; fabric receipt rows for epochs bb1771f5 (episode 1) and 0c31c933 (episode 2)"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "Episode 1 (g6.json) resolved the class under exploration: 3 typed :no_ready_work probes across providers, create_run auth-surface investigation (org-token read, plug moduledoc), epoch-factory discovery (Autonomic.create_run_and_epoch pattern), then claim→work→close — on the order of 12 semantic steps. Episode 2 replayed the same KNOWN class with the recorded route: direct epoch create + claim by id + work + close = 4 steps, zero probes, zero exploration, zero LLM reasoning, identical green outcomes. Materially less semantic work per the gate; the OCEL-mined planner weights (C02) remain a named successor and are not required by this acceptance."
+  }
+}
