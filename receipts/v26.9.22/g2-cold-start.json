@@ -1,0 +1,353 @@
+{
+  "identity": {
+    "subject": "G2",
+    "repo": "/Users/sac/dev/zcode-cli",
+    "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+    "base_sha": "f0014f16980f8de82a7397f4281a470d11e718aa",
+    "checkpoint": "sj:cp-g2 (Cold bootstrap — system reconstructs itself without conversational context)"
+  },
+  "authority": {
+    "ceiling": "OBSERVE",
+    "grant": "NONE",
+    "actor": "zcode-cli:scripts/cold-start-court.ts"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "scripts/cold-start-court.ts",
+      "receipts/v26.9.22/g2-cold-start.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "git -C /Users/sac/dev/zcode-cli branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "main"
+      },
+      {
+        "cmd": "git -C /Users/sac/dev/zcode-cli rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "ffe804646eb851d3d3b145d26a9557d566ada45b"
+      },
+      {
+        "cmd": "git -C /Users/sac/dev/zcode-cli log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs(sjira): GALL-FRI-0925 stop court — G0-G12 GoalCheckpoint instances, compiled WBPR, G1 classification ledger"
+      },
+      {
+        "cmd": "git -C /Users/sac/xaas branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs/readme-refresh"
+      },
+      {
+        "cmd": "git -C /Users/sac/xaas rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "e358cb8aa9881ae4a07ef3bb3e37397d5486affd"
+      },
+      {
+        "cmd": "git -C /Users/sac/xaas log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs: refresh related diataxis docs + AGENTS.md to current surface"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen_igniter branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "feat/zcode-ocel-pack"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen_igniter rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "d83d6c809dcfaad23d64ea1142c5a8640d2a9337"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen_igniter log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "feat(semantic-jira-pack): GoalCheckpoint stop-court layer (class, closed shape, 070 stop gate, prose-extraction contract)"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen-marketplace branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "main"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen-marketplace rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "d23e0c3743bbe525f2db4ee5aa12ae8827cd0b9c"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen-marketplace log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "Merge origin/main (post-hygiene: PRs #470..#478, #474) into local main"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_a2a branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "fix/test-determinism-v26.9.21"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_a2a rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "ffff182add3cac4944b076bf50238f532ca6552d"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_a2a log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "receipts(erc): Z.AI concurrency probe evidence at bdacf7a (ERC-003/004)"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_atlassian branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "main"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_atlassian rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "0338b9ba169e93d0f5df91f175ef2e62e668fa97"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_atlassian log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs(receipts): v26.9.22 lane receipts (W0, 01-04; 02 CI blocked on private-repo Actions billing, 03 blocked on XAAS-26922-10)"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "fix/ggen-v26.9.17-boundary"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "5cc8808c12e465c89cf4e441a68cb340ca884ccc"
+      },
+      {
+        "cmd": "git -C /Users/sac/ggen log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "fix(rmcp-pack): restore lost strong-assertion facts in stub-handler proof template"
+      },
+      {
+        "cmd": "git -C /Users/sac/ferroplan branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "main"
+      },
+      {
+        "cmd": "git -C /Users/sac/ferroplan rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "9c872ceef75d03e33a323fbd0bac5ae22ece725c"
+      },
+      {
+        "cmd": "git -C /Users/sac/ferroplan log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "fix(plugin): MuStarDomain -> enum.StrEnum (ruff UP042 on CI's ruff)"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_surface branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "feat/dfcm-surface-core"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_surface rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "386135cbef8b1de78f19cca8095552aaab39a27c"
+      },
+      {
+        "cmd": "git -C /Users/sac/ash_surface log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs(jira): cherry-pick finish-paydown-026 BLOCKED receipt from exp/finish-paydown-026 (g26)"
+      },
+      {
+        "cmd": "git -C /Users/sac/zoela_phx branch --show-current",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "exp/substrate-receipt-digest-reconcile"
+      },
+      {
+        "cmd": "git -C /Users/sac/zoela_phx rev-parse HEAD",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "71a5fe262971b197277627b4c4f7585c460fa599"
+      },
+      {
+        "cmd": "git -C /Users/sac/zoela_phx log -1 --format=%s",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "docs(test): correct stale Ets claim in CommandBus test moduledoc"
+      },
+      {
+        "cmd": "git -C /Users/sac/dev/zcode-cli rev-parse HEAD~1",
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "exit": 0,
+        "summary": "f0014f16980f8de82a7397f4281a470d11e718aa"
+      }
+    ],
+    "durable_location": "receipts/v26.9.22/g2-cold-start.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "31 git replay commands all exited 0 (see replay.commands) at zcode-cli HEAD ffe804646eb851d3d3b145d26a9557d566ada45b; work-orders.ttl sj:standing counts {\"UNKNOWN\":3}; all required artifacts present"
+  },
+  "frontier": {
+    "standing_counts": {
+      "UNKNOWN": 3
+    },
+    "work_orders_ttl_identifiers": 3,
+    "stop_court_ttl_identifiers": 13,
+    "xaas_index_entries": 2
+  },
+  "repos": [
+    {
+      "path": "/Users/sac/dev/zcode-cli",
+      "resolved": true,
+      "branch": "main",
+      "head": "ffe804646eb851d3d3b145d26a9557d566ada45b",
+      "subject": "docs(sjira): GALL-FRI-0925 stop court — G0-G12 GoalCheckpoint instances, compiled WBPR, G1 classification ledger"
+    },
+    {
+      "path": "/Users/sac/xaas",
+      "resolved": true,
+      "branch": "docs/readme-refresh",
+      "head": "e358cb8aa9881ae4a07ef3bb3e37397d5486affd",
+      "subject": "docs: refresh related diataxis docs + AGENTS.md to current surface"
+    },
+    {
+      "path": "/Users/sac/ggen_igniter",
+      "resolved": true,
+      "branch": "feat/zcode-ocel-pack",
+      "head": "d83d6c809dcfaad23d64ea1142c5a8640d2a9337",
+      "subject": "feat(semantic-jira-pack): GoalCheckpoint stop-court layer (class, closed shape, 070 stop gate, prose-extraction contract)"
+    },
+    {
+      "path": "/Users/sac/ggen-marketplace",
+      "resolved": true,
+      "branch": "main",
+      "head": "d23e0c3743bbe525f2db4ee5aa12ae8827cd0b9c",
+      "subject": "Merge origin/main (post-hygiene: PRs #470..#478, #474) into local main"
+    },
+    {
+      "path": "/Users/sac/ash_a2a",
+      "resolved": true,
+      "branch": "fix/test-determinism-v26.9.21",
+      "head": "ffff182add3cac4944b076bf50238f532ca6552d",
+      "subject": "receipts(erc): Z.AI concurrency probe evidence at bdacf7a (ERC-003/004)"
+    },
+    {
+      "path": "/Users/sac/ash_atlassian",
+      "resolved": true,
+      "branch": "main",
+      "head": "0338b9ba169e93d0f5df91f175ef2e62e668fa97",
+      "subject": "docs(receipts): v26.9.22 lane receipts (W0, 01-04; 02 CI blocked on private-repo Actions billing, 03 blocked on XAAS-26922-10)"
+    },
+    {
+      "path": "/Users/sac/ggen",
+      "resolved": true,
+      "branch": "fix/ggen-v26.9.17-boundary",
+      "head": "5cc8808c12e465c89cf4e441a68cb340ca884ccc",
+      "subject": "fix(rmcp-pack): restore lost strong-assertion facts in stub-handler proof template"
+    },
+    {
+      "path": "/Users/sac/ferroplan",
+      "resolved": true,
+      "branch": "main",
+      "head": "9c872ceef75d03e33a323fbd0bac5ae22ece725c",
+      "subject": "fix(plugin): MuStarDomain -> enum.StrEnum (ruff UP042 on CI's ruff)"
+    },
+    {
+      "path": "/Users/sac/ash_surface",
+      "resolved": true,
+      "branch": "feat/dfcm-surface-core",
+      "head": "386135cbef8b1de78f19cca8095552aaab39a27c",
+      "subject": "docs(jira): cherry-pick finish-paydown-026 BLOCKED receipt from exp/finish-paydown-026 (g26)"
+    },
+    {
+      "path": "/Users/sac/zoela_phx",
+      "resolved": true,
+      "branch": "exp/substrate-receipt-digest-reconcile",
+      "head": "71a5fe262971b197277627b4c4f7585c460fa599",
+      "subject": "docs(test): correct stale Ets claim in CommandBus test moduledoc"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/Users/sac/dev/zcode-cli/docs/sjira/v26.9.22/work-orders.ttl",
+      "present": true,
+      "identifiers": 3,
+      "standing_counts": {
+        "UNKNOWN": 3
+      }
+    },
+    {
+      "path": "/Users/sac/dev/zcode-cli/docs/sjira/v26.9.22/stop-court.ttl",
+      "present": true,
+      "identifiers": 13,
+      "standing_counts": {
+        "UNKNOWN": 13
+      }
+    },
+    {
+      "path": "/Users/sac/xaas/docs/sjira/v26.9.22/index.json",
+      "present": true,
+      "entries": 2
+    },
+    {
+      "path": "/Users/sac/dev/zcode-cli/receipts/v26.9.22",
+      "present": true,
+      "receipts": 13,
+      "templates_skipped": 1,
+      "files": [
+        "ZCODE-26922-01.json",
+        "ZCODE-26922-02.json",
+        "ZCODE-26922-03.json",
+        "ZCODE-26922-04.json",
+        "ZCODE-26922-05.json",
+        "ZCODE-26922-06.json",
+        "ZCODE-26922-07.json",
+        "ZCODE-26922-08.json",
+        "ZCODE-26922-09.json",
+        "ZCODE-26922-10.json",
+        "g2-cold-start.json",
+        "v26922-gap-wave.json",
+        "zocel-009.json"
+      ]
+    },
+    {
+      "path": "/Users/sac/xaas/receipts/v26.9.22",
+      "present": true,
+      "receipts": 0,
+      "templates_skipped": 0,
+      "files": []
+    }
+  ],
+  "cold_start": {
+    "session_state_read": false,
+    "prompt_files_read": false,
+    "network_or_model_calls": 0
+  }
+}
