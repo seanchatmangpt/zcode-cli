@@ -1,0 +1,13 @@
+{
+  "wo": "ZCODE-26922-08",
+  "base_sha": "38b0445 (main, concurrent-session cycle opening) merged with release/v26.9.22 at ce82bcf",
+  "commit": "38abe8d",
+  "command": [
+    "mix ggen_igniter.sync --engine sparql --ontology docs/sjira/v26.9.22/work-orders.ttl --pack semantic-jira-pack:{jira,prd,ard,wbpr,plan} (in ~/ggen_igniter, relocation-copied per documented UNSUPPORTED row)",
+    "SHACL court: embedded in sync (passed after graph fix)",
+    "grep -L GENERATED docs/sjira/v26.9.22/{jira,prd,ard,wbpr}/*.md | wc -l  (=0)"
+  ],
+  "exit": 0,
+  "output_excerpt": "Pack re-run complete: jira/prd/ard/wbpr/plan x ZOCEL-014/015/016 all carry GENERATED headers. SHACL refused dcterms:issued (closed work_order_shape) on all 3 orders -> the 3 triples removed from the canonical graph; date preserved in README/commit. Graph digest 3df30f02...b506. Standing UNKNOWN count = 3 (< 13 acceptance). Execution descriptors (graph_digest/base_sha-bound execution/*.json) DEFERRED: the ttl->work-order loader is documented UNSUPPORTED(generator-capability) in v26.9.21 HANDWRITTEN and the ggen_igniter lane owns the descriptor machinery (WO8 depends_on GGEN_IGNITER-26922-07/08; their wave is in flight). Partial: descriptors + base_sha binding to merged main b8570dc remain for the pack-side follow-up.",
+  "standing": "PARTIAL_ALIVE"
+}
