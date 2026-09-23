@@ -2,16 +2,27 @@
   "identity": {
     "subject": "ZCODE-26923-01: Align to ZCode.app 3.14.3 + release v26.9.23",
     "repo": "/Users/sac/dev/zcode-cli",
-    "subject_sha": "c47c335a609cb1d38a57033fe50ec9346ae85a91",
-    "base_sha": "198f0dc45879bdda238352c0bcae25a60cf649eb"
+    "subject_sha": "39de6f4b1a274fc45a135c033857e2ab892a1354",
+    "base_sha": "198f0dc45879bdda238352c0bcae25a60cf649eb",
+    "subject_note": "subject_sha is the post-wave main head (all 7 construct commits: c47c335 L4, 8505314 L9, 8820998 L3, 38601b4 L6, 93d5bc2 L7, 4d71b1a L8, 39de6f4 L1), verified by gate replay below; it is the pre-L10-commit base."
   },
   "authority": {
     "ceiling": "DO",
     "grant": "operator order 2026-09-23: release zcode-cli v26.9.23 (merge to default branch + push + tag)",
-    "actor": "zcode-cli v26.9.23 wave — lane L9 (release cut); final content owned by lane L10 (verifier)"
+    "actor": "zcode-cli v26.9.23 wave — verifier lane L10 (gate replay, diff audit, receipt completion)",
+    "notes": "Merge to default branch: DONE (wave commits landed on main, verified in git log 198f0dc..HEAD). Push + tag v26.9.23: NOT executed by L10 — lane order forbids push/tag; remains an operator action under the 2026-09-23 order. Post-tag check: `git rev-parse v26.9.23^{commit}` must equal the tagged head; identity.subject_sha here certifies the verified wave subject 39de6f4."
   },
   "consequence": {
-    "commits": [],
+    "commits": [
+      "c47c335",
+      "8505314",
+      "8820998",
+      "38601b4",
+      "93d5bc2",
+      "4d71b1a",
+      "39de6f4"
+    ],
+    "commits_note": "Order: c47c335=L4 session-recovery; 8505314=L9 release cut; 8820998=L3 provider bridge; 38601b4=L6 tap wire pin; 93d5bc2=L7 runtime lock+gate; 4d71b1a=L8 docs; 39de6f4=L1 alias fix. All within declared ownership (see replay.diff_audit). The L10 commit appends exactly this receipt file; its SHA is unknowable pre-commit and is excluded here rather than fabricated.",
     "files_changed": [
       "package.json",
       "HANDWRITTEN.md",
@@ -21,70 +32,93 @@
       "receipts/v26.9.23/ZCODE-26923-01.json"
     ],
     "remote_effects": [
-      "TODO(verifier L10): merge to default branch + push + tag v26.9.23, only after the overall verifier gate is green (operator order 2026-09-23)"
+      "push of main + tag v26.9.23: NOT executed by L10 (lane forbids push/tag); outstanding under operator order 2026-09-23",
+      "post-tag identity check: `git rev-parse v26.9.23^{commit}` compared against the tagged head; the verified wave subject certified by this receipt is 39de6f4b1a274fc45a135c033857e2ab892a1354"
     ]
   },
   "replay": {
     "commands": [
       {
-        "cmd": "TODO(verifier L10): git rev-parse HEAD  # record the exact merged head into identity.subject_sha",
-        "exit": -1,
+        "cmd": "git rev-parse HEAD",
+        "exit": 0,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — not yet run by L10; exit -1 is the not-run sentinel, replace every command below with observed cmd/exit/summary before promotion"
+        "summary": "Observed 39de6f4b1a274fc45a135c033857e2ab892a1354 — pinned into identity.subject_sha; working tree clean before L10 commit"
       },
       {
-        "cmd": "TODO(verifier L10): bun run typecheck",
-        "exit": -1,
+        "cmd": "bun run typecheck",
+        "exit": 1,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — overall verifier gate 1"
+        "summary": "FAIL — 3x TS2769 test/sync-runtime-alias.test.ts:47,52,57 (`providerId` not in fixture interface typed `{ok; code?}` at line 22). Wave-introduced by 39de6f4 (L1): new failure-payload assertions are behaviorally correct against the fixture runtime string (line 16 returns providerId) but the TS interface was not widened. Successor item S1 (one-line fix, outside L10 ownership)."
       },
       {
-        "cmd": "TODO(verifier L10): ZCODE_REQUIRE_TOOLCHAINS=1 bun run test:unit",
-        "exit": -1,
+        "cmd": "bun run test:unit",
+        "exit": 1,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — overall verifier gate 2; record pass/fail counts"
+        "summary": "FAIL — 804 pass / 2 fail across 101 files. (1) gall-work lease test timed out at 240s: no wave commit touches test/gall-work.test.ts or src/gall-work.ts — pre-existing/environmental (S5). (2) `runtime synchronization > pins the exact remote runtime used by release workflows`: test pins lock platform=linux arch=x64 + .deb URL (release-workflow contract) but 93d5bc2 (L7) repinned zcode-runtime.lock.json to darwin/arm64 + mac .zip for local vendor sync — direct construct contradiction, S2."
       },
       {
-        "cmd": "TODO(verifier L10): bun run sync:locked",
-        "exit": -1,
+        "cmd": "ZCODE_REQUIRE_BUNDLE=1 bun run test:runtime",
+        "exit": 1,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — overall verifier gate 3 (build + sync-runtime --lock + anchor-drift/loop-gaps under ZCODE_REQUIRE_BUNDLE=1)"
+        "summary": "FAIL — 38 pass / 15 fail / 1 error across 12 files (vendor 3.14.3 present). Wave-attributable: 6x session-model-recovery (`Session model recovery did not settle`; c47c335 L4 touched src/session-model-recovery.ts), subagent-builtin-provider toContain failures (= named flake F1 below), model-catalog-tui `Missing /zai/catalog-fixture/` (L1 model-catalog-reload retirement), environment-isolation `Expected an <app-version>-<build> version, found: 26.9.23` (L9 calver vs version-format assumption, S6). Environmental/live-provider suspected: 2x provider-business-error-retry (real 429/1302 flow, `Turn was cancelled`), 6x gall-fresh-consumer + portable-receipt (JSON EOF from spawned public subprocess, S7)."
       },
       {
-        "cmd": "TODO(verifier L10): bun run receipts:validate",
-        "exit": -1,
+        "cmd": "bun run receipts:validate",
+        "exit": 1,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — overall verifier gate 4; fail-closed, all receipts must be ADMITTED"
+        "summary": "FAIL — 17/27 admitted. All 10 refusals are receipts/v26.9.22/ZCODE-26922-01..10.json (legacy flat format: no identity/authority/consequence/replay objects, string standing). The v26.9.23 receipt PASSES both before and after L10 completion. Refusals are prior-wave debt, not this wave's file — S4."
       },
       {
-        "cmd": "TODO(verifier L10): bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json",
-        "exit": -1,
+        "cmd": "bun scripts/check-runtime.ts",
+        "exit": 0,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — L7 runtime-lock gate"
+        "summary": "PASS — `Runtime checks passed for zcode-app-cli 26.9.23 / zcode-runtime 0.16.9 with Node v22.22.3 and pi-tui` (L7 lock appVersion vs extraction.json validation included)."
       },
       {
-        "cmd": "TODO(verifier L10): bun scripts/gen-ocel.ts --check",
-        "exit": -1,
+        "cmd": "timeout 120 bun bin/zcode.js --cwd /tmp -p \"Reply exactly: L10-OK\" --json",
+        "exit": 0,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — L5 ocel-enum gate; no STALE line allowed"
+        "summary": "PASS — completed live turn: response exactly `L10-OK`, status idle, turnCount 1, provider usage recorded (30210 in / 51 out), eventCount 61. Wrapper alive on the wave subject."
       },
       {
-        "cmd": "TODO(verifier L10): node -e \"console.log(require('./package.json').version)\"  # must print 26.9.23",
-        "exit": -1,
+        "cmd": "bun test test/runtime/subagent-builtin-provider.test.ts",
+        "exit": 1,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — L9 calver assertion"
+        "summary": "NAMED FLAKE F1 evidence — both tests fail ONLY at `expect(result?.response).toContain(\"SUBAGENT_RETURNED_PONG\")` AFTER `run.code === 0` passes. Observed received text: `The subagent completed successfully and returned exactly:\\n\\n```\\nPONG\\n```...` — subagent returned PONG verbatim and the pipeline works end to end; the parent model paraphrased its report instead of emitting the literal sentinel token. Wording-fragility CONFIRMED; test NOT edited (outside L10 ownership). Note: the paraphrase throw masks the downstream fixtureRequests model-resolution assertions in the override test. Successor S3."
       },
       {
-        "cmd": "TODO(verifier L10): git rev-parse v26.9.23^{commit}  # must equal identity.subject_sha",
-        "exit": -1,
+        "cmd": "bun scripts/gen-ocel.ts --check",
+        "exit": 0,
         "cwd": "/Users/sac/dev/zcode-cli",
-        "summary": "TODO — tag-subject identity, after the operator-ordered tag"
+        "summary": "PASS — no STALE lines (L5 ocel-enum gate)."
+      },
+      {
+        "cmd": "bun scripts/sync-runtime.ts --check --lock zcode-runtime.lock.json",
+        "exit": 1,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "L9's drafted TODO command is INVALID as written: `Unknown or incomplete argument: --check`. No such flag exists on the script. Functional equivalents observed instead: check-runtime.ts exit 0 and the sync-runtime test suite (which fails on the lock-platform contradiction, S2). Recorded as observed, not silently dropped."
+      },
+      {
+        "cmd": "node -e \"console.log(require('./package.json').version)\"",
+        "exit": 0,
+        "cwd": "/Users/sac/dev/zcode-cli",
+        "summary": "Observed `26.9.23` — L9 calver assertion holds."
       }
     ],
-    "durable_location": "receipts/v26.9.23/ZCODE-26923-01.json"
+    "durable_location": "receipts/v26.9.23/ZCODE-26923-01.json",
+    "diff_audit": "git log --stat 198f0dc..HEAD audited: 19 files, every construct commit touched only its declared ownership (one sequential cross-touch: scripts/check-runtime.ts by L7 then L1's declared fold-in). package.json version 26.9.23 verified. HANDWRITTEN.md, docs/sjira/v26.9.23/ (README.md, jira/ZCODE-26923-01.md, work-orders.ttl) and the receipts skeleton all present. L2/L5 zero-diff per wave record (no commits). VERDICT: PASS."
   },
   "standing": {
-    "value": "UNKNOWN",
-    "derived_from": "Skeleton created by lane L9 at base 198f0dc (subject_sha snapshot c47c335 before wave merge). No verifier gate has been executed against the release subject in this receipt yet, so standing is UNKNOWN, never ALIVE. THIS FILE IS OWNED BY LANE L10 (verifier): L10 replaces every TODO replay command with observed cmd/exit/summary, pins identity.subject_sha to the exact merged head, records consequence.commits, and only then derives the final standing from those runs. exit -1 is the not-run sentinel; an ALIVE promotion with any -1 or nonzero exit remaining would be admission_vacuous and must be refused."
+    "value": "PARTIAL_ALIVE",
+    "derived_from": "Gates (e) check-runtime and (f) live wrapper smoke exit 0 — the release subject runs and completes a live turn on 26.9.23/3.14.3. Gates (a) typecheck, (b) test:unit, (c) test:runtime, (d) receipts:validate exit 1, so ALIVE is refused (all-gates-exit-0 rule). PARTIAL_ALIVE over BLOCKED because every failure is precisely attributed with a narrow successor fix and the functional path is observed working; nothing blocks repair. Failing gates named: (a) L1 fixture-interface widening (S1); (b) L7 lock-vs-release-workflow platform contradiction (S2) + pre-existing gall-work timeout (S5); (c) L4/L1/L9-attributable runtime regressions + live-provider/environmental tests (S7) + flake F1 (S3); (d) prior-wave v26.9.22 legacy receipt format (S4).",
+    "successor_items": [
+      "S1 (owner: L1 scope): widen test/sync-runtime-alias.test.ts:22 fixture interface to `{ ok: boolean; code?: string; providerId?: string; modelId?: string }` — clears gate (a).",
+      "S2 (owner: L7 scope + release): resolve zcode-runtime.lock.json darwin/arm64 (93d5bc2, local vendor sync) vs test/sync-runtime.test.ts:157 linux/x64/.deb (release-workflow contract) — repin or split the lock; update the test or the lock in the same commit.",
+      "S3 (owner: subagent test scope): stop asserting the literal `SUBAGENT_RETURNED_PONG` in the parent model's paraphrasable prose; assert the subagent's PONG return from structured stream-json events (named flake F1, evidence in replay).",
+      "S4 (owner: receipts): migrate receipts/v26.9.22/ZCODE-26922-01..10.json to the current five-key schema or grandfather legacy format in the validator — clears gate (d).",
+      "S5 (owner: gall-work scope): gall-work lease unit test times out at 240s in this environment (pre-existing; no wave attribution) — fix environment dependence or timeout budget.",
+      "S6 (owner: L9 scope): calver 26.9.23 breaks `<app-version>-<build>` version-format assumptions in runtime tests (environment-isolation, model-catalog-tui fixture) — update parsers/tests for calver.",
+      "S7 (owner: runtime test scope): fixture or gate-isolate live-provider tests (429/1302 retry flow) and GALL-006 fresh-consumer subprocess tests so test:runtime does not depend on ambient endpoint/subprocess availability."
+    ]
   }
 }
