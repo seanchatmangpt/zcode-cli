@@ -170,8 +170,9 @@ if (patchRuntimeLoginModelDefaults(runtimeSource) !== runtimeSource
   || !/setMode:[A-Za-z_$][\w$]*\.setMode/u.test(runtimeSource)
   || !/listSkills:[A-Za-z_$][\w$]*\.listSkills/u.test(runtimeSource)
   || !/listModelOptions:[A-Za-z_$][\w$]*\.listModelOptions/u.test(runtimeSource)
-  // 3.14+ owns catalog reload natively; the injected reloadModelOptions
-  // delegation only exists on 3.12/3.13 runtimes (see hasRuntimeModelCatalogReload).
+  // No supported runtime reloads the catalog on picker open natively; the
+  // injected reloadModelOptions delegation is required on every runtime
+  // (3.12 through 3.14.3) — see hasRuntimeModelCatalogReload.
   || !hasRuntimeModelCatalogReload(runtimeSource)
   || !/setTransientModel:[A-Za-z_$][\w$]*\.setTransientModel/u.test(runtimeSource)
   || !/readSessionModel:[A-Za-z_$][\w$]*\.readSessionModel/u.test(runtimeSource)

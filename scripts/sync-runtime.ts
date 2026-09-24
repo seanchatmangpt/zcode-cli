@@ -1124,21 +1124,34 @@ export function patchRuntimeTuiBridge(runtime: string): string {
 }
 
 /**
- * Postcondition for the model-catalog-reload capability. Either the injected
- * bridge delegation exists (3.12/3.13 runtimes) or the runtime owns catalog
- * reload natively (3.14+: ProviderRegistryService.refresh reached through the
- * registered "refreshProviderRegistry" runtime method), with the TUI bridge
- * listModelOptions delegation present (synthetic entries carry the
- * promoteQueuedInput marker injected by patchRuntimeTuiBridge).
+ * Postcondition for the model-catalog-reload capability: the injected bridge
+ * delegation exists (reloadModelOptions assigned on the TUI bridge and
+ * registered into the adapter options). No supported runtime reloads the
+ * catalog natively when the /model picker opens: 3.14+ ships
+ * ProviderRegistryService.refresh (reached through the registered
+ * "refreshProviderRegistry" method) and a listModelOptions delegation, but
+ * nothing invokes refresh at picker-open time, so the adapter options never
+ * carry a native reloadModelOptions. Verified against the pristine 3.14.3
+ * bundle: `reloadModelOptions` has zero upstream occurrences and the observed
+ * picker serves the startup-cached list.
  */
 export function hasRuntimeModelCatalogReload(runtime: string): boolean {
-  if (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
-    && runtime.includes(".reloadModelOptions=async()=>")) return true;
-  const option = /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u.exec(runtime);
-  return runtime.includes('"ProviderRegistryService"')
-    && runtime.includes('"refreshProviderRegistry"')
-    && /refresh\([^)]*="explicit"\)/u.test(runtime)
-    && (!option || runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`));
+  return /reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(runtime)
+    && runtime.includes(".reloadModelOptions=async()=>");
+}
+
+/**
+ * Factory-scope saved-default repository anchor (3.12.3 shape:
+ * `let ae=await v,af=ae?.modelSelectionConfigRepository?await ae.
+ * modelSelectionConfigRepository.read()`). Returns the awaited registry
+ * promise variable. The repeated variable name is compared in code instead of
+ * via a `\1` backreference: JSC's YARR engine mis-compiles backreferences on
+ * multi-MB sources depending on which regexes compiled before them, which
+ * silently broke this anchor on the real bundle while small fixtures passed.
+ */
+function findFactoryRepository(scope: string): string | undefined {
+  const match = execWarmed(scope, /let ([A-Za-z_$][\w$]*)=await ([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\?\.modelSelectionConfigRepository\?await ([A-Za-z_$][\w$]*)\.modelSelectionConfigRepository\.read\(\)/u);
+  return match && match[4] === match[1] && match[5] === match[1] ? match[2] : undefined;
 }
 
 export function patchRuntimeModelCatalogReload(runtime: string): string {
@@ -1154,24 +1167,21 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
   const factoryStart = list ? runtime.lastIndexOf("function ", list.index) : -1;
   const option = execWarmed(runtime, /listModelOptions:([A-Za-z_$][\w$]*)\.listModelOptions/u);
   const registryList = execWarmed(runtime, /listModels:([A-Za-z_$][\w$]*)\(\(\)=>([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry\),"listModels"\)/u);
-  // 3.14+ owns model-option delegation and catalog reload natively. Two
-  // shapes: (a) the controller carries no `listModelOptions:` delegation
-  // entry at all, or (b) patchRuntimeTuiBridge's synthetic optionFields block
-  // contributed one (recognizable: the same object also delegates
-  // promoteQueuedInput, a marker only that block injects). In both cases the
-  // registry service already refreshes the active session's catalog, so
-  // degrade to a no-op instead of refusing the sync.
-  if (list && registryList && runtime.includes('"ProviderRegistryService"')
-    && (!option || runtime.includes(`promoteQueuedInput:${option[1]}.promoteQueuedInput`))) {
-    return runtime;
-  }
+  // The saved-default repository anchor in the 3.12.3 factory scope, computed
+  // once: the 3.12.3 branch only fires when its own repository anchor exists,
+  // so newer bundles (3.14.3 reaches the repository through the runtime state
+  // promise instead) fall through to the generic branch below instead of
+  // throwing here.
+  const factoryRegistry = list && factoryStart >= 0 && factoryStart < list.index
+    ? findFactoryRepository(runtime.slice(factoryStart, list.index))
+    : undefined;
   // Shipped 3.12.3: the TUI bridge is built by method assignment
   // (B.listModelOptions=async()=>...) and patchRuntimeTuiBridge has already
   // registered listModelOptions into the adapter options object, so the
   // capability adds three bridge methods plus two controller entries next to
   // the native selection validator, then registers the methods the same way.
   const currentModelOption = /getCurrentModelOption:([A-Za-z_$][\w$]*)\(\(\)=>\{let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.runtime\.getSessionModelSelection\(\);return ([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.providerRegistry,([A-Za-z_$][\w$]*)\)\},"getCurrentModelOption"\)/u.exec(runtime);
-  if (list && option && registryList && currentModelOption
+  if (list && option && registryList && currentModelOption && factoryRegistry
     && currentModelOption[4] === currentModelOption[2]
     && currentModelOption[7] === currentModelOption[2]
     && currentModelOption[6] === currentModelOption[3]
@@ -1184,13 +1194,7 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
     // The saved-default repository belongs to the process registry runtime, not to
     // the per-session app controller, so it is reached through the factory-scope
     // registry promise (`let ae=await v,...=ae?.modelSelectionConfigRepository`).
-    const registry = execWarmed(
-      runtime.slice(factoryStart, list.index),
-      /let ([A-Za-z_$][\w$]*)=await ([A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*=\1\?\.modelSelectionConfigRepository\?await \1\.modelSelectionConfigRepository\.read\(\)/u
-    )?.[2];
-    if (!registry) {
-      throw new Error("ZCode runtime is incompatible with model catalog reload (saved-default repository anchor missing).");
-    }
+    const registry = factoryRegistry;
     const controllerEntries = `reloadModels:${label}(async()=>{await ${context}.providerRegistry.refresh("cli-model-catalog");return ${helper}(${context}.providerRegistry)},"reloadModels"),validateSelection:${label}($zSelection=>{let $zOption=${validator}(${context}.providerRegistry,$zSelection);if(!$zOption)throw new Error("Unknown default model: "+$zSelection.providerId+"/"+$zSelection.modelId);return $zOption},"validateSelection"),`;
     const bridgeMethods = `,${bridge}.reloadModelOptions=async()=>await(await ${getApp}()).reloadModels(),${bridge}.readDefaultModel=async()=>{await ${getApp}();let $zSelection=await(await ${registry}).modelSelectionConfigRepository.read();return $zSelection?$zSelection.providerId+"/"+$zSelection.modelId:void 0},${bridge}.setDefaultModel=async $zModel=>{let $zApp=await ${getApp}(),$zIndex=$zModel.indexOf("/"),$zSelection={providerId:$zModel.slice(0,$zIndex),modelId:$zModel.slice($zIndex+1)};if($zIndex<=0||!$zApp.getModelOption($zSelection))throw new Error("Unknown default model: "+$zModel);await(await ${registry}).modelSelectionConfigRepository.saveConfiguredDefault($zSelection);return await ${bridge}.setTransientModel($zModel)}`;
     return runtime
@@ -1201,18 +1205,23 @@ export function patchRuntimeModelCatalogReload(runtime: string): string {
   if (list && option && registryList) {
     const [, bridge, getApp] = list;
     const [, label, , context] = registryList;
-    let registry = /let ([A-Za-z_$][\w$]*)=await ([A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*=\1\?\.modelSelectionConfigRepository\?await \1\.modelSelectionConfigRepository\.read\(\)/u.exec(runtime.slice(factoryStart, list.index))?.[2];
+    let registry = list ? findFactoryRepository(runtime.slice(factoryStart, list.index)) : undefined;
     if (!registry) {
       // 3.14 attaches queries in a separate helper. Its registry promise lives
       // in the owning submitter, so pass a lazy accessor instead of capturing
       // a minifier variable from a different lexical scope.
       const helperPattern = new RegExp(`([A-Za-z_$][\\w$]*)=[A-Za-z_$][\\w$]*\\(\\(${escapeRegExpName(bridge!)},${escapeRegExpName(getApp!)}\\)=>\\{`, "gu");
       const helper = [...runtime.slice(0, list.index).matchAll(helperPattern)].at(-1)?.[1];
-      const callPattern = helper && new RegExp(`${escapeRegExpName(helper)}\\(([A-Za-z_$][\\w$]*),([A-Za-z_$][\\w$]*)\\),\\1\\.subscribeSessionEvents=`, "u");
+      // No \\1 backreference: JSC's YARR engine mis-compiles backreferences on
+      // multi-MB runtimes (see patchRuntimeSharedConfig), which silently broke
+      // this match on the real 3.14.3 bundle while the small unit fixtures kept
+      // passing. Capture the repeated name separately and compare in code.
+      const callPattern = helper ? new RegExp(`${escapeRegExpName(helper)}\\(([A-Za-z_$][\\w$]*),([A-Za-z_$][\\w$]*)\\),([A-Za-z_$][\\w$]*)\\.subscribeSessionEvents=`, "u") : undefined;
       const call = callPattern && callPattern.exec(runtime);
-      const owner = call && /\(await ([A-Za-z_$][\w$]*)\.providerRegistryRuntimePromise\)\?\.dispose\(\)/u.exec(runtime.slice(call.index, call.index + 2000))?.[1];
-      if (call && owner && runtime.includes('"attachTuiAppQueries"') && countRegExpMatches(runtime, callPattern!) === 1) {
-        runtime = runtime.replace(call[0], `${call[1]}.$zReadProviderRegistryRuntime=()=>${owner}.providerRegistryRuntimePromise,${call[0]}`);
+      const callSite = call && call[3] === call[1] ? call : undefined;
+      const owner = callSite && /\(await ([A-Za-z_$][\w$]*)\.providerRegistryRuntimePromise\)\?\.dispose\(\)/u.exec(runtime.slice(callSite.index, callSite.index + 2000))?.[1];
+      if (callSite && owner && runtime.includes('"attachTuiAppQueries"') && countRegExpMatches(runtime, callPattern!) === 1) {
+        runtime = runtime.replace(callSite[0], `${callSite[1]}.$zReadProviderRegistryRuntime=()=>${owner}.providerRegistryRuntimePromise,${callSite[0]}`);
         registry = `${bridge}.$zReadProviderRegistryRuntime()`;
       }
     }
@@ -1973,11 +1982,7 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     id: "model-catalog-reload",
     requirement: "required",
     apply: patchRuntimeModelCatalogReload,
-    verify: hasRuntimeModelCatalogReload,
-    note: (before, after) => (/reloadModelOptions:[A-Za-z_$][\w$]*\.reloadModelOptions/u.test(after)
-      ? undefined
-      : "3.14+ owns model-option delegation and catalog reload natively (ProviderRegistryService.refresh via"
-        + " the registered refreshProviderRegistry method); only the /model help text was normalized")
+    verify: hasRuntimeModelCatalogReload
   },
   {
     id: "goal-failure-pause",

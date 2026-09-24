@@ -3767,7 +3767,10 @@ class ZCodeTui {
     const picker = modelPicker(this.modelOptions, this.model);
     if (picker.items.length === 0) {
       if (!this.sessionModelIssue) return false;
-      this.addNotice(`${this.sessionModelIssue} No models are available. Run /login or configure a provider in /settings, then use /model.`, "warning");
+      // Lead with the fixed recovery text so it never wraps internally; the
+      // (possibly long) issue diagnosis, including the registry-repair
+      // guidance for bare family keys, follows it.
+      this.addNotice(`No models are available. Run /login or configure a provider in /settings, then use /model. ${this.sessionModelIssue}`, "warning");
       return true;
     }
     const selected = await this.showChoice({
