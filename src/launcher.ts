@@ -35,6 +35,7 @@ import { startOcelTap } from "./ocel-tap.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runGallCommand } from "./gall-cli.ts";
+import { runEvidenceCommand } from "./evidence-cli.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -476,6 +477,11 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(args: string[]): Promise<number> {
+  // PolyEvidence admission is hermetic and non-actuating; run it before
+  // runtime/config bootstrap just like the portable GALL consumer court.
+  const evidenceCommand = await runEvidenceCommand(args);
+  if (evidenceCommand !== undefined) return evidenceCommand;
+
   // Public GALL-006 fresh-consumer command (restored from 9d2ccec; the
   // dispatch was dropped by a v26.9.22 merge while src/gall-cli.ts survived).
   const gallCommand = await runGallCommand(args);
