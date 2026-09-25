@@ -34,6 +34,7 @@ import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
+import { runGallCommand } from "./gall-cli.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -475,6 +476,11 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(args: string[]): Promise<number> {
+  // Public GALL-006 fresh-consumer command (restored from 9d2ccec; the
+  // dispatch was dropped by a v26.9.22 merge while src/gall-cli.ts survived).
+  const gallCommand = await runGallCommand(args);
+  if (gallCommand !== undefined) return gallCommand;
+
   try {
     // Native gall-work lifecycle (claim -> persist -> construct -> close).
     // It runs before the config bootstrap so a dispatcher-launched worker
