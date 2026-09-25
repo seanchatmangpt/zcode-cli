@@ -2,12 +2,13 @@
 // Source of truth: the consumer's pi: individuals. Do not edit.
 import { createHash } from "node:crypto";
 
-export const EVENT_TYPES: string[] = ["checkpoint_created", "message_removed", "message_upserted", "model_streaming", "part_delta", "part_removed", "part_started", "part_upserted", "permission_requested", "permission_resolved", "place_order", "result", "rewind_triggered", "session_closed", "session_created", "session_resumed", "session_title_updated", "session_updated", "ship_order", "stream_recovery_updated", "tool_updated", "turn_completed", "turn_failed", "turn_started", "turn_steer_drained", "turn_steer_queued", "user_input_requested", "user_input_resolved"];
-export const OBJECT_TYPES: string[] = ["item", "model_request", "order", "permission", "session", "subagent", "tool_call", "turn"];
+export const EVENT_TYPES: string[] = ["checkpoint_created", "execution_crash", "falsifier_run", "message_removed", "message_upserted", "model_streaming", "part_delta", "part_removed", "part_started", "part_upserted", "permission_requested", "permission_resolved", "place_order", "provider_replace", "provider_select", "receipt_persist", "reobserve", "result", "rewind_triggered", "session_closed", "session_created", "session_resumed", "session_title_updated", "session_updated", "ship_order", "stream_recovery_updated", "tool_updated", "turn_completed", "turn_failed", "turn_started", "turn_steer_drained", "turn_steer_queued", "user_input_requested", "user_input_resolved", "worker_claim"];
+export const OBJECT_TYPES: string[] = ["authority", "item", "lease", "model_request", "order", "permission", "provider", "receipt", "session", "subagent", "tool_call", "turn", "work_order", "worker"];
 export const SUPPORTED_HASHES: string[] = ["sha256"];
 export type SourceSpec = { id: string; kind: string; nameField: string; idField: string; timeField: string; hash: string };
 export type RuleSpec = { rule: string; source: string; name: string; event: string; object: string; qualifier: string; path: string };
 export const SOURCES: SourceSpec[] = [
+  { id: "gall_work", kind: "hook", nameField: "event", idField: "id", timeField: "ts", hash: "sha256" },
   { id: "order_hook", kind: "hook", nameField: "event", idField: "id", timeField: "ts", hash: "sha256" },
   { id: "zcode_app_server", kind: "app-server-subscription", nameField: "params.type", idField: "params.eventId", timeField: "params.timestamp", hash: "sha256" },
   { id: "zcode_stream", kind: "stream-json", nameField: "type", idField: "eventId", timeField: "timestamp", hash: "sha256" },
@@ -70,6 +71,33 @@ export const RULES: RuleSpec[] = [
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "permission", qualifier: "about_permission", path: "params.payload.requestId" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "session", qualifier: "in_session", path: "params.sessionId" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "turn", qualifier: "in_turn", path: "params.turnId" },
+  { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "lease", qualifier: "on_lease", path: "lease" },
+  { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "worker", qualifier: "worker", path: "worker" },
+  { rule: "gall-falsifier_run", source: "gall_work", name: "falsifier.run", event: "falsifier_run", object: "lease", qualifier: "on_lease", path: "lease" },
+  { rule: "gall-falsifier_run", source: "gall_work", name: "falsifier.run", event: "falsifier_run", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-falsifier_run", source: "gall_work", name: "falsifier.run", event: "falsifier_run", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-falsifier_run", source: "gall_work", name: "falsifier.run", event: "falsifier_run", object: "worker", qualifier: "worker", path: "worker" },
+  { rule: "gall-provider_replace", source: "gall_work", name: "provider.replace", event: "provider_replace", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-provider_replace", source: "gall_work", name: "provider.replace", event: "provider_replace", object: "provider", qualifier: "replaces_from", path: "from_provider" },
+  { rule: "gall-provider_replace", source: "gall_work", name: "provider.replace", event: "provider_replace", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-provider_select", source: "gall_work", name: "provider.select", event: "provider_select", object: "authority", qualifier: "originAuthority", path: "origin_authority" },
+  { rule: "gall-provider_select", source: "gall_work", name: "provider.select", event: "provider_select", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-provider_select", source: "gall_work", name: "provider.select", event: "provider_select", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-receipt_persist", source: "gall_work", name: "receipt.persist", event: "receipt_persist", object: "authority", qualifier: "originAuthority", path: "origin_authority" },
+  { rule: "gall-receipt_persist", source: "gall_work", name: "receipt.persist", event: "receipt_persist", object: "lease", qualifier: "on_lease", path: "lease" },
+  { rule: "gall-receipt_persist", source: "gall_work", name: "receipt.persist", event: "receipt_persist", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-receipt_persist", source: "gall_work", name: "receipt.persist", event: "receipt_persist", object: "receipt", qualifier: "receipt", path: "receipt" },
+  { rule: "gall-receipt_persist", source: "gall_work", name: "receipt.persist", event: "receipt_persist", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-reobserve", source: "gall_work", name: "reobserve", event: "reobserve", object: "lease", qualifier: "on_lease", path: "lease" },
+  { rule: "gall-reobserve", source: "gall_work", name: "reobserve", event: "reobserve", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-reobserve", source: "gall_work", name: "reobserve", event: "reobserve", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-worker_claim", source: "gall_work", name: "worker.claim", event: "worker_claim", object: "authority", qualifier: "originAuthority", path: "origin_authority" },
+  { rule: "gall-worker_claim", source: "gall_work", name: "worker.claim", event: "worker_claim", object: "lease", qualifier: "on_lease", path: "lease" },
+  { rule: "gall-worker_claim", source: "gall_work", name: "worker.claim", event: "worker_claim", object: "provider", qualifier: "provider", path: "provider" },
+  { rule: "gall-worker_claim", source: "gall_work", name: "worker.claim", event: "worker_claim", object: "work_order", qualifier: "subject", path: "work_order_id" },
+  { rule: "gall-worker_claim", source: "gall_work", name: "worker.claim", event: "worker_claim", object: "worker", qualifier: "worker", path: "worker" },
   { rule: "rule-place", source: "order_hook", name: "order.placed", event: "place_order", object: "item", qualifier: "contains", path: "items" },
   { rule: "rule-place", source: "order_hook", name: "order.placed", event: "place_order", object: "order", qualifier: "subject", path: "order.id" },
   { rule: "rule-ship", source: "order_hook", name: "order.shipped", event: "ship_order", object: "order", qualifier: "subject", path: "order.id" },

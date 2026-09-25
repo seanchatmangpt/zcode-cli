@@ -231,6 +231,67 @@ zl:Rule-App-streamRecovery-updated a pi:MappingRule ; pi:ruleId "app-stream_reco
   pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call .
 zl:RuntimeEvent-App-streamRecovery-updated a pi:RuntimeEvent ; pi:runtimeEventName "streamRecovery.updated" ; pi:emittedBy zl:Source-AppServer .
 
+# ===== execution-provider / worker lifecycle (ALOOP vocabulary, gall-work hook) =====
+# Emitted by the gall-work orchestrator (ZCODE_OCEL=1) as one hook record per
+# lifecycle transition: {event, id, ts, epoch_id, worker_id, ...}. The dotted
+# sourceEvent names are the ALOOP canonical verbs; the OCEL event type ids are
+# their snake_case projections, matching the repo convention.
+zl:Source-GallWorkHook a pi:EventSource ; pi:sourceId "gall_work" ; pi:sourceKind "hook" ;
+  pi:nameField "event" ; pi:idField "id" ; pi:timeField "ts" ; pi:chainPolicy zl:ChainPolicy ;
+  rdfs:comment "gall-work orchestrator lifecycle: provider selection, worker claim, execution crash, receipt persistence, falsifier run, provider replacement, stale-lease reobservation (ALOOP-ZCODE-DOGFOOD-001)" .
+
+zl:ObjectType-work_order a pi:ObjectType ; pi:typeId "work_order" .
+zl:ObjectType-lease a pi:ObjectType ; pi:typeId "lease" .
+zl:ObjectType-provider a pi:ObjectType ; pi:typeId "provider" .
+zl:ObjectType-worker a pi:ObjectType ; pi:typeId "worker" .
+zl:ObjectType-receipt a pi:ObjectType ; pi:typeId "receipt" .
+zl:ObjectType-authority a pi:ObjectType ; pi:typeId "authority" .
+
+zl:Qualifier-provider a pi:Qualifier ; pi:qualifierId "provider" .
+zl:Qualifier-worker a pi:Qualifier ; pi:qualifierId "worker" .
+zl:Qualifier-receipt a pi:Qualifier ; pi:qualifierId "receipt" .
+zl:Qualifier-on_lease a pi:Qualifier ; pi:qualifierId "on_lease" .
+zl:Qualifier-origin_authority a pi:Qualifier ; pi:qualifierId "originAuthority" .
+zl:Qualifier-replaces_from a pi:Qualifier ; pi:qualifierId "replaces_from" .
+
+zl:Rel-Gall-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_id" .
+zl:Rel-Gall-provider a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-provider ; pi:hasQualifier zl:Qualifier-provider ; pi:objectIdPath "provider" .
+zl:Rel-Gall-worker a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-worker ; pi:hasQualifier zl:Qualifier-worker ; pi:objectIdPath "worker" .
+zl:Rel-Gall-receipt a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-receipt ; pi:hasQualifier zl:Qualifier-receipt ; pi:objectIdPath "receipt" .
+zl:Rel-Gall-lease a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-lease ; pi:hasQualifier zl:Qualifier-on_lease ; pi:objectIdPath "lease" .
+zl:Rel-Gall-authority a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-authority ; pi:hasQualifier zl:Qualifier-origin_authority ; pi:objectIdPath "origin_authority" .
+zl:Rel-Gall-replaces-from a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-provider ; pi:hasQualifier zl:Qualifier-replaces_from ; pi:objectIdPath "from_provider" .
+
+zl:EventType-provider-select a pi:EventType ; pi:typeId "provider_select" .
+zl:EventType-provider-replace a pi:EventType ; pi:typeId "provider_replace" .
+zl:EventType-worker-claim a pi:EventType ; pi:typeId "worker_claim" .
+zl:EventType-execution-crash a pi:EventType ; pi:typeId "execution_crash" .
+zl:EventType-receipt-persist a pi:EventType ; pi:typeId "receipt_persist" .
+zl:EventType-falsifier-run a pi:EventType ; pi:typeId "falsifier_run" .
+zl:EventType-reobserve a pi:EventType ; pi:typeId "reobserve" .
+
+zl:Rule-Gall-provider-select a pi:MappingRule ; pi:ruleId "gall-provider_select" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "provider.select" ;
+  pi:emitsEventType zl:EventType-provider-select ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+zl:RuntimeEvent-Gall-provider-select a pi:RuntimeEvent ; pi:runtimeEventName "provider.select" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-provider-replace a pi:MappingRule ; pi:ruleId "gall-provider_replace" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "provider.replace" ;
+  pi:emitsEventType zl:EventType-provider-replace ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-replaces-from , zl:Rel-Gall-work_order .
+zl:RuntimeEvent-Gall-provider-replace a pi:RuntimeEvent ; pi:runtimeEventName "provider.replace" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-worker-claim a pi:MappingRule ; pi:ruleId "gall-worker_claim" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "worker.claim" ;
+  pi:emitsEventType zl:EventType-worker-claim ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+zl:RuntimeEvent-Gall-worker-claim a pi:RuntimeEvent ; pi:runtimeEventName "worker.claim" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-execution-crash a pi:MappingRule ; pi:ruleId "gall-execution_crash" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "execution.crash" ;
+  pi:emitsEventType zl:EventType-execution-crash ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order .
+zl:RuntimeEvent-Gall-execution-crash a pi:RuntimeEvent ; pi:runtimeEventName "execution.crash" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-receipt-persist a pi:MappingRule ; pi:ruleId "gall-receipt_persist" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "receipt.persist" ;
+  pi:emitsEventType zl:EventType-receipt-persist ; pi:hasRelation zl:Rel-Gall-receipt , zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+zl:RuntimeEvent-Gall-receipt-persist a pi:RuntimeEvent ; pi:runtimeEventName "receipt.persist" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-falsifier-run a pi:MappingRule ; pi:ruleId "gall-falsifier_run" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "falsifier.run" ;
+  pi:emitsEventType zl:EventType-falsifier-run ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order .
+zl:RuntimeEvent-Gall-falsifier-run a pi:RuntimeEvent ; pi:runtimeEventName "falsifier.run" ; pi:emittedBy zl:Source-GallWorkHook .
+zl:Rule-Gall-reobserve a pi:MappingRule ; pi:ruleId "gall-reobserve" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "reobserve" ;
+  pi:emitsEventType zl:EventType-reobserve ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order .
+zl:RuntimeEvent-Gall-reobserve a pi:RuntimeEvent ; pi:runtimeEventName "reobserve" ; pi:emittedBy zl:Source-GallWorkHook .
+
 # ===== internal enum W -> wire projection (documentation of what each wire event folds) =====
 zl:InternalEvent a rdfs:Class .
 zl:Internal-SessionCreated a zl:InternalEvent ; zl:internalName "session_created" ; zl:foldsToWire "session.created" .
