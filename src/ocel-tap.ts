@@ -98,6 +98,78 @@ export function sessionOf(record: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+const secretKeyRe = /^(apiKey|api_key|token|secret|password|authorization|access_token|refresh_token|refreshtoken)$/i;
+// Matches secret keys inside STRING payloads that embed JSON, including the
+// escaped forms (\", \\\") produced when a tool result quotes a config file.
+// Longer underscored forms precede `token` so "refresh_token" matches whole.
+const escapedSecretRe = /((?:\\{0,2}")(?:apiKey|api_key|refresh_token|access_token|token|secret|password|authorization)(?:\\{0,2})"\s*:\s*(?:\\{0,2}"))((?:[^"\\]|\\.)*?)((?:\\{0,2}"))/g;
+// Bearer is itself the credential marker anywhere in text. Other schemes
+// (Basic, Token, digest) and raw keys are redacted only in an explicit
+// Authorization header context, so ordinary prose ("the token bucket
+// refills") survives. Pre-fix falsifiers (2026-09-24): a 7-char apiKey,
+// an underscored refresh_token, and "Authorization: Basic abc123" all
+// passed through unredacted.
+const bearerRe = /(Bearer\s+)\S{8,}/gi;
+const authSchemeRe = /(authorization\s*[:=]\s*(?:basic|token|digest)\s+)\S{3,}/gi;
+const authRawRe = /(authorization\s*[:=]\s*)(?!basic\s|token\s|digest\s|bearer\s)\S{8,}/gi;
+
+function redactNode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactNode);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        // Any non-empty credential-shaped value is redacted: the old >= 8
+        // floor let 1-7 char secrets pass through (falsified 2026-09-24).
+        // Empty strings carry nothing to leak and stay honest ("no key set"
+        // is not rewritten into a phantom "REDACTED").
+        secretKeyRe.test(key) && typeof child === "string" && child.length > 0 ? "REDACTED" : redactNode(child)
+      ])
+    );
+  }
+  if (typeof value === "string") return redactEmbeddedSecrets(value);
+  return value;
+}
+
+/** Scheme-shaped credentials in free text: Bearer anywhere, other schemes
+ * and raw keys only behind an explicit Authorization header. */
+function redactSchemes(text: string): string {
+  return text
+    .replace(bearerRe, "$1REDACTED")
+    .replace(authSchemeRe, "$1REDACTED")
+    .replace(authRawRe, "$1REDACTED");
+}
+
+function redactEmbeddedSecrets(text: string): string {
+  let out = text;
+  if (/[{[]/.test(text)) {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      const redacted = redactNode(parsed);
+      if (JSON.stringify(redacted) !== JSON.stringify(parsed)) out = JSON.stringify(redacted);
+    } catch {
+      // not JSON — the escaped-shape fallback below still applies
+    }
+  }
+  out = out.replace(escapedSecretRe, "$1REDACTED$3");
+  return redactSchemes(out);
+}
+
+/** Replaces credential-shaped values with REDACTED before they enter the event
+ * chain: hashes are computed on redacted content, so no chain ever commits a
+ * secret (leak-prevention tripwire, 2026-09-23). Handles plain JSON text and
+ * raw lines containing escaped JSON. */
+export function redactSecrets(text: string): string {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return JSON.stringify(redactNode(parsed));
+  } catch {
+    // fall through to shape-level redaction
+  }
+  let out = text.replace(escapedSecretRe, "$1REDACTED$3");
+  return redactSchemes(out);
+}
+
 export class OcelRecorder {
   private readonly tap: Tap;
   private sessionId: string | undefined;
@@ -133,9 +205,9 @@ export class OcelRecorder {
   feed(record: unknown): void {
     if (this.closed) return;
     this.sessionId ??= sessionOf(record);
-    const norm = normalizeRecord(record);
-    if (this.tap.spec.kind === "stream-json") this.tap.ingest(JSON.stringify(norm));
-    else this.tap.ingest(norm as object);
+    const redacted = redactNode(normalizeRecord(record));
+    if (this.tap.spec.kind === "stream-json") this.tap.ingest(JSON.stringify(redacted));
+    else this.tap.ingest(redacted as object);
   }
 
   /** Seal the tap once, write <session>.jsonocel and <session>.receipt.json. */
