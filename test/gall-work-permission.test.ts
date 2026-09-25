@@ -67,7 +67,7 @@ function findRuntimeNode(): string {
     "/opt/homebrew/bin/node",
     "/usr/local/bin/node",
     Bun.which("node")
-  ].filter((candidate): candidate is string => Boolean(candidate));
+  ].filter((candidate): candidate is string => Boolean(candidate) && existsSync(candidate as string));
   for (const candidate of candidates) {
     const probe = Bun.spawnSync([candidate, "--version"], { stdout: "pipe", stderr: "pipe" });
     if (probe.exitCode !== 0) continue;

@@ -1,0 +1,10 @@
+{
+  "vendored_file": "receipt.schema.json",
+  "source_repository": "https://github.com/seanchatmangpt/ex4pm",
+  "source_path": "priv/schema/receipt.schema.json",
+  "source_commit": "725f495eb90d32a1582e6f44c08151d07743b784",
+  "source_head_at_vendoring": "5548f26add57a54d35a8d62e5c6618439a7a430f",
+  "sha256": "61435baa284f65913f9cd2712546e9c1922e1593ac2fce578f7e473fd02a326a",
+  "vendored_on": "2026-09-24",
+  "reason": "test/ocel-generated.test.ts read /Users/sac/ex4pm/priv/schema/receipt.schema.json (absolute host path, ENOENT on CI runners). Byte-identical copy; refresh with: git -C <ex4pm> show <sha>:priv/schema/receipt.schema.json"
+}

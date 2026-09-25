@@ -163,7 +163,7 @@ cmd_restore() {
     # grep exits 1 on an empty remainder (archive was runtime-only): legal.
     grep -v -e "^$glm_rel/" -e "^$glm_rel\$" "$listing" >"$rest" || [ $? -eq 1 ]
     if [ -s "$rest" ]; then
-      tar -xzf "$dir/user-state.tar.gz" -C / -T "$rest" || die "tar failed restoring user state"
+      tar -xzf "$dir/user-state.tar.gz" --no-recursion -C / -T "$rest" || die "tar failed restoring user state"
     fi
     if grep -q -e "^$glm_rel/" "$listing"; then
       rm -rf "$APP_GLM"
