@@ -71,7 +71,7 @@ describe("recorded real runtime turns -> generated OCEL 2.0", () => {
 
     test(`${fx.name}: receipt entries project onto the ex4pm receipt schema`, () => {
       const { receipt } = record(fx.name, fx.lines, 4096);
-      const schema = JSON.parse(readFileSync("/Users/sac/ex4pm/priv/schema/receipt.schema.json", "utf8"));
+      const schema = JSON.parse(readFileSync(join(import.meta.dir, "fixtures/ex4pm-schema/receipt.schema.json"), "utf8"));
       for (const entry of receipt.chain) {
         const r = toEx4pmReceipt(entry) as Record<string, unknown>;
         for (const k of schema.required) expect(r[k]).toBeDefined();

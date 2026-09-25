@@ -171,7 +171,7 @@ async function runZaiBusinessErrorFixture(options: {
     "--no-color",
     "--output-format", "stream-json",
     "--surface", "terminal",
-    "--mode", "plan"
+    "--mode", "build"
   ];
   const child = Bun.spawn([node, ...runtimeArgs], {
     cwd: root,
