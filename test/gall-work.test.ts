@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildGallWorkHandoff,
   constructPrompt,
   defaultFabricUrl,
   fabricCall,
@@ -88,6 +89,46 @@ describe("gall-work contract fixture (shared, byte-identical across repos)", () 
     expect(String(contract.no_fallback_law)).toContain("/xaas claim_next");
     expect(String(contract.goal_transport)).toContain("NEVER");
     expect(contract.env).toMatchObject({ XAAS_WORKER: "1", XAAS_LEASE_CWD: "<abs_cwd>" });
+  });
+});
+
+describe("portable GALL worker handoff", () => {
+  test("identity excludes workstation path and provider-local lease identity", () => {
+    const producer = "sha256:" + "c".repeat(64);
+    const finalHead = "d".repeat(40);
+    const first = buildGallWorkHandoff(lease, finalHead, producer);
+    const relocated = buildGallWorkHandoff(
+      {
+        ...lease,
+        worker_id: "another-worker",
+        epoch_id: "223e4567-e89b-42d3-a456-426614174000",
+        worktree: "/another/fresh/job"
+      },
+      finalHead,
+      producer
+    );
+    expect(first).toEqual(relocated);
+    expect(first.handoff_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(first.authority).toBe("none");
+    expect(JSON.stringify(first)).not.toContain(lease.worktree);
+    expect(JSON.stringify(first)).not.toContain(lease.worker_id);
+    expect(JSON.stringify(first)).not.toContain(lease.epoch_id);
+  });
+
+  test("binds final content, producer, graph, and exact base subject", () => {
+    const first = buildGallWorkHandoff(
+      lease,
+      "d".repeat(40),
+      "sha256:" + "c".repeat(64)
+    );
+    expect(
+      buildGallWorkHandoff(lease, "e".repeat(40), "sha256:" + "c".repeat(64))
+        .handoff_digest
+    ).not.toBe(first.handoff_digest);
+    expect(
+      buildGallWorkHandoff(lease, "d".repeat(40), "sha256:" + "f".repeat(64))
+        .handoff_digest
+    ).not.toBe(first.handoff_digest);
   });
 });
 
