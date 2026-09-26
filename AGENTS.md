@@ -89,4 +89,9 @@ defers, never grants, fails closed), and the gall-work lease contract (`src/gall
 contract is byte-identical to `~/xaas/priv/zcode_plugin/gall-work.contract.json`, sha256 pinned in
 both repos, fixture at `test/fixtures/gall-work.contract.json`). The OCEL tap (`src/ocel-tap.ts`,
 enabled with `ZCODE_OCEL=1`, output dir `ZCODE_OCEL_DIR`, default `~/.zcode/ocel`) feeds process
-mining on the xaas side. The xaas-side ticket tree lives at `~/xaas/docs/sjira/`.
+mining on the xaas side. Every recorded event is credential-redacted at ingest (secret-shaped keys
+and embedded/Bearer token values become `REDACTED` before the hash chain is computed —
+`test/ocel-redaction.test.ts`), and under `XAAS_WORKER=1` the receipt binds the exact lease
+identity (`subject_sha`, `work_order_iri`, `epoch_id`, `base_sha`). The capability
+snapshot/restore tool (redacted, fail-closed) is documented in
+`docs/CAPABILITY_SNAPSHOT.md`. The xaas-side ticket tree lives at `~/xaas/docs/sjira/`.
