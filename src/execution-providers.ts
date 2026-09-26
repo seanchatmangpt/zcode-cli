@@ -92,12 +92,17 @@ export function parseExecutionProviderRegistry(text: string): ExecutionProviderR
   const root = record(value);
   if (!root || root.schemaVersion !== 1 || !Array.isArray(root.executionProviderRules)) return undefined;
   const rules: ExecutionProviderRule[] = [];
+  const providerIds = new Set<string>();
   for (const raw of root.executionProviderRules) {
     const rule = record(raw);
     if (!rule || typeof rule.providerId !== "string" || !rule.providerId.trim()) return undefined;
+    const providerId = rule.providerId.trim();
+    if (providerIds.has(providerId)) return undefined;
+    providerIds.add(providerId);
+    if (rule.enabled !== undefined && typeof rule.enabled !== "boolean") return undefined;
     rules.push({
-      providerId: rule.providerId.trim(),
-      ...(rule.enabled === undefined ? {} : { enabled: rule.enabled === true }),
+      providerId,
+      ...(rule.enabled === undefined ? {} : { enabled: rule.enabled }),
       ...(typeof rule.runtime === "string" && rule.runtime.trim() ? { runtime: rule.runtime.trim() } : {}),
       ...(typeof rule.capabilitiesRef === "string" && rule.capabilitiesRef.trim()
         ? { capabilitiesRef: rule.capabilitiesRef.trim() }
