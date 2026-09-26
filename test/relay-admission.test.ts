@@ -20,8 +20,10 @@ import {
   RELAY_ENVELOPE_SCHEMA,
   RELAY_OCEL_IDENTITY_ENV,
   RELAY_REFUSALS,
+  RelayLockError,
   RelayStateError,
   RelayWorker,
+  commandIdDigest,
   dispatchRelayCommand,
   localAllowDoFromEnv,
   relayIdentityEnv,
@@ -338,7 +340,7 @@ describe("restart keeps the command identity (real temp dir)", () => {
     expect(w.statePath).toBe(relayStatePath(dir, descriptor.worktree, descriptor.epoch_id));
     expect(w.statePath.startsWith(dir)).toBe(true);
     const onDisk = JSON.parse(readFileSync(w.statePath, "utf8")) as { schema: string; pending: { command_id: string } };
-    expect(onDisk.schema).toBe("zcode.relay-ack-state/1");
+    expect(onDisk.schema).toBe("zcode.relay-ack-state/2");
     expect(onDisk.pending.command_id).toBe("cmd-1");
     expect(relayStatePath(dir, descriptor.worktree, "00000000-0000-4000-8000-000000000000")).not.toBe(w.statePath);
   });
@@ -356,5 +358,168 @@ describe("restart keeps the command identity (real temp dir)", () => {
     const w = worker(stateDir());
     expect(w.acknowledge("cmd-ghost")).toMatchObject({ ok: false, code: "ACK_WITHOUT_ADMISSION" });
     expect(w.snapshot().last_acknowledged_sequence).toBe(0);
+  });
+});
+
+describe("replay holds for the whole epoch, not a bounded window", () => {
+  test("an acknowledged command_id evicted from the full-entry list is still KNOWN_REPLAY at the next sequence", async () => {
+    const dir = stateDir();
+    const ledger = join(dir, "spawns.log");
+    const w = worker(dir, { dedupLimit: 1 });
+    for (const [i, id] of ["c1", "c2", "c3"].entries()) {
+      const r = await dispatchRelayCommand(w, envelope({ command_id: id, sequence: i + 1 }), (env) => spawnConsequence(ledger, env.command_id));
+      expect(r.outcome).toBe("executed");
+    }
+    expect(spawnCount(ledger)).toBe(3);
+    const restarted = worker(dir, { dedupLimit: 1 });
+    expect(restarted.snapshot().acknowledged.map((a) => a.command_id)).toEqual(["c3"]);
+    expect(restarted.snapshot().acknowledged_ids).toEqual(["c1", "c2", "c3"].map(commandIdDigest));
+    const dup = await dispatchRelayCommand(restarted, envelope({ command_id: "c1", sequence: 4 }), (env) => spawnConsequence(ledger, env.command_id));
+    expect(dup.outcome).toBe("known_replay");
+    expect(dup.admission).toMatchObject({ code: KNOWN_REPLAY, command_id: "c1", acknowledged: null });
+    expect(spawnCount(ledger)).toBe(3);
+    expect(restarted.snapshot().pending).toBeNull();
+  });
+
+  test("with the default dedupLimit, command 1 stays a replay after 1025 acknowledgements", async () => {
+    const dir = stateDir();
+    const ledger = join(dir, "spawns.log");
+    const w = worker(dir);
+    for (let seq = 1; seq <= 1025; seq++) {
+      expect(w.admit(envelope({ command_id: `c${seq}`, sequence: seq })).outcome).toBe("admitted");
+      expect(w.acknowledge(`c${seq}`).ok).toBe(true);
+    }
+    const restarted = worker(dir);
+    expect(restarted.snapshot().acknowledged).toHaveLength(1024);
+    const dup = await dispatchRelayCommand(restarted, envelope({ command_id: "c1", sequence: 1026 }), (env) => spawnConsequence(ledger, env.command_id));
+    expect(dup.outcome).toBe("known_replay");
+    expect(spawnCount(ledger)).toBe(0);
+   }, 60_000);
+
+  test("a /2 state whose id set does not cover every acknowledged sequence fails closed", () => {
+    const dir = stateDir();
+    const w = worker(dir);
+    w.admit(envelope());
+    w.acknowledge("cmd-1");
+    const onDisk = JSON.parse(readFileSync(w.statePath, "utf8")) as Record<string, unknown>;
+    writeFileSync(w.statePath, JSON.stringify({ ...onDisk, acknowledged_ids: [] }));
+    expect(() => worker(dir)).toThrow(RelayStateError);
+  });
+
+  test("a lossless /1 state upgrades; a /1 state with evicted ids or a pending command fails closed", () => {
+    const dir = stateDir();
+    const path = relayStatePath(dir, descriptor.worktree, descriptor.epoch_id);
+    const v1 = (acknowledged: string[], last: number, pending: unknown = null) =>
+      JSON.stringify({
+        schema: "zcode.relay-ack-state/1",
+        contract: RELAY_CONTRACT,
+        contract_version: RELAY_CONTRACT_VERSION,
+        execution_manifest_digest: manifest,
+        epoch_id: descriptor.epoch_id,
+        task_id: descriptor.work_order_iri,
+        last_acknowledged_sequence: last,
+        acknowledged: acknowledged.map((id, i) => ({ command_id: id, sequence: last - i, intent_digest: descriptor.graph_digest, receipt_ref: null, acknowledged_at: 1 })),
+        pending
+      });
+    writeFileSync(path, v1(["c2", "c1"], 2));
+    const upgraded = worker(dir);
+    expect(upgraded.snapshot().schema).toBe("zcode.relay-ack-state/2");
+    expect(refusalOf(upgraded.admit(envelope({ command_id: "c1", sequence: 3 })))).toBe(KNOWN_REPLAY);
+    expect(upgraded.admit(envelope({ command_id: "c3", sequence: 3 })).outcome).toBe("admitted");
+
+    writeFileSync(path, v1(["c2"], 2));
+    expect(() => worker(dir)).toThrow(RelayStateError);
+    writeFileSync(path, v1([], 0, { command_id: "p", sequence: 1, epoch_id: descriptor.epoch_id, task_id: descriptor.work_order_iri, intent_digest: descriptor.graph_digest, exact_subject: "x", verb: "construct", admitted_at: 1 }));
+    expect(() => worker(dir)).toThrow(RelayStateError);
+  });
+});
+
+describe("dispatch never reports an unacknowledged command as executed", () => {
+  test("a second worker acknowledging the command mid-execution leaves the first dispatch unacknowledged", async () => {
+    const dir = stateDir();
+    const ledger = join(dir, "spawns.log");
+    const a = worker(dir);
+    const b = worker(dir);
+    const result = await dispatchRelayCommand(a, envelope(), async (env) => {
+      const receipt = await spawnConsequence(ledger, env.command_id);
+      // Worker B (same lease/epoch) sees the pending command and acknowledges it first.
+      expect(b.admit(envelope())).toMatchObject({ outcome: "admitted", retry: true });
+      expect(b.acknowledge("cmd-1", "receipt:by-b").ok).toBe(true);
+      return receipt;
+    });
+    expect(result.outcome).toBe("unacknowledged");
+    if (result.outcome === "unacknowledged") expect(result.ack.code).toBe("ACK_WITHOUT_ADMISSION");
+    expect(spawnCount(ledger)).toBe(1);
+    expect(worker(dir).snapshot().acknowledged[0]).toMatchObject({ command_id: "cmd-1", receipt_ref: "receipt:by-b" });
+  });
+});
+
+describe("two workers on one lease/epoch serialize through the durable file", () => {
+  test("a worker constructed before another admitted cannot admit a fresh identity for the pending sequence", () => {
+    const dir = stateDir();
+    const a = worker(dir);
+    const b = worker(dir);
+    expect(a.admit(envelope()).outcome).toBe("admitted");
+    expect(b.admit(envelope({ command_id: "cmd-other" }))).toMatchObject({ outcome: "refused", refusal: "INVALID_SEQUENCE" });
+    expect(a.acknowledge("cmd-1").ok).toBe(true);
+    expect(refusalOf(b.admit(envelope()))).toBe(KNOWN_REPLAY);
+    expect(b.admit(envelope({ command_id: "cmd-2", sequence: 2 })).outcome).toBe("admitted");
+  });
+
+  test("a lock held by a live process refuses with RelayLockError and writes nothing", () => {
+    const dir = stateDir();
+    const w = worker(dir, { lockTimeoutMs: 50 });
+    writeFileSync(`${w.statePath}.lock`, `${process.pid}\n`);
+    expect(() => w.admit(envelope())).toThrow(RelayLockError);
+    expect(existsSync(w.statePath)).toBe(false);
+  });
+
+  test("a lock left by a dead process is stale and is taken over, then released", async () => {
+    const dir = stateDir();
+    const w = worker(dir, { lockTimeoutMs: 50 });
+    const child = await new Promise<number>((resolveExit) => {
+      const proc = require("node:child_process").spawn(process.execPath, ["-e", "0"]);
+      proc.on("exit", () => resolveExit(proc.pid as number));
+    });
+    writeFileSync(`${w.statePath}.lock`, `${child}\n`);
+    expect(w.admit(envelope()).outcome).toBe("admitted");
+    expect(existsSync(`${w.statePath}.lock`)).toBe(false);
+  });
+});
+
+describe("pending retry must carry the full semantic identity", () => {
+  test("a retry that changes channel is refused INVALID_CHANNEL", () => {
+    const dir = stateDir();
+    expect(worker(dir).admit(envelope()).outcome).toBe("admitted");
+    expect(worker(dir).admit(envelope({ channel: "observe" }))).toMatchObject({ outcome: "refused", refusal: "INVALID_CHANNEL", stage: "durable_replay" });
+  });
+
+  test("a retry that changes authority_ref is refused AUTHORITY_REF_REQUIRED", () => {
+    const dir = stateDir();
+    const w = worker(dir, { allowDo: true });
+    expect(w.admit(envelope({ verb: "actuate", authority_ref: "lease:xaas:grant-7" })).outcome).toBe("admitted");
+    expect(w.admit(envelope({ verb: "actuate", authority_ref: "lease:xaas:grant-8" }))).toMatchObject({
+      outcome: "refused",
+      refusal: "AUTHORITY_REF_REQUIRED",
+      stage: "durable_replay"
+    });
+    expect(w.admit(envelope({ verb: "actuate", authority_ref: "lease:xaas:grant-7" }))).toMatchObject({ outcome: "admitted", retry: true });
+    expect(worker(dir, { allowDo: true }).snapshot().pending).toMatchObject({ channel: "control", authority_ref: "lease:xaas:grant-7" });
+  });
+});
+
+describe("the actuate verb is canonical", () => {
+  for (const verb of ["Actuate", "ACTUATE", " actuate", "actuate "]) {
+    test(`verb ${JSON.stringify(verb)} is refused INVALID_ENVELOPE even with authority_ref and allow-do`, () => {
+      const w = worker(stateDir(), { allowDo: true });
+      expect(w.admit(envelope({ verb, authority_ref: "lease:xaas:grant-7" }))).toMatchObject({
+        outcome: "refused",
+        refusal: "INVALID_ENVELOPE",
+        stage: "envelope_shape"
+      });
+    });
+  }
+  test("a non-canonical actuate without allow-do is not admitted", () => {
+    expect(worker(stateDir()).admit(envelope({ verb: "Actuate", authority_ref: "g" })).outcome).toBe("refused");
   });
 });

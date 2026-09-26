@@ -21,8 +21,14 @@
 // Durable state is one JSON file under the lease state dir
 // (<tmpdir>/xaas-fabric, the same dir `zcode gall-work` persists leases in),
 // keyed by the lease worktree realpath and epoch. It records the last
-// acknowledged sequence, the acknowledged command ids, and the single pending
-// (admitted, not yet acknowledged) command. A restarted worker therefore keeps
+// acknowledged sequence, the digest of every acknowledged command id (never
+// evicted: `after_ack` replay must hold for the whole epoch, not for a bounded
+// window), a bounded list of full ack entries, and the single pending
+// (admitted, not yet acknowledged) command with its full semantic identity
+// (sequence, intent, subject, verb, channel, authority_ref). Every
+// state-reading transition re-reads the file under an exclusive lock file
+// (`<state>.lock`, O_EXCL, stale when its pid is dead), so two workers on the
+// same lease/epoch serialize instead of last-writer-wins. A restarted worker therefore keeps
 // the pending command identity: a retry with the same command_id is the same
 // command, a different command_id for the pending sequence is refused, and an
 // acknowledged command never spawns again.
@@ -31,7 +37,7 @@
 // not execute a lease, and it grants nothing.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -42,7 +48,12 @@ import { join, resolve } from "node:path";
 export const RELAY_CONTRACT = "xaas-remote-relay";
 export const RELAY_CONTRACT_VERSION = 1;
 export const RELAY_ENVELOPE_SCHEMA = "xaas.remote-relay-envelope/1";
-export const RELAY_STATE_SCHEMA = "zcode.relay-ack-state/1";
+export const RELAY_STATE_SCHEMA = "zcode.relay-ack-state/2";
+/** Previous schema; upgraded on load only when provably lossless (see loadState). */
+export const RELAY_STATE_SCHEMA_V1 = "zcode.relay-ack-state/1";
+
+/** The one verb that carries actuation semantics; compared canonically. */
+export const RELAY_ACTUATE_VERB = "actuate";
 
 export const ADMISSION_ORDER = [
   "envelope_shape",
@@ -147,6 +158,8 @@ export interface PendingCommand {
   intent_digest: string;
   exact_subject: string;
   verb: string;
+  channel: RelayChannel;
+  authority_ref: string | null;
   admitted_at: number;
 }
 
@@ -158,6 +171,9 @@ export interface RelayAckState {
   epoch_id: string;
   task_id: string;
   last_acknowledged_sequence: number;
+  /** sha256(command_id) of every acknowledged command in this epoch; never evicted. */
+  acknowledged_ids: string[];
+  /** Most recent full ack entries, bounded by dedupLimit (receipt lookup only). */
   acknowledged: AckedCommand[];
   pending: PendingCommand | null;
 }
@@ -187,8 +203,14 @@ export interface RelayWorkerOptions {
   allowDo?: boolean;
   /** Lease state dir; default `<tmpdir>/xaas-fabric` (the gall-work lease dir). */
   stateDir?: string;
-  /** Bound on remembered acknowledged command ids (sequence check still covers older ones). */
+  /**
+   * Bound on remembered full ack entries (receipt_ref lookup). Replay
+   * detection does not depend on it: every acknowledged command id digest is
+   * kept for the epoch.
+   */
   dedupLimit?: number;
+  /** How long to wait for the state lock held by another live worker. Default 5000 ms. */
+  lockTimeoutMs?: number;
   /** Clock in epoch milliseconds. */
   now?: () => number;
 }
@@ -238,6 +260,11 @@ export function relayStatePath(stateDir: string, worktree: string, epochId: stri
   return join(stateDir, `${key}.relay-ack.json`);
 }
 
+/** Durable digest of a command id (the replay set stores digests, not raw ids). */
+export function commandIdDigest(commandId: string): string {
+  return createHash("sha256").update(commandId).digest("hex");
+}
+
 function descriptorFields(value: unknown): Partial<RelayLeaseDescriptor> {
   const input = record(value) ?? {};
   const str = (key: string): string | undefined => (typeof input[key] === "string" ? (input[key] as string) : undefined);
@@ -275,6 +302,13 @@ export function checkEnvelopeShape(value: unknown): { envelope: RelayEnvelope | 
   }
   if (input.authority_ref !== undefined && input.authority_ref !== null && typeof input.authority_ref !== "string") {
     return { envelope: null, refusal: { refusal: "INVALID_ENVELOPE", detail: "authority_ref must be a string" } };
+  }
+  const verb = input.verb as string;
+  if (verb !== RELAY_ACTUATE_VERB && verb.trim().toLowerCase() === RELAY_ACTUATE_VERB) {
+    return {
+      envelope: null,
+      refusal: { refusal: "INVALID_ENVELOPE", detail: `verb ${JSON.stringify(verb)} is a non-canonical spelling of ${RELAY_ACTUATE_VERB}` }
+    };
   }
   const sequence = input.sequence;
   if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) {
@@ -322,7 +356,7 @@ export function checkExecutionManifest(envelope: RelayEnvelope, sessionManifest:
  * contract's `local_do_ack` duty: authority_ref is necessary, not sufficient.
  */
 export function checkAuthorityShape(envelope: RelayEnvelope, allowDo: boolean): StageRefusal {
-  if (envelope.verb !== "actuate") return null;
+  if (envelope.verb !== RELAY_ACTUATE_VERB) return null;
   if (envelope.channel !== "control" || !nonBlank(envelope.authority_ref)) {
     return { refusal: "AUTHORITY_REF_REQUIRED", detail: "verb=actuate requires channel=control and a non-empty authority_ref" };
   }
@@ -380,7 +414,7 @@ function loadState(path: string, fresh: RelayAckState): RelayAckState {
   const s = record(parsed);
   if (
     !s ||
-    s.schema !== RELAY_STATE_SCHEMA ||
+    (s.schema !== RELAY_STATE_SCHEMA && s.schema !== RELAY_STATE_SCHEMA_V1) ||
     !Number.isSafeInteger(s.last_acknowledged_sequence) ||
     (s.last_acknowledged_sequence as number) < 0 ||
     !Array.isArray(s.acknowledged) ||
@@ -391,7 +425,110 @@ function loadState(path: string, fresh: RelayAckState): RelayAckState {
   if (s.epoch_id !== fresh.epoch_id || s.task_id !== fresh.task_id) {
     throw new RelayStateError(path, "state belongs to a different epoch/task");
   }
+  const acknowledged = s.acknowledged as AckedCommand[];
+  if (s.schema === RELAY_STATE_SCHEMA_V1) {
+    // /1 kept only a bounded id list and no pending channel/authority_ref.
+    // Upgrade only when nothing was lost: every acknowledged sequence still has
+    // its entry, and no pending command lacks the identity fields /2 compares.
+    if (acknowledged.length !== s.last_acknowledged_sequence || s.pending !== null) {
+      throw new RelayStateError(path, "zcode.relay-ack-state/1 with evicted ack ids or a pending command cannot be upgraded losslessly");
+    }
+    return { ...(s as unknown as RelayAckState), schema: RELAY_STATE_SCHEMA, acknowledged_ids: acknowledged.map((a) => commandIdDigest(a.command_id)) };
+  }
+  const ids = s.acknowledged_ids;
+  if (
+    !Array.isArray(ids) ||
+    ids.length !== s.last_acknowledged_sequence ||
+    !ids.every((id) => typeof id === "string" && /^[0-9a-f]{64}$/.test(id))
+  ) {
+    throw new RelayStateError(path, "acknowledged_ids must hold one sha256 digest per acknowledged sequence");
+  }
+  const pending = record(s.pending);
+  if (pending && (!(RELAY_CHANNELS as readonly unknown[]).includes(pending.channel) || (pending.authority_ref !== null && typeof pending.authority_ref !== "string"))) {
+    throw new RelayStateError(path, "pending command lacks channel/authority_ref identity");
+  }
   return parsed as RelayAckState;
+}
+
+export class RelayLockError extends Error {
+  constructor(path: string, holder: string) {
+    super(`relay ack state lock ${path} is held by ${holder}; refusing to proceed without exclusive access`);
+    this.name = "RelayLockError";
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Run `fn` holding `<state>.lock` (created O_EXCL, containing the holder pid).
+ * A lock whose pid is dead, or an empty/unparseable lock older than the
+ * timeout (a crash between create and write), is stale and removed.
+ */
+function withStateLock<T>(statePath: string, dir: string, timeoutMs: number, fn: () => T): T {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const lockPath = `${statePath}.lock`;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let fd: number | null = null;
+    try {
+      fd = openSync(lockPath, "wx", 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    if (fd !== null) {
+      try {
+        writeFileSync(fd, `${process.pid}\n`);
+      } finally {
+        closeSync(fd);
+      }
+      try {
+        return fn();
+      } finally {
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // already removed
+        }
+      }
+    }
+    let holder = "unknown";
+    let stale = false;
+    try {
+      const text = readFileSync(lockPath, "utf8").trim();
+      const pid = /^\d+$/.test(text) ? Number(text) : NaN;
+      if (Number.isSafeInteger(pid) && pid > 0) {
+        holder = `pid ${pid}`;
+        stale = pid !== process.pid && !pidAlive(pid);
+      } else {
+        holder = "an unwritten lock";
+        stale = Date.now() - statSync(lockPath).mtimeMs > timeoutMs;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (stale) {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // another worker removed it first
+      }
+      continue;
+    }
+    if (Date.now() >= deadline) throw new RelayLockError(lockPath, holder);
+    sleepSync(10);
+  }
 }
 
 function persistState(path: string, dir: string, state: RelayAckState): void {
@@ -413,6 +550,8 @@ export class RelayWorker {
   private readonly allowDo: boolean;
   private readonly dedupLimit: number;
   private readonly now: () => number;
+  private readonly lockTimeoutMs: number;
+  private readonly freshState: RelayAckState;
   private state: RelayAckState;
 
   constructor(options: RelayWorkerOptions) {
@@ -426,10 +565,11 @@ export class RelayWorker {
     this.dedupLimit = Math.max(1, options.dedupLimit ?? 1024);
     this.now = options.now ?? Date.now;
     this.stateDir = options.stateDir ?? defaultRelayStateDir();
+    this.lockTimeoutMs = Math.max(0, options.lockTimeoutMs ?? 5000);
     const epoch = d.epoch_id ?? "";
     const task = d.work_order_iri ?? "";
     this.statePath = relayStatePath(this.stateDir, d.worktree ?? "", epoch);
-    this.state = loadState(this.statePath, {
+    this.freshState = {
       schema: RELAY_STATE_SCHEMA,
       contract: RELAY_CONTRACT,
       contract_version: RELAY_CONTRACT_VERSION,
@@ -437,8 +577,18 @@ export class RelayWorker {
       epoch_id: epoch,
       task_id: task,
       last_acknowledged_sequence: 0,
+      acknowledged_ids: [],
       acknowledged: [],
       pending: null
+    };
+    this.state = loadState(this.statePath, this.freshState);
+  }
+
+  /** Re-read durable state and run one transition under the exclusive state lock. */
+  private locked<T>(fn: () => T): T {
+    return withStateLock(this.statePath, this.stateDir, this.lockTimeoutMs, () => {
+      this.state = loadState(this.statePath, this.freshState);
+      return fn();
     });
   }
 
@@ -481,9 +631,18 @@ export class RelayWorker {
     const binding = checkGallWorkBinding(envelope, this.descriptor);
     if (binding) return refuse("gall_work_semantic_binding", binding);
 
+    return this.locked(() => this.admitDurable(envelope, stages, refuse));
+  }
+
+  private admitDurable(
+    envelope: RelayEnvelope,
+    stages: AdmissionStage[],
+    refuse: (stage: AdmissionStage, r: { refusal: RelayRefusal; detail: string }) => AdmissionResult
+  ): AdmissionResult {
     stages.push("durable_replay");
     const acked = this.state.acknowledged.find((entry) => entry.command_id === envelope.command_id) ?? null;
-    if (acked || envelope.sequence <= this.state.last_acknowledged_sequence) {
+    const ackedId = acked !== null || this.state.acknowledged_ids.includes(commandIdDigest(envelope.command_id));
+    if (ackedId || envelope.sequence <= this.state.last_acknowledged_sequence) {
       return {
         outcome: "known_replay",
         code: KNOWN_REPLAY,
@@ -508,6 +667,12 @@ export class RelayWorker {
         }
         if (pending.verb !== envelope.verb) {
           return refuse("durable_replay", { refusal: "INVALID_ENVELOPE", detail: "retry verb differs from the pending command" });
+        }
+        if (pending.channel !== envelope.channel) {
+          return refuse("durable_replay", { refusal: "INVALID_CHANNEL", detail: "retry channel differs from the pending command" });
+        }
+        if (pending.authority_ref !== (envelope.authority_ref ?? null)) {
+          return refuse("durable_replay", { refusal: "AUTHORITY_REF_REQUIRED", detail: "retry authority_ref differs from the pending command" });
         }
         stages.push("sequence");
         return { outcome: "admitted", command_id: envelope.command_id, sequence: envelope.sequence, retry: true, stages: [...stages] };
@@ -536,6 +701,8 @@ export class RelayWorker {
         intent_digest: envelope.intent_digest,
         exact_subject: envelope.exact_subject,
         verb: envelope.verb,
+        channel: envelope.channel,
+        authority_ref: envelope.authority_ref ?? null,
         admitted_at: this.now()
       }
     };
@@ -545,6 +712,10 @@ export class RelayWorker {
 
   /** Durably acknowledge the pending command after its receipt exists. */
   acknowledge(commandId: string, receiptRef: string | null = null): AckResult {
+    return this.locked(() => this.acknowledgeDurable(commandId, receiptRef));
+  }
+
+  private acknowledgeDurable(commandId: string, receiptRef: string | null): AckResult {
     const pending = this.state.pending;
     if (!pending || pending.command_id !== commandId) {
       return { ok: false, code: "ACK_WITHOUT_ADMISSION", detail: `no pending admitted command ${commandId}` };
@@ -562,6 +733,7 @@ export class RelayWorker {
     this.state = {
       ...this.state,
       last_acknowledged_sequence: pending.sequence,
+      acknowledged_ids: [...this.state.acknowledged_ids, commandIdDigest(pending.command_id)],
       acknowledged: [entry, ...this.state.acknowledged.filter((a) => a.command_id !== entry.command_id)].slice(0, this.dedupLimit),
       pending: null
     };
@@ -571,7 +743,8 @@ export class RelayWorker {
 }
 
 export type RelayDispatchResult =
-  | { outcome: "executed"; admission: AdmissionResult; ack: AckResult; receipt_ref: string | null }
+  | { outcome: "executed"; admission: AdmissionResult; ack: AckResult & { ok: true }; receipt_ref: string | null }
+  | { outcome: "unacknowledged"; admission: AdmissionResult; ack: AckResult & { ok: false }; receipt_ref: string | null }
   | { outcome: "known_replay" | "refused"; admission: AdmissionResult };
 
 /**
@@ -579,7 +752,9 @@ export type RelayDispatchResult =
  * KNOWN_REPLAY or refusal never reaches it (the contract's consequence_bound:
  * a durably receipted duplicate must not spawn zcode again). If `execute`
  * throws, the command stays pending (no ACK) and a retry with the same
- * command_id is admitted as the same command.
+ * command_id is admitted as the same command. If the execution ran but the
+ * durable ACK was refused (ACK_WITHOUT_ADMISSION / ACK_SEQUENCE_MISMATCH), the
+ * outcome is `unacknowledged`, never `executed`: the command is not done.
  */
 export async function dispatchRelayCommand(
   worker: RelayWorker,
@@ -591,5 +766,6 @@ export async function dispatchRelayCommand(
   const envelope = checkEnvelopeShape(raw).envelope as RelayEnvelope;
   const receiptRef = await execute(envelope);
   const ack = worker.acknowledge(admission.command_id, receiptRef);
+  if (!ack.ok) return { outcome: "unacknowledged", admission, ack, receipt_ref: receiptRef };
   return { outcome: "executed", admission, ack, receipt_ref: receiptRef };
 }
