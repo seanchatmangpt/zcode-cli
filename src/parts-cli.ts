@@ -67,9 +67,14 @@ function admitGraph(value: unknown): asserts value is SemanticPartsGraph {
   if (graph.authority !== "NONE") throw new Error("semantic-parts graph must carry authority=NONE");
   if (!Array.isArray(graph.parts)) throw new Error("semantic-parts graph parts must be an array");
 
+  // Admission is total, not query-dependent: every part, axis and semantic
+  // entry is checked before any SELECT runs, so a graph malformed anywhere is
+  // refused regardless of which axes a query names.
   const seen = new Set<string>();
-  for (const part of graph.parts) {
-    if (!part || typeof part !== "object") throw new Error("semantic part must be an object");
+  for (const [index, part] of graph.parts.entries()) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) {
+      throw new Error(`semantic part at index ${index} must be an object`);
+    }
     const id = requiredString(part.part_id, "part_id");
     if (seen.has(id)) throw new Error(`duplicate semantic part ${id}`);
     seen.add(id);
@@ -77,11 +82,14 @@ function admitGraph(value: unknown): asserts value is SemanticPartsGraph {
     if (!part.semantics || typeof part.semantics !== "object" || Array.isArray(part.semantics)) {
       throw new Error(`semantic part ${id} is missing semantics`);
     }
+    if (part.source !== undefined && (!part.source || typeof part.source !== "object" || Array.isArray(part.source))) {
+      throw new Error(`semantic part ${id} source must be an object`);
+    }
     for (const [axis, values] of Object.entries(part.semantics)) {
       if (!Array.isArray(values)) throw new Error(`semantic axis ${axis} for ${id} must be an array`);
       const semanticIds = new Set<string>();
       for (const value of values) {
-        if (!value || typeof value !== "object") throw new Error(`semantic value for ${id}/${axis} must be an object`);
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`semantic value for ${id}/${axis} must be an object`);
         const semanticId = requiredString(value.semantic_id, "semantic_id");
         if (semanticIds.has(semanticId)) throw new Error(`duplicate semantic identity ${semanticId} for ${id}/${axis}`);
         semanticIds.add(semanticId);
@@ -101,7 +109,12 @@ function resolvePart(graph: SemanticPartsGraph, partRef: string): SemanticPart {
   if (exact.length === 1) return exact[0]!;
   if (exact.length > 1) throw new Error(`ambiguous semantic-parts subject ${partRef}`);
 
-  const byFile = graph.parts!.filter((part) => String(part.source?.file_id ?? "") === partRef);
+  // A part without a source.file_id is never matched by file reference (so an
+  // empty selector cannot resolve to an unsourced part).
+  const byFile = graph.parts!.filter((part) =>
+    part.source?.file_id !== undefined && part.source.file_id !== null
+    && String(part.source.file_id) === partRef
+  );
   if (byFile.length === 1) return byFile[0]!;
   if (byFile.length > 1) throw new Error(`ambiguous semantic-parts subject ${partRef}`);
   throw new Error(`unknown semantic-parts subject ${partRef}`);
@@ -191,6 +204,9 @@ export function semanticCandidateFalsifier(
   admitGraph(graphValue);
   const graph = graphValue as SemanticPartsGraph;
   const candidate = resolvePart(graph, candidateId);
+  if (candidate.part_id === resolvePart(graph, subjectId).part_id) {
+    throw new Error("candidate must differ from subject");
+  }
   const requiredAxes = normalizeAxes(axes);
   const alternatives = findPartAlternatives(graph, subjectId, requiredAxes, 1);
   const matched = alternatives.find((entry) => entry.part_id === candidate.part_id);
@@ -206,9 +222,16 @@ export function semanticCandidateFalsifier(
   };
 }
 
+const knownFlags = new Set([
+  "--graph", "--subject", "--candidate", "--axis", "--minimum-shared", "--limit", "--graph-sha256", "--json"
+]);
+
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (value === undefined || knownFlags.has(value)) throw new Error(`${name} requires a value`);
+  return value;
 }
 
 function positiveIntegerOption(args: string[], name: string, fallback?: number): number | undefined {
@@ -228,18 +251,27 @@ function receipt<T extends Record<string, unknown>>(payload: T): T & { receipt_d
   return { ...payload, receipt_digest: `sha256:${digest}` };
 }
 
-function loadGraph(args: string[]): unknown {
+// The digest binds every payload (and its receipt_digest) to the exact observed
+// graph bytes; --graph-sha256 pins them so a stale or substituted graph is
+// refused before parsing.
+function loadGraph(args: string[]): { graph: unknown; graphSha256: string } {
   const graphPath = option(args, "--graph");
   if (!graphPath) throw new Error("--graph FILE is required");
-  return JSON.parse(readFileSync(resolve(graphPath), "utf8")) as unknown;
+  const bytes = readFileSync(resolve(graphPath));
+  const graphSha256 = createHash("sha256").update(bytes).digest("hex");
+  const pinned = option(args, "--graph-sha256");
+  if (pinned !== undefined && pinned.toLowerCase() !== graphSha256) {
+    throw new Error(`graph digest mismatch: expected ${pinned.toLowerCase()} observed ${graphSha256}`);
+  }
+  return { graph: JSON.parse(bytes.toString("utf8")) as unknown, graphSha256 };
 }
 
 function usage(): string {
   return [
     "Usage:",
-    "  zcode parts inspect --graph FILE --subject ID [--json]",
-    "  zcode parts alternatives --graph FILE --subject ID [--axis algorithm,domain] [--minimum-shared N] [--limit N] [--json]",
-    "  zcode parts falsify --graph FILE --subject ID --candidate ID [--axis algorithm,domain] [--json]"
+    "  zcode parts inspect --graph FILE --subject ID [--graph-sha256 HEX] [--json]",
+    "  zcode parts alternatives --graph FILE --subject ID [--axis algorithm,domain] [--minimum-shared N] [--limit N] [--graph-sha256 HEX] [--json]",
+    "  zcode parts falsify --graph FILE --subject ID --candidate ID [--axis algorithm,domain] [--graph-sha256 HEX] [--json]"
   ].join("\n");
 }
 
@@ -253,7 +285,7 @@ export async function runPartsCommand(args: string[]): Promise<number | undefine
   }
 
   try {
-    const graph = loadGraph(args);
+    const { graph, graphSha256 } = loadGraph(args);
     const subjectId = option(args, "--subject");
     if (!subjectId) throw new Error("--subject ID is required");
 
@@ -264,6 +296,7 @@ export async function runPartsCommand(args: string[]): Promise<number | undefine
         schema: discoverySchema,
         operation: "inspect",
         subject: part.part_id,
+        graph_sha256: graphSha256,
         part,
         authority: "NONE",
         standing: "OBSERVED"
@@ -278,6 +311,7 @@ export async function runPartsCommand(args: string[]): Promise<number | undefine
         schema: discoverySchema,
         operation: "alternatives",
         subject: subjectId,
+        graph_sha256: graphSha256,
         required_axes: normalizeAxes(axes),
         minimum_shared: minimumShared,
         candidate_count: discovered.length,
@@ -292,6 +326,7 @@ export async function runPartsCommand(args: string[]): Promise<number | undefine
       payload = {
         schema: discoverySchema,
         operation: "falsify",
+        graph_sha256: graphSha256,
         ...semanticCandidateFalsifier(graph, subjectId, candidateId, parseAxes(args))
       };
     }
