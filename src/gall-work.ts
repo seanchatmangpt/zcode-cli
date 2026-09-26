@@ -67,6 +67,66 @@ export interface GallWorkLease {
   worktree: string;
 }
 
+
+export interface GallWorkHandoff {
+  schema: "gall.work-handoff/1";
+  repository_identity: string;
+  base_sha: string;
+  final_head: string;
+  work_order_iri: string;
+  checkpoint_iri: string;
+  graph_digest: string;
+  producer_digest: string;
+  authority: "none";
+  handoff_digest: string;
+}
+
+type CanonicalValue =
+  | null | boolean | number | string
+  | CanonicalValue[]
+  | { [key: string]: CanonicalValue };
+
+function canonicalJson(value: CanonicalValue): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  return "{" + Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => JSON.stringify(key) + ":" + canonicalJson(item))
+    .join(",") + "}";
+}
+
+function sha256Content(value: string | Buffer): string {
+  return "sha256:" + createHash("sha256").update(value).digest("hex");
+}
+
+export function gallWorkProducerDigest(): string {
+  return sha256Content(readFileSync(fileURLToPath(import.meta.url)));
+}
+
+export function buildGallWorkHandoff(
+  lease: GallWorkLease,
+  finalHead: string,
+  producerDigest = gallWorkProducerDigest()
+): GallWorkHandoff {
+  if (!gitSha.test(finalHead)) throw new Error("final_head must be an exact 40-hex commit SHA.");
+  if (!sha256Digest.test(producerDigest)) throw new Error("producer_digest must be sha256:<64 lowercase hex>.");
+  const basis = {
+    schema: "gall.work-handoff/1" as const,
+    repository_identity: lease.repository_identity,
+    base_sha: lease.base_sha,
+    final_head: finalHead,
+    work_order_iri: lease.work_order_iri,
+    checkpoint_iri: lease.checkpoint_iri,
+    graph_digest: lease.graph_digest,
+    producer_digest: producerDigest,
+    authority: "none" as const
+  };
+  return {
+    ...basis,
+    handoff_digest: sha256Content(canonicalJson(basis))
+  };
+}
+
 const sha256Digest = /^sha256:[0-9a-f]{64}$/u;
 const gitSha = /^[0-9a-f]{40}$/u;
 const repositoryIdentity = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
@@ -631,6 +691,7 @@ export interface GallWorkResult {
   finalHead?: string;
   runtimeExitCode?: number | null;
   receipt?: Record<string, unknown>;
+  handoff?: GallWorkHandoff;
   code?: string;
   detail?: string;
   stages: {
