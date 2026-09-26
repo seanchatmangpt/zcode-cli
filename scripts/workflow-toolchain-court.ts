@@ -106,17 +106,34 @@ const valueFlags = new Set(["--cwd", "--filter", "-F", "--prefix", "-C", "--dir"
 
 /**
  * Shell grammar the court does not parse is flattened into command boundaries:
- * backslash-newline continuations are joined, quote characters are dropped (so
- * `bash -c "bun run x"` exposes its inner command), and `$(`, backticks,
- * subshell/group brackets, `&`, `&&`, `||`, `;`, `|` and newlines all start a
- * new segment. Over-splitting can only add candidate names, never remove one.
+ * backslash-newline continuations are joined, and `$(`, backticks,
+ * subshell/group brackets, `&`, `&&`, `||`, `;`, `|`, redirections (`<`, `>`)
+ * and newlines all start a new segment. Quoting is read two ways and the union
+ * is kept: quote characters as word breaks (so `bash -c "bun run x"` exposes its
+ * inner command) and quote characters removed with backslash escapes resolved
+ * (so `rel''ease:prepare` and `release\:prepare` read as the name the shell
+ * would pass). Over-splitting can only add candidate names, never remove one.
  */
 function shellSegments(command: string): string[][] {
-  const flattened = command.replace(/\\\r?\n/gu, " ").replace(/['"]/gu, " ");
-  return flattened
-    .split(/&&|\|\||\$\(|[;|&\n\r(){}`]/u)
-    .map((segment) => segment.trim().split(/\s+/u).filter((word) => word.length > 0));
+  const joined = command.replace(/\\\r?\n/gu, " ");
+  const readings = [joined.replace(/['"]/gu, " "), joined.replace(/\\(.)/gu, "$1").replace(/['"]/gu, "")];
+  return readings.flatMap((flattened) =>
+    flattened.split(/&&|\|\||\$\(|[;|&\n\r(){}`<>]/u).map((segment) => segment.trim().split(/\s+/u).filter((word) => word.length > 0))
+  );
 }
+
+/** `bun`, `/usr/local/bin/bun`, `~/.bun/bin/bun` all name the runner `bun`. */
+function runnerName(word: string): string | undefined {
+  const base = word.slice(word.lastIndexOf("/") + 1);
+  return runners.has(base) ? base : undefined;
+}
+
+/**
+ * A script operand the court cannot resolve statically (`bun run $S`,
+ * `bun run ${{ matrix.s }}`, an empty `bun run {}` template) could name any
+ * script, so it gates the step: fail-closed.
+ */
+export const dynamicScriptRef = "<dynamic>";
 
 /** Non-flag words after a runner; with `skipValues`, a value flag also drops the word after it. */
 function operands(words: string[], skipValues: boolean): string[] {
@@ -135,8 +152,11 @@ function operands(words: string[], skipValues: boolean): string[] {
 function refsFromOperands(runner: string, rest: string[], refs: string[]): void {
   const verb = rest[0];
   if (verb === undefined) return;
-  if (runVerbs.has(verb)) {
-    if (rest[1] !== undefined) refs.push(rest[1]);
+  const name = (word: string) => (word.includes("$") ? dynamicScriptRef : word);
+  if (verb.includes("$")) {
+    refs.push(dynamicScriptRef);
+  } else if (runVerbs.has(verb)) {
+    if (rest[1] !== undefined) refs.push(name(rest[1]));
   } else if (runner !== "bun" && testVerbs.has(verb)) {
     refs.push("test");
   } else if (runner !== "npm" && !builtins[runner]!.has(verb)) {
@@ -148,11 +168,15 @@ function refsFromOperands(runner: string, rest: string[], refs: string[]): void 
 const legacyRunRef = /\b(?:bun|npm|pnpm|yarn)\s+run\s+([\w:.-]+)/gu;
 
 /**
- * Every package-script name a shell command may execute. Total over shell
- * separators (`&&`, `||`, `;`, `|`, `&`, newlines), subshells and command
- * substitution (`( )`, `{ }`, `$( )`, backticks), `sh -c "..."` strings,
- * backslash line continuations, leading env assignments, quoted names, and
- * flags (with or without values) before or after the verb. It over-approximates
+ * Every package-script name a shell command may execute. It reads through shell
+ * separators (`&&`, `||`, `;`, `|`, `&`, newlines), redirections (`>log`,
+ * `2>&1`), subshells and command substitution (`( )`, `{ }`, `$( )`,
+ * backticks), `sh -c "..."` strings, backslash line continuations and escapes,
+ * quote-split names, runner paths (`~/.bun/bin/bun`), leading env assignments,
+ * and flags (with or without values) before or after the verb; an operand it
+ * cannot resolve is returned as `dynamicScriptRef`. Not modelled (residual,
+ * refused nowhere): `eval`/`xargs` argument synthesis, shell functions and
+ * aliases defined elsewhere in the same step. It over-approximates
  * on purpose: a returned word only matters if it is also a toolchain-requiring
  * script, so a spurious extra name can only gate a job, never un-gate one
  * (fail-closed). It is a superset of the pre-hardening regex reading.
@@ -160,9 +184,9 @@ const legacyRunRef = /\b(?:bun|npm|pnpm|yarn)\s+run\s+([\w:.-]+)/gu;
 export function scriptRefs(command: string): string[] {
   const refs: string[] = [];
   for (const words of shellSegments(command)) {
-    const at = words.findIndex((word) => runners.has(word));
+    const at = words.findIndex((word) => runnerName(word) !== undefined);
     if (at < 0) continue;
-    const runner = words[at]!;
+    const runner = runnerName(words[at]!)!;
     const tail = words.slice(at + 1);
     refsFromOperands(runner, operands(tail, false), refs);
     refsFromOperands(runner, operands(tail, true), refs);
@@ -173,9 +197,23 @@ export function scriptRefs(command: string): string[] {
   return [...new Set(refs)];
 }
 
-/** `ZCODE_REQUIRE_TOOLCHAINS=1`, also quoted (`="1"`, `='1'`), anywhere in a command. */
+/**
+ * `ZCODE_REQUIRE_TOOLCHAINS=1`, also quoted (`="1"`, `='1'`), anywhere in a
+ * command. A value the court cannot read statically (`=${{ ... }}`, `=$FLAG`)
+ * may evaluate to 1, so it gates too: fail-closed.
+ */
 export function setsRequireToolchains(command: string): boolean {
-  return command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") || /\bZCODE_REQUIRE_TOOLCHAINS=(["']?)1\1(?![\w.])/u.test(command);
+  return (
+    command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") ||
+    /\bZCODE_REQUIRE_TOOLCHAINS=(["']?)1\1(?![\w.])/u.test(command) ||
+    /\bZCODE_REQUIRE_TOOLCHAINS=["']?\$/u.test(command)
+  );
+}
+
+/** An env-map value of the flag: literal 1, or an expression/variable that may evaluate to 1. */
+export function requireToolchainsValue(value: unknown): boolean {
+  const text = String(value ?? "").trim();
+  return text === "1" || text.includes("$");
 }
 
 /** A step that runs the build script directly bypasses package.json but still needs ggen. */
@@ -192,7 +230,7 @@ export function toolchainScripts(scripts: Record<string, string>): Set<string> {
       if (
         setsRequireToolchains(command) ||
         command.includes("scripts/build-release.ts") ||
-        scriptRefs(command).some((ref) => requiring.has(ref))
+        scriptRefs(command).some((ref) => requiring.has(ref) || ref === dynamicScriptRef)
       ) {
         requiring.add(name);
         changed = true;
@@ -203,11 +241,11 @@ export function toolchainScripts(scripts: Record<string, string>): Set<string> {
 }
 
 export function requiresToolchain(step: WorkflowStep, job: WorkflowJob, workflow: Workflow, scripts: Set<string>): boolean {
-  const flag = (env?: Record<string, unknown>) => String(env?.ZCODE_REQUIRE_TOOLCHAINS ?? "") === "1";
+  const flag = (env?: Record<string, unknown>) => requireToolchainsValue(env?.ZCODE_REQUIRE_TOOLCHAINS);
   if (step.run === undefined) return false;
   if (setsRequireToolchains(step.run) || flag(step.env) || flag(job.env) || flag(workflow.env)) return true;
   if (directToolchainEntrypoints.some((entry) => step.run!.includes(entry))) return true;
-  return scriptRefs(step.run).some((ref) => scripts.has(ref));
+  return scriptRefs(step.run).some((ref) => scripts.has(ref) || ref === dynamicScriptRef);
 }
 
 /**
@@ -223,36 +261,100 @@ export function failureTolerated(subject: { "continue-on-error"?: boolean | stri
 }
 
 /**
- * Fail-stop must hold for the whole script: the first command is exactly
- * `set -euo pipefail` (comments and blank lines may precede it), nothing later
- * switches errexit/nounset/pipefail back off (also mid-line, after `;`/`&&`),
- * no command exits successfully early (`exit`, `exit 0`), and every `||`
- * fallback ends in a non-zero `exit` (so `|| true`, `|| :`, `|| exit 0`,
- * `|| echo skipped`, `|| /bin/true` are all refused).
+ * Fail-stop must hold for the whole script. The first command is exactly
+ * `set -euo pipefail` (comments and blank lines may precede it). After that,
+ * every simple command (the script split at `;`, `&&`, `||`, `|`, `&`,
+ * brackets and `then`/`do`/`else` keywords) is judged, and a script is refused
+ * when any command:
+ * - switches errexit/nounset/pipefail off: `set` with a `+` option carrying
+ *   `e`/`u` or `+o errexit|nounset|pipefail` anywhere in its argument list
+ *   (`set -x +e`, `set -o nounset +o errexit`), or `shopt -u -o`/`-uo` of them;
+ * - hands a failure to something that does not stop the job: a `||` fallback
+ *   that does not end in a non-zero `exit`, an `&&` list (errexit is suspended
+ *   for every command left of `&&`), a `!`-negated command, an `if`/`elif`/
+ *   `while`/`until` condition that is not a `[[`/`[`/`test`/`command -v` test,
+ *   or a background `&` job;
+ * - ends the script successfully early or replaces it: `exit`/`exit 0`,
+ *   `return`/`return 0`, `exec <command>`, `eval`, `kill ... $$`, or a `trap`
+ *   on ERR or whose action exits 0.
+ * Residual (not modelled): functions and aliases defined in the same step.
  */
+function simpleCommands(code: string): string[][] {
+  const stripped = code.replace(/&&|\|\||\|&|>&|<&|&>/gu, (op) => (op === "&&" || op === "||" ? ` ${op} ` : " "));
+  return stripped
+    .split(/&&|\|\||[;|&(){}`]/u)
+    .map((segment) => segment.trim().split(/\s+/u).filter((word) => word.length > 0))
+    .filter((words) => words.length > 0);
+}
+
+const relaxedOptions = new Set(["errexit", "nounset", "pipefail"]);
+const conditionKeywords = new Set(["if", "elif", "while", "until"]);
+const leadingKeywords = new Set(["then", "do", "else", "time"]);
+const conditionTests = new Set(["[[", "[", "test", "command"]);
+
+function relaxes(words: string[]): boolean {
+  const [head, ...args] = words;
+  if (head === "set") {
+    return args.some((arg, index) => {
+      if (!/^\+[a-zA-Z]+$/u.test(arg)) return false;
+      if (/[eu]/u.test(arg)) return true;
+      return arg.endsWith("o") && relaxedOptions.has(args[index + 1] ?? "");
+    });
+  }
+  if (head === "shopt") {
+    const flags = args.filter((arg) => arg.startsWith("-")).join("");
+    return flags.includes("u") && flags.includes("o") && args.some((arg) => relaxedOptions.has(arg));
+  }
+  return false;
+}
+
 function failStopViolations(label: string, run: string): string[] {
   const violations: string[] = [];
+  const add = (reason: string) => {
+    if (!violations.includes(reason)) violations.push(reason);
+  };
   const commands = run
     .replace(/\\\r?\n/gu, " ")
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
   if (commands[0] !== "set -euo pipefail") {
-    violations.push(`step ${label} does not start fail-stop (set -euo pipefail)`);
+    add(`step ${label} does not start fail-stop (set -euo pipefail)`);
   }
   for (const command of commands) {
     const code = command.replace(/\s#.*$/u, "");
-    if (/(?:^|[;&|({]|\b(?:then|do|else)\s)\s*set\s+(?:\+[a-zA-Z]*[eu][a-zA-Z]*|\+o\s+(?:errexit|nounset|pipefail))\b/u.test(code)) {
-      violations.push(`step ${label} relaxes fail-stop (${command})`);
-    }
     for (const fallback of code.split("||").slice(1)) {
       if (!/\bexit\s+(?:[1-9]\d*|"?\$\?"?)/u.test(fallback)) {
-        violations.push(`step ${label} swallows a failure (|| true)`);
+        add(`step ${label} swallows a failure (|| true)`);
         break;
       }
     }
-    if (/(?:^|[;&|({]|\b(?:then|do|else)\s)\s*exit(?:\s+0)?\s*(?:$|[;)}&|])/u.test(code)) {
-      violations.push(`step ${label} exits successfully early (${command})`);
+    if (code.includes("&&")) add(`step ${label} suspends errexit in an && list (${command})`);
+    if (/(?<![&|>]|[<>]\s*)&(?![&>])/u.test(code.replace(/\d?>&\d|&>|>&|<&|\|&/gu, " "))) {
+      add(`step ${label} backgrounds a command (${command})`);
+    }
+    for (const raw of simpleCommands(code)) {
+      let words = raw;
+      while (words.length > 0 && leadingKeywords.has(words[0]!)) words = words.slice(1);
+      if (words.length > 0 && conditionKeywords.has(words[0]!)) {
+        words = words.slice(1);
+        if (words.length > 0 && !conditionTests.has(words[0]!) && words[0] !== "!") {
+          add(`step ${label} runs a command as a condition, suspending errexit (${command})`);
+        }
+      }
+      const [head, ...args] = words;
+      if (head === undefined) continue;
+      if (relaxes(words)) add(`step ${label} relaxes fail-stop (${command})`);
+      if (head === "!") add(`step ${label} negates a command status, suspending errexit (${command})`);
+      if ((head === "exit" || head === "return") && (args.length === 0 || args[0] === "0")) {
+        add(`step ${label} exits successfully early (${command})`);
+      }
+      if ((head === "exec" && args.length > 0 && !/^\d*[<>]/u.test(args[0]!)) || head === "eval" || (head === "kill" && args.includes("$$"))) {
+        add(`step ${label} replaces or ends the shell (${command})`);
+      }
+      if (head === "trap" && (args.includes("ERR") || /\bexit(?:\s+0)?\s*['"]?(?:\s|$)/u.test(args.join(" ")))) {
+        add(`step ${label} traps a failure (${command})`);
+      }
     }
   }
   return violations;
