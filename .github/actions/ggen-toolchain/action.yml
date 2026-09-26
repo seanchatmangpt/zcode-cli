@@ -1,0 +1,101 @@
+name: Install pinned ggen toolchain
+description: >-
+  Single source of the ggen v26.9.18 + ggen-marketplace pack pins. Every job that
+  runs a package script setting ZCODE_REQUIRE_TOOLCHAINS=1 (test:unit, test:runtime,
+  test:all, release:prepare, release:build) must use this action after checkout;
+  test/release-workflows.test.ts enforces it and forbids inline copies of the pins.
+  The release asset's sha256 is verified before ggen is put on PATH, and the
+  marketplace checkout must resolve to exactly the pinned commit.
+
+outputs:
+  ggen-bin:
+    description: Directory holding the verified ggen binary (appended to GITHUB_PATH).
+    value: ${{ steps.install.outputs.ggen-bin }}
+  pack-root:
+    description: packs/ directory of the pinned marketplace checkout (exported as ZCODE_PACK_ROOT).
+    value: ${{ steps.install.outputs.pack-root }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned ggen v26.9.18 and marketplace packs
+      id: install
+      shell: bash
+      env:
+        # One pin set. The per-platform sha256 values are the published
+        # ggen v26.9.18 release checksums (ggen-<target>.tar.gz.sha256).
+        GGEN_VERSION: v26.9.18
+        GGEN_SHA256_X86_64_UNKNOWN_LINUX_GNU: 9f1d689d26c5628aa695ab775f3045387f54d17c07abb8383caf0ad88a5c09e4
+        GGEN_SHA256_AARCH64_UNKNOWN_LINUX_GNU: 776491b3971870fd91b4d8231c07677a21a91d1306873bccc8c1d075db61ea6a
+        GGEN_SHA256_X86_64_APPLE_DARWIN: df931f44e7356a53983aa8e2d8ea72e989f0e3a6731c998a8eae95593aabacc7
+        GGEN_SHA256_AARCH64_APPLE_DARWIN: 1d06d0490e4c2638081485b674cb43d9f14018f30a15160dc2c1865dd2706751
+        GGEN_MARKETPLACE_SHA: 5eb71f7ed947f705a8d6b145cb9b0be82855d793
+        GGEN_MARKETPLACE_PACKS: >-
+          packs/process-intelligence-pack
+          packs/state-transition-pack
+          packs/evidence-standing-pack
+          packs/shacl-projection-pack
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}/${RUNNER_ARCH}" in
+          Linux/X64)   target=x86_64-unknown-linux-gnu;  GGEN_SHA256="$GGEN_SHA256_X86_64_UNKNOWN_LINUX_GNU" ;;
+          Linux/ARM64) target=aarch64-unknown-linux-gnu; GGEN_SHA256="$GGEN_SHA256_AARCH64_UNKNOWN_LINUX_GNU" ;;
+          macOS/X64)   target=x86_64-apple-darwin;       GGEN_SHA256="$GGEN_SHA256_X86_64_APPLE_DARWIN" ;;
+          macOS/ARM64) target=aarch64-apple-darwin;      GGEN_SHA256="$GGEN_SHA256_AARCH64_APPLE_DARWIN" ;;
+          *)
+            echo "REFUSED(UNSUPPORTED_PLATFORM): ggen ${GGEN_VERSION} has no pinned asset for ${RUNNER_OS}/${RUNNER_ARCH}" >&2
+            exit 2
+            ;;
+        esac
+        if [[ ! "$GGEN_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "REFUSED(INVALID_PIN): sha256 pin for ${target} is not 64 lowercase hex digits" >&2
+          exit 2
+        fi
+        if [[ ! "$GGEN_MARKETPLACE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "REFUSED(INVALID_PIN): GGEN_MARKETPLACE_SHA is not a 40-hex commit" >&2
+          exit 2
+        fi
+
+        asset="ggen-${target}.tar.gz"
+        archive="$RUNNER_TEMP/$asset"
+        curl -fsSL --retry 3 -o "$archive" \
+          "https://github.com/seanchatmangpt/ggen/releases/download/${GGEN_VERSION}/${asset}"
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual=$(sha256sum "$archive" | cut -d' ' -f1)
+        else
+          actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+        fi
+        if [[ "$actual" != "$GGEN_SHA256" ]]; then
+          echo "REFUSED(DIGEST_MISMATCH): ${asset} sha256 ${actual} != pinned ${GGEN_SHA256}" >&2
+          exit 1
+        fi
+
+        bin="$RUNNER_TEMP/ggen-bin"
+        mkdir -p "$bin"
+        tar -xzf "$archive" -C "$bin"
+        "$bin/ggen" --version
+
+        # scripts/gen-ocel.ts --check needs the four marketplace packs
+        # (default /Users/sac/ggen-marketplace/packs). Pin them by commit.
+        mp="$RUNNER_TEMP/ggen-marketplace"
+        rm -rf "$mp"
+        git init -q "$mp"
+        git -C "$mp" remote add origin https://github.com/seanchatmangpt/ggen-marketplace
+        # shellcheck disable=SC2086 # the pack list is intentionally word-split
+        git -C "$mp" sparse-checkout set $GGEN_MARKETPLACE_PACKS
+        git -C "$mp" fetch -q --depth 1 --filter=blob:none origin "$GGEN_MARKETPLACE_SHA"
+        git -C "$mp" checkout -q FETCH_HEAD
+        head=$(git -C "$mp" rev-parse HEAD)
+        if [[ "$head" != "$GGEN_MARKETPLACE_SHA" ]]; then
+          echo "REFUSED(DIGEST_MISMATCH): marketplace HEAD ${head} != pinned ${GGEN_MARKETPLACE_SHA}" >&2
+          exit 1
+        fi
+        for pack in $GGEN_MARKETPLACE_PACKS; do
+          [[ -d "$mp/$pack" ]] || { echo "REFUSED(PACK_MISSING): $pack absent at ${GGEN_MARKETPLACE_SHA}" >&2; exit 1; }
+        done
+
+        # Only a verified binary and a verified pack tree reach later steps.
+        echo "$bin" >> "$GITHUB_PATH"
+        echo "ZCODE_PACK_ROOT=$mp/packs" >> "$GITHUB_ENV"
+        echo "ggen-bin=$bin" >> "$GITHUB_OUTPUT"
+        echo "pack-root=$mp/packs" >> "$GITHUB_OUTPUT"
