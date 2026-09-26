@@ -1,0 +1,61 @@
+{
+  "schema": "zcode.bench.toolchain-court.v1",
+  "authority": "NONE",
+  "runtime": {
+    "bun": "1.3.7",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "host_load_1m": 272.09,
+  "repository_parse_ms": 655.604,
+  "rows": [
+    {
+      "subject": "repository-workflows",
+      "jobs": 8,
+      "steps": 80,
+      "runs": 9,
+      "median_ms": 1.223,
+      "min_ms": 0.295,
+      "max_ms": 65.286,
+      "gated_jobs": 5,
+      "violations": 0,
+      "result_sha256": "d3a93a5a1972ad5da9ebbecada9faccf97ddadb770b0475bb8de2b0147486826"
+    },
+    {
+      "subject": "synthetic-50",
+      "jobs": 50,
+      "steps": 392,
+      "runs": 9,
+      "median_ms": 0.331,
+      "min_ms": 0.221,
+      "max_ms": 50.562,
+      "gated_jobs": 22,
+      "violations": 4,
+      "result_sha256": "9a9b5741fbbdcf8a346aef01b26c7d1b1cc234c630af407195f3db51fea10a86"
+    },
+    {
+      "subject": "synthetic-500",
+      "jobs": 500,
+      "steps": 3928,
+      "runs": 9,
+      "median_ms": 17.132,
+      "min_ms": 1.467,
+      "max_ms": 207.067,
+      "gated_jobs": 274,
+      "violations": 39,
+      "result_sha256": "2ef4f86b1d8c7ec22aa8d67b627aec6c9a010a7f0c231d0e822549811aa7914a"
+    },
+    {
+      "subject": "synthetic-5000",
+      "jobs": 5000,
+      "steps": 39285,
+      "runs": 9,
+      "median_ms": 182.046,
+      "min_ms": 15.045,
+      "max_ms": 350.353,
+      "gated_jobs": 2825,
+      "violations": 409,
+      "result_sha256": "381fc3fbe1da016f24b1c9d40bfd6d0793cc31d571105fa3993228f403a25497"
+    }
+  ]
+}

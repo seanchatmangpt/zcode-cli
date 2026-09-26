@@ -5,6 +5,24 @@ import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 
+import {
+  type CompositeAction,
+  compositeCourt,
+  inlinePinMarkers,
+  mutate,
+  packageScripts,
+  pinnedLinuxX64Sha256,
+  pinnedMarketplaceSha,
+  readToolchainAction,
+  readWorkflowSubjects,
+  toolchainAction,
+  toolchainActionPath,
+  toolchainCourt,
+  toolchainScripts,
+  type Workflow,
+  type WorkflowStep
+} from "../scripts/workflow-toolchain-court.ts";
+
 const root = resolve(import.meta.dir, "..");
 const actionShas = {
   checkout: "df4cb1c069e1874edd31b4311f1884172cec0e10",
@@ -13,40 +31,6 @@ const actionShas = {
   setupNode: "249970729cb0ef3589644e2896645e5dc5ba9c38",
   uploadArtifact: "ea165f8d65b6e75b540449e92b4886f43607fa02"
 } as const;
-
-interface WorkflowStep {
-  "continue-on-error"?: boolean | string;
-  env?: Record<string, unknown>;
-  shell?: string;
-  id?: string;
-  if?: string;
-  name?: string;
-  run?: string;
-  uses?: string;
-  with?: Record<string, unknown>;
-}
-
-interface WorkflowJob {
-  env?: Record<string, unknown>;
-  if?: string;
-  needs?: string | string[];
-  outputs?: Record<string, unknown>;
-  permissions?: Record<string, string>;
-  "runs-on"?: string | string[];
-  steps: WorkflowStep[];
-  "timeout-minutes"?: number;
-}
-
-interface Workflow {
-  env?: Record<string, unknown>;
-  concurrency?: {
-    group?: string;
-    "cancel-in-progress"?: boolean;
-  };
-  jobs: Record<string, WorkflowJob>;
-  on: Record<string, unknown>;
-  permissions: Record<string, string>;
-}
 
 async function readWorkflow(name: string): Promise<{ source: string; workflow: Workflow }> {
   const source = await Bun.file(resolve(root, ".github", "workflows", name)).text();
@@ -278,173 +262,9 @@ describe("release workflows", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ggen toolchain court.
-//
-// Any job that runs a package script which sets ZCODE_REQUIRE_TOOLCHAINS=1
-// (directly, or through scripts/build-release.ts, or through `bun run` of
-// another such script) turns a missing ggen into a hard failure. Such a job
-// must install the toolchain through the one composite action, after checkout
-// and before the first toolchain-requiring step, and no workflow may carry an
-// inline copy of the pins. Scheduled run 36186796685 (prepare-release.yml)
-// failed with "ZCODE_REQUIRE_TOOLCHAINS=1 but toolchain missing: ggen" because
-// its job had no install step while three other workflows each carried a copy.
-// ---------------------------------------------------------------------------
-
-const toolchainAction = "./.github/actions/ggen-toolchain";
-const toolchainActionPath = resolve(root, ".github", "actions", "ggen-toolchain", "action.yml");
-const pinnedLinuxX64Sha256 = "9f1d689d26c5628aa695ab775f3045387f54d17c07abb8383caf0ad88a5c09e4";
-const pinnedMarketplaceSha = "5eb71f7ed947f705a8d6b145cb9b0be82855d793";
-/** Pin material that may appear only inside the composite action. */
-const inlinePinMarkers = ["GGEN_SHA256", "GGEN_MARKETPLACE_SHA", pinnedLinuxX64Sha256, pinnedMarketplaceSha, "ggen/releases/download"];
-
-interface ToolchainViolation {
-  workflow: string;
-  job?: string;
-  reason: string;
-}
-
-interface WorkflowSubject {
-  name: string;
-  source: string;
-  workflow: Workflow;
-}
-
-function scriptRefs(command: string): string[] {
-  return [...command.matchAll(/\b(?:bun|npm|pnpm|yarn)\s+run\s+([\w:.-]+)/gu)].map((match) => match[1]!);
-}
-
-/** Least fixed point: scripts that (transitively) run under ZCODE_REQUIRE_TOOLCHAINS=1. */
-function toolchainScripts(scripts: Record<string, string>): Set<string> {
-  const requiring = new Set<string>();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [name, command] of Object.entries(scripts)) {
-      if (requiring.has(name)) continue;
-      if (
-        command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") ||
-        command.includes("scripts/build-release.ts") ||
-        scriptRefs(command).some((ref) => requiring.has(ref))
-      ) {
-        requiring.add(name);
-        changed = true;
-      }
-    }
-  }
-  return requiring;
-}
-
-function requiresToolchain(step: WorkflowStep, job: WorkflowJob, workflow: Workflow, scripts: Set<string>): boolean {
-  const flag = (env?: Record<string, unknown>) => String(env?.ZCODE_REQUIRE_TOOLCHAINS ?? "") === "1";
-  if (step.run === undefined) return false;
-  if (step.run.includes("ZCODE_REQUIRE_TOOLCHAINS=1") || flag(step.env) || flag(job.env) || flag(workflow.env)) return true;
-  return scriptRefs(step.run).some((ref) => scripts.has(ref));
-}
-
-/**
- * A step whose failure does not stop the job. `continue-on-error: true` (or any
- * expression that may evaluate true) lets a failed install fall through to the
- * toolchain-requiring step, which reproduces run 36186796685. Only an absent key
- * or a literal false keeps the install load-bearing.
- */
-function failureTolerated(step: WorkflowStep): string | undefined {
-  const value = step["continue-on-error"];
-  if (value === undefined || value === false || value === "false") return undefined;
-  return String(value);
-}
-
-/** Court over the composite action itself: every internal step must be unconditional and fail-stop. */
-function compositeCourt(action: CompositeAction): string[] {
-  const violations: string[] = [];
-  if (action.runs?.using !== "composite") violations.push(`runs.using is ${String(action.runs?.using)}, not composite`);
-  for (const [index, step] of (action.runs?.steps ?? []).entries()) {
-    const label = step.id ?? step.name ?? String(index);
-    if (step.if !== undefined) violations.push(`step ${label} is conditional (if: ${step.if})`);
-    const tolerated = failureTolerated(step);
-    if (tolerated !== undefined) violations.push(`step ${label} tolerates failure (continue-on-error: ${tolerated})`);
-    if (step.run !== undefined && !/^\s*set -euo pipefail\s*$/mu.test(step.run)) {
-      violations.push(`step ${label} does not start fail-stop (set -euo pipefail)`);
-    }
-  }
-  return violations;
-}
-
-/** The court: returns every violation; an empty list is admission. */
-function toolchainCourt(subjects: WorkflowSubject[], scripts: Set<string>): { gatedJobs: string[]; violations: ToolchainViolation[] } {
-  const violations: ToolchainViolation[] = [];
-  const gatedJobs: string[] = [];
-  for (const { name, source, workflow } of subjects) {
-    for (const marker of inlinePinMarkers) {
-      if (source.includes(marker)) {
-        violations.push({ workflow: name, reason: `inline ggen pin material "${marker}"; use ${toolchainAction}` });
-      }
-    }
-    for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
-      const steps = job.steps ?? [];
-      const first = steps.findIndex((step) => requiresToolchain(step, job, workflow, scripts));
-      if (first < 0) continue;
-      gatedJobs.push(`${name}:${jobName}`);
-      const install = steps.findIndex((step) => step.uses === toolchainAction);
-      const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@") ?? false);
-      if (install < 0) {
-        violations.push({ workflow: name, job: jobName, reason: `runs "${steps[first]!.run}" without ${toolchainAction}` });
-        continue;
-      }
-      if (install > first) {
-        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} runs after "${steps[first]!.run}"` });
-      }
-      if (checkout < 0 || checkout > install) {
-        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} runs before actions/checkout` });
-      }
-      if (steps[install]!.if !== undefined) {
-        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} is conditional (if: ${steps[install]!.if})` });
-      }
-      const tolerated = failureTolerated(steps[install]!);
-      if (tolerated !== undefined) {
-        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} tolerates failure (continue-on-error: ${tolerated})` });
-      }
-    }
-  }
-  return { gatedJobs: gatedJobs.sort(), violations };
-}
-
-function readWorkflowSubjects(): WorkflowSubject[] {
-  const dir = resolve(root, ".github", "workflows");
-  return readdirSync(dir)
-    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
-    .sort()
-    .map((name) => {
-      const source = readFileSync(join(dir, name), "utf8");
-      return { name, source, workflow: parse(source) as Workflow };
-    });
-}
-
-function packageScripts(): Record<string, string> {
-  return (JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
-}
-
-/** Re-parse a mutated source so the court judges the mutation, not the original object graph. */
-function mutate(subjects: WorkflowSubject[], name: string, edit: (source: string) => string): WorkflowSubject[] {
-  return subjects.map((subject) => {
-    if (subject.name !== name) return subject;
-    const source = edit(subject.source);
-    if (source === subject.source) throw new Error(`mutation of ${name} changed nothing`);
-    return { name, source, workflow: parse(source) as Workflow };
-  });
-}
 
 const compositeStepBlock = /\n {6}# ZCODE_REQUIRE_TOOLCHAINS=1 turns[^\n]*\n(?: {6}#[^\n]*\n)*? {6}- name: Install pinned ggen toolchain\n {8}uses: \.\/\.github\/actions\/ggen-toolchain\n/u;
 
-interface CompositeAction {
-  name?: string;
-  outputs?: Record<string, { value?: string }>;
-  runs: { using: string; steps: WorkflowStep[] };
-}
-
-function readToolchainAction(): CompositeAction {
-  return parse(readFileSync(toolchainActionPath, "utf8")) as CompositeAction;
-}
 
 interface ActionRun {
   code: number;
