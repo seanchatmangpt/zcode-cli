@@ -96,39 +96,86 @@ const builtins: Record<string, Set<string>> = {
   yarn: new Set(["install", "add", "remove", "exec", "dlx", "why", "publish", "pack", "link", "config", "info", "cache", "workspace", "workspaces", "set", "up", "upgrade", "npm", "plugin"])
 };
 
-function unquote(token: string): string {
-  return token.replace(/^(['"])(.*)\1$/u, "$2");
+/**
+ * Flags that consume the following word as their value (`bun --cwd . run x`,
+ * `pnpm -C pkg run x`, `npm run -w pkg x`). A flag we list here that some tool
+ * treats as boolean would make the value-skipping reading miss the verb, so the
+ * tokenizer takes the union of both readings (see scriptRefs): fail-closed.
+ */
+const valueFlags = new Set(["--cwd", "--filter", "-F", "--prefix", "-C", "--dir", "--workspace", "-w", "--config"]);
+
+/**
+ * Shell grammar the court does not parse is flattened into command boundaries:
+ * backslash-newline continuations are joined, quote characters are dropped (so
+ * `bash -c "bun run x"` exposes its inner command), and `$(`, backticks,
+ * subshell/group brackets, `&`, `&&`, `||`, `;`, `|` and newlines all start a
+ * new segment. Over-splitting can only add candidate names, never remove one.
+ */
+function shellSegments(command: string): string[][] {
+  const flattened = command.replace(/\\\r?\n/gu, " ").replace(/['"]/gu, " ");
+  return flattened
+    .split(/&&|\|\||\$\(|[;|&\n\r(){}`]/u)
+    .map((segment) => segment.trim().split(/\s+/u).filter((word) => word.length > 0));
 }
+
+/** Non-flag words after a runner; with `skipValues`, a value flag also drops the word after it. */
+function operands(words: string[], skipValues: boolean): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index]!;
+    if (word.startsWith("-")) {
+      if (skipValues && valueFlags.has(word)) index += 1;
+      continue;
+    }
+    out.push(word);
+  }
+  return out;
+}
+
+function refsFromOperands(runner: string, rest: string[], refs: string[]): void {
+  const verb = rest[0];
+  if (verb === undefined) return;
+  if (runVerbs.has(verb)) {
+    if (rest[1] !== undefined) refs.push(rest[1]);
+  } else if (runner !== "bun" && testVerbs.has(verb)) {
+    refs.push("test");
+  } else if (runner !== "npm" && !builtins[runner]!.has(verb)) {
+    refs.push(verb);
+  }
+}
+
+/** The pre-hardening court's reading (origin/main 1c28a6ae); kept so no shape it refused is ever re-admitted. */
+const legacyRunRef = /\b(?:bun|npm|pnpm|yarn)\s+run\s+([\w:.-]+)/gu;
 
 /**
  * Every package-script name a shell command may execute. Total over shell
- * separators (`&&`, `||`, `;`, `|`, newlines), leading env assignments, quoted
- * names, and flags before or after the verb (`bun --bun run`, `npm run --silent x`).
- * It over-approximates on purpose: a returned word only matters if it is also a
- * toolchain-requiring script, so a spurious extra name can only gate a job,
- * never un-gate one (fail-closed).
+ * separators (`&&`, `||`, `;`, `|`, `&`, newlines), subshells and command
+ * substitution (`( )`, `{ }`, `$( )`, backticks), `sh -c "..."` strings,
+ * backslash line continuations, leading env assignments, quoted names, and
+ * flags (with or without values) before or after the verb. It over-approximates
+ * on purpose: a returned word only matters if it is also a toolchain-requiring
+ * script, so a spurious extra name can only gate a job, never un-gate one
+ * (fail-closed). It is a superset of the pre-hardening regex reading.
  */
 export function scriptRefs(command: string): string[] {
   const refs: string[] = [];
-  for (const segment of command.split(/&&|\|\||[;|\n]/u)) {
-    const words = segment.trim().split(/\s+/u).filter((word) => word.length > 0).map(unquote);
-    for (let index = 0; index < words.length; index += 1) {
-      const runner = words[index]!;
-      if (!runners.has(runner)) continue;
-      const rest = words.slice(index + 1).filter((word) => !word.startsWith("-"));
-      const verb = rest[0];
-      if (verb === undefined) break;
-      if (runVerbs.has(verb)) {
-        if (rest[1] !== undefined) refs.push(rest[1]);
-      } else if (runner !== "bun" && testVerbs.has(verb)) {
-        refs.push("test");
-      } else if (runner !== "npm" && !builtins[runner]!.has(verb)) {
-        refs.push(verb);
-      }
-      break;
-    }
+  for (const words of shellSegments(command)) {
+    const at = words.findIndex((word) => runners.has(word));
+    if (at < 0) continue;
+    const runner = words[at]!;
+    const tail = words.slice(at + 1);
+    refsFromOperands(runner, operands(tail, false), refs);
+    refsFromOperands(runner, operands(tail, true), refs);
   }
-  return refs;
+  for (const text of [command, command.replace(/\\\r?\n/gu, " ").replace(/['"`]/gu, " ")]) {
+    for (const match of text.matchAll(legacyRunRef)) refs.push(match[1]!);
+  }
+  return [...new Set(refs)];
+}
+
+/** `ZCODE_REQUIRE_TOOLCHAINS=1`, also quoted (`="1"`, `='1'`), anywhere in a command. */
+export function setsRequireToolchains(command: string): boolean {
+  return command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") || /\bZCODE_REQUIRE_TOOLCHAINS=(["']?)1\1(?![\w.])/u.test(command);
 }
 
 /** A step that runs the build script directly bypasses package.json but still needs ggen. */
@@ -143,7 +190,7 @@ export function toolchainScripts(scripts: Record<string, string>): Set<string> {
     for (const [name, command] of Object.entries(scripts)) {
       if (requiring.has(name)) continue;
       if (
-        command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") ||
+        setsRequireToolchains(command) ||
         command.includes("scripts/build-release.ts") ||
         scriptRefs(command).some((ref) => requiring.has(ref))
       ) {
@@ -158,7 +205,7 @@ export function toolchainScripts(scripts: Record<string, string>): Set<string> {
 export function requiresToolchain(step: WorkflowStep, job: WorkflowJob, workflow: Workflow, scripts: Set<string>): boolean {
   const flag = (env?: Record<string, unknown>) => String(env?.ZCODE_REQUIRE_TOOLCHAINS ?? "") === "1";
   if (step.run === undefined) return false;
-  if (step.run.includes("ZCODE_REQUIRE_TOOLCHAINS=1") || flag(step.env) || flag(job.env) || flag(workflow.env)) return true;
+  if (setsRequireToolchains(step.run) || flag(step.env) || flag(job.env) || flag(workflow.env)) return true;
   if (directToolchainEntrypoints.some((entry) => step.run!.includes(entry))) return true;
   return scriptRefs(step.run).some((ref) => scripts.has(ref));
 }
@@ -178,12 +225,15 @@ export function failureTolerated(subject: { "continue-on-error"?: boolean | stri
 /**
  * Fail-stop must hold for the whole script: the first command is exactly
  * `set -euo pipefail` (comments and blank lines may precede it), nothing later
- * switches errexit/nounset/pipefail back off, and no command swallows its own
- * failure with `|| true` / `|| :`.
+ * switches errexit/nounset/pipefail back off (also mid-line, after `;`/`&&`),
+ * no command exits successfully early (`exit`, `exit 0`), and every `||`
+ * fallback ends in a non-zero `exit` (so `|| true`, `|| :`, `|| exit 0`,
+ * `|| echo skipped`, `|| /bin/true` are all refused).
  */
 function failStopViolations(label: string, run: string): string[] {
   const violations: string[] = [];
   const commands = run
+    .replace(/\\\r?\n/gu, " ")
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
@@ -191,12 +241,30 @@ function failStopViolations(label: string, run: string): string[] {
     violations.push(`step ${label} does not start fail-stop (set -euo pipefail)`);
   }
   for (const command of commands) {
-    const relax = /^set\s+(\+[a-zA-Z]*[eu][a-zA-Z]*|\+o\s+(?:errexit|nounset|pipefail))\b/u.exec(command);
-    if (relax) violations.push(`step ${label} relaxes fail-stop (${command})`);
-    if (/\|\|\s*(?:true|:)\s*(?:$|[;#)])/u.test(command)) violations.push(`step ${label} swallows a failure (|| true)`);
+    const code = command.replace(/\s#.*$/u, "");
+    if (/(?:^|[;&|({]|\b(?:then|do|else)\s)\s*set\s+(?:\+[a-zA-Z]*[eu][a-zA-Z]*|\+o\s+(?:errexit|nounset|pipefail))\b/u.test(code)) {
+      violations.push(`step ${label} relaxes fail-stop (${command})`);
+    }
+    for (const fallback of code.split("||").slice(1)) {
+      if (!/\bexit\s+(?:[1-9]\d*|"?\$\?"?)/u.test(fallback)) {
+        violations.push(`step ${label} swallows a failure (|| true)`);
+        break;
+      }
+    }
+    if (/(?:^|[;&|({]|\b(?:then|do|else)\s)\s*exit(?:\s+0)?\s*(?:$|[;)}&|])/u.test(code)) {
+      violations.push(`step ${label} exits successfully early (${command})`);
+    }
   }
   return violations;
 }
+
+/**
+ * The only shell a composite run step may use. GitHub runs `shell: bash` as
+ * `bash --noprofile --norc -eo pipefail {0}`; any other value (`sh`, a custom
+ * `bash ... +e {0}` template, pwsh) changes the fail-stop semantics the court
+ * reads from the script, so it is refused rather than interpreted.
+ */
+export const compositeShell = "bash";
 
 /** Court over the composite action itself: every internal step must be unconditional and fail-stop. */
 export function compositeCourt(action: CompositeAction): string[] {
@@ -207,7 +275,10 @@ export function compositeCourt(action: CompositeAction): string[] {
     if (step.if !== undefined) violations.push(`step ${label} is conditional (if: ${step.if})`);
     const tolerated = failureTolerated(step);
     if (tolerated !== undefined) violations.push(`step ${label} tolerates failure (continue-on-error: ${tolerated})`);
-    if (step.run !== undefined) violations.push(...failStopViolations(label, step.run));
+    if (step.run !== undefined) {
+      if (step.shell !== compositeShell) violations.push(`step ${label} shell is ${String(step.shell)}, not ${compositeShell}`);
+      violations.push(...failStopViolations(label, step.run));
+    }
   }
   return violations;
 }
