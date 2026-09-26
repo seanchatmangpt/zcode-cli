@@ -1,0 +1,44 @@
+@prefix zps: <https://w3id.org/chatman/zcode/permission-standing#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+zps:PermissionStandingCourt a rdfs:Class ;
+  rdfs:label "ZCode permission standing court" .
+
+zps:StandingState a rdfs:Class .
+zps:UNKNOWN a zps:StandingState .
+zps:REFUSED a zps:StandingState .
+zps:ADMITTED a zps:StandingState .
+
+zps:ExactSubject a rdfs:Class ;
+  rdfs:label "repository + immutable base SHA + worker + epoch" .
+
+zps:IndependentObservation a rdfs:Class ;
+  rdfs:subClassOf prov:Entity .
+
+zps:AuthorityCeiling a rdfs:Class .
+zps:CONSTRUCT a zps:AuthorityCeiling ;
+  rdfs:label "May construct a worker invocation; does not authorize consequential DO" .
+
+zps:Falsifier a rdfs:Class .
+zps:CrossRepositoryEvidence a zps:Falsifier .
+zps:StaleOrCrossSubjectSha a zps:Falsifier .
+zps:SelfAttestation a zps:Falsifier .
+zps:AuthorityLaundering a zps:Falsifier .
+zps:ModeNotUniquelyBound a zps:Falsifier .
+zps:ModeNotYolo a zps:Falsifier .
+zps:ArgvObservationDivergence a zps:Falsifier .
+zps:ReceiptReplayDivergence a zps:Falsifier .
+
+zps:AdmissionRule a rdfs:Class ;
+  rdfs:label "ADMITTED iff exact repository/SHA evidence is independently observed, argv binds exactly one --mode yolo, observation agrees, and requested authority does not exceed CONSTRUCT" .
+
+zps:UnknownRule a rdfs:Class ;
+  rdfs:label "Missing independent observation remains UNKNOWN; absence is never promoted to ADMITTED" .
+
+zps:RefusalRule a rdfs:Class ;
+  rdfs:label "Any contradictory exact-subject, independence, mode, or authority evidence yields REFUSED" .
+
+zps:ReplayRule a rdfs:Class ;
+  rdfs:label "Replay must reproduce byte-equivalent canonical receipt content and digest" .
