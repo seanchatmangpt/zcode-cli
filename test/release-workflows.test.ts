@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 import { parse } from "yaml";
@@ -15,6 +16,7 @@ const actionShas = {
 
 interface WorkflowStep {
   env?: Record<string, unknown>;
+  shell?: string;
   id?: string;
   if?: string;
   name?: string;
@@ -24,16 +26,18 @@ interface WorkflowStep {
 }
 
 interface WorkflowJob {
+  env?: Record<string, unknown>;
   if?: string;
-  needs?: string;
+  needs?: string | string[];
   outputs?: Record<string, unknown>;
   permissions?: Record<string, string>;
-  "runs-on"?: string;
+  "runs-on"?: string | string[];
   steps: WorkflowStep[];
   "timeout-minutes"?: number;
 }
 
 interface Workflow {
+  env?: Record<string, unknown>;
   concurrency?: {
     group?: string;
     "cancel-in-progress"?: boolean;
@@ -271,4 +275,384 @@ describe("release workflows", () => {
   test("removes the direct scheduled publishing workflow", () => {
     expect(existsSync(resolve(root, ".github", "workflows", "sync-and-publish.yml"))).toBe(false);
   });
+});
+
+// ---------------------------------------------------------------------------
+// ggen toolchain court.
+//
+// Any job that runs a package script which sets ZCODE_REQUIRE_TOOLCHAINS=1
+// (directly, or through scripts/build-release.ts, or through `bun run` of
+// another such script) turns a missing ggen into a hard failure. Such a job
+// must install the toolchain through the one composite action, after checkout
+// and before the first toolchain-requiring step, and no workflow may carry an
+// inline copy of the pins. Scheduled run 36186796685 (prepare-release.yml)
+// failed with "ZCODE_REQUIRE_TOOLCHAINS=1 but toolchain missing: ggen" because
+// its job had no install step while three other workflows each carried a copy.
+// ---------------------------------------------------------------------------
+
+const toolchainAction = "./.github/actions/ggen-toolchain";
+const toolchainActionPath = resolve(root, ".github", "actions", "ggen-toolchain", "action.yml");
+const pinnedLinuxX64Sha256 = "9f1d689d26c5628aa695ab775f3045387f54d17c07abb8383caf0ad88a5c09e4";
+const pinnedMarketplaceSha = "5eb71f7ed947f705a8d6b145cb9b0be82855d793";
+/** Pin material that may appear only inside the composite action. */
+const inlinePinMarkers = ["GGEN_SHA256", "GGEN_MARKETPLACE_SHA", pinnedLinuxX64Sha256, pinnedMarketplaceSha, "ggen/releases/download"];
+
+interface ToolchainViolation {
+  workflow: string;
+  job?: string;
+  reason: string;
+}
+
+interface WorkflowSubject {
+  name: string;
+  source: string;
+  workflow: Workflow;
+}
+
+function scriptRefs(command: string): string[] {
+  return [...command.matchAll(/\b(?:bun|npm|pnpm|yarn)\s+run\s+([\w:.-]+)/gu)].map((match) => match[1]!);
+}
+
+/** Least fixed point: scripts that (transitively) run under ZCODE_REQUIRE_TOOLCHAINS=1. */
+function toolchainScripts(scripts: Record<string, string>): Set<string> {
+  const requiring = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [name, command] of Object.entries(scripts)) {
+      if (requiring.has(name)) continue;
+      if (
+        command.includes("ZCODE_REQUIRE_TOOLCHAINS=1") ||
+        command.includes("scripts/build-release.ts") ||
+        scriptRefs(command).some((ref) => requiring.has(ref))
+      ) {
+        requiring.add(name);
+        changed = true;
+      }
+    }
+  }
+  return requiring;
+}
+
+function requiresToolchain(step: WorkflowStep, job: WorkflowJob, workflow: Workflow, scripts: Set<string>): boolean {
+  const flag = (env?: Record<string, unknown>) => String(env?.ZCODE_REQUIRE_TOOLCHAINS ?? "") === "1";
+  if (step.run === undefined) return false;
+  if (step.run.includes("ZCODE_REQUIRE_TOOLCHAINS=1") || flag(step.env) || flag(job.env) || flag(workflow.env)) return true;
+  return scriptRefs(step.run).some((ref) => scripts.has(ref));
+}
+
+/** The court: returns every violation; an empty list is admission. */
+function toolchainCourt(subjects: WorkflowSubject[], scripts: Set<string>): { gatedJobs: string[]; violations: ToolchainViolation[] } {
+  const violations: ToolchainViolation[] = [];
+  const gatedJobs: string[] = [];
+  for (const { name, source, workflow } of subjects) {
+    for (const marker of inlinePinMarkers) {
+      if (source.includes(marker)) {
+        violations.push({ workflow: name, reason: `inline ggen pin material "${marker}"; use ${toolchainAction}` });
+      }
+    }
+    for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+      const steps = job.steps ?? [];
+      const first = steps.findIndex((step) => requiresToolchain(step, job, workflow, scripts));
+      if (first < 0) continue;
+      gatedJobs.push(`${name}:${jobName}`);
+      const install = steps.findIndex((step) => step.uses === toolchainAction);
+      const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@") ?? false);
+      if (install < 0) {
+        violations.push({ workflow: name, job: jobName, reason: `runs "${steps[first]!.run}" without ${toolchainAction}` });
+        continue;
+      }
+      if (install > first) {
+        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} runs after "${steps[first]!.run}"` });
+      }
+      if (checkout < 0 || checkout > install) {
+        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} runs before actions/checkout` });
+      }
+      if (steps[install]!.if !== undefined) {
+        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} is conditional (if: ${steps[install]!.if})` });
+      }
+    }
+  }
+  return { gatedJobs: gatedJobs.sort(), violations };
+}
+
+function readWorkflowSubjects(): WorkflowSubject[] {
+  const dir = resolve(root, ".github", "workflows");
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+    .sort()
+    .map((name) => {
+      const source = readFileSync(join(dir, name), "utf8");
+      return { name, source, workflow: parse(source) as Workflow };
+    });
+}
+
+function packageScripts(): Record<string, string> {
+  return (JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+}
+
+/** Re-parse a mutated source so the court judges the mutation, not the original object graph. */
+function mutate(subjects: WorkflowSubject[], name: string, edit: (source: string) => string): WorkflowSubject[] {
+  return subjects.map((subject) => {
+    if (subject.name !== name) return subject;
+    const source = edit(subject.source);
+    if (source === subject.source) throw new Error(`mutation of ${name} changed nothing`);
+    return { name, source, workflow: parse(source) as Workflow };
+  });
+}
+
+const compositeStepBlock = /\n {6}# ZCODE_REQUIRE_TOOLCHAINS=1 turns[^\n]*\n(?: {6}#[^\n]*\n)*? {6}- name: Install pinned ggen toolchain\n {8}uses: \.\/\.github\/actions\/ggen-toolchain\n/u;
+
+interface CompositeAction {
+  name?: string;
+  outputs?: Record<string, { value?: string }>;
+  runs: { using: string; steps: WorkflowStep[] };
+}
+
+function readToolchainAction(): CompositeAction {
+  return parse(readFileSync(toolchainActionPath, "utf8")) as CompositeAction;
+}
+
+interface ActionRun {
+  code: number;
+  stderr: string;
+  githubPath: string;
+  githubEnv: string;
+  githubOutput: string;
+  runnerTemp: string;
+}
+
+/** Execute the composite step's real bash with the runner file protocol, as the runner does. */
+async function runToolchainAction(env: Record<string, string>): Promise<ActionRun> {
+  const step = readToolchainAction().runs.steps[0]!;
+  const runnerTemp = mkdtempSync(join(tmpdir(), "zcode-ggen-toolchain-"));
+  const files = { path: join(runnerTemp, "GITHUB_PATH"), env: join(runnerTemp, "GITHUB_ENV"), output: join(runnerTemp, "GITHUB_OUTPUT") };
+  for (const file of Object.values(files)) writeFileSync(file, "");
+  const script = join(runnerTemp, "step.sh");
+  writeFileSync(script, step.run!);
+  const stepEnv = Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, String(value)]));
+  const child = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", script], {
+    env: {
+      PATH: process.env.PATH ?? "/usr/bin:/bin",
+      HOME: process.env.HOME ?? runnerTemp,
+      ...stepEnv,
+      RUNNER_TEMP: runnerTemp,
+      GITHUB_PATH: files.path,
+      GITHUB_ENV: files.env,
+      GITHUB_OUTPUT: files.output,
+      ...env
+    },
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  return {
+    code,
+    stderr,
+    githubPath: readFileSync(files.path, "utf8"),
+    githubEnv: readFileSync(files.env, "utf8"),
+    githubOutput: readFileSync(files.output, "utf8"),
+    runnerTemp
+  };
+}
+
+function hostRunner(): { RUNNER_OS: string; RUNNER_ARCH: string } {
+  const os = process.platform === "darwin" ? "macOS" : process.platform === "linux" ? "Linux" : process.platform;
+  const arch = process.arch === "arm64" ? "ARM64" : process.arch === "x64" ? "X64" : process.arch;
+  return { RUNNER_OS: os, RUNNER_ARCH: arch };
+}
+
+describe("ggen toolchain court", () => {
+  test("derives the toolchain-requiring scripts from package.json", () => {
+    const scripts = toolchainScripts(packageScripts());
+    for (const name of ["test:unit", "test:runtime", "test:all", "release:prepare", "release:build"]) {
+      expect(scripts.has(name)).toBe(true);
+    }
+    // Boundary: scripts that never set the flag stay outside the gate.
+    expect(scripts.has("test:node")).toBe(false);
+    expect(scripts.has("release:pack")).toBe(false);
+  });
+
+  test("every toolchain-requiring job installs ggen through the one composite action", () => {
+    const { gatedJobs, violations } = toolchainCourt(readWorkflowSubjects(), toolchainScripts(packageScripts()));
+    expect(violations).toEqual([]);
+    // Anti-vacuity: the court actually judged the five jobs that run such scripts.
+    expect(gatedJobs).toEqual([
+      "ci.yml:node-runtime",
+      "ci.yml:validate",
+      "prepare-release.yml:prepare",
+      "publish.yml:validate",
+      "release-commit.yml:preview"
+    ]);
+  });
+
+  test("no workflow carries an inline GGEN_SHA256 or other pin material", () => {
+    for (const { name, source } of readWorkflowSubjects()) {
+      for (const marker of inlinePinMarkers) {
+        expect({ name, marker, present: source.includes(marker) }).toEqual({ name, marker, present: false });
+      }
+    }
+  });
+
+  test("refuses prepare-release.yml when the composite step is removed (run 36186796685 shape)", () => {
+    const subjects = mutate(readWorkflowSubjects(), "prepare-release.yml", (source) => source.replace(compositeStepBlock, "\n"));
+    const { violations } = toolchainCourt(subjects, toolchainScripts(packageScripts()));
+    expect(violations).toEqual([
+      {
+        workflow: "prepare-release.yml",
+        job: "prepare",
+        reason: `runs "bun run release:prepare" without ${toolchainAction}`
+      }
+    ]);
+  });
+
+  test("refuses every gated workflow whose composite step is removed", () => {
+    const scripts = toolchainScripts(packageScripts());
+    for (const name of ["ci.yml", "publish.yml", "release-commit.yml", "prepare-release.yml"]) {
+      const subjects = mutate(readWorkflowSubjects(), name, (source) => source.replaceAll(new RegExp(compositeStepBlock.source, "gu"), "\n"));
+      const { violations } = toolchainCourt(subjects, scripts);
+      expect(violations.length).toBeGreaterThan(0);
+      expect(violations.every((violation) => violation.workflow === name && violation.reason.includes("without"))).toBe(true);
+    }
+  });
+
+  test("refuses the composite step placed after the toolchain-requiring step", () => {
+    const subjects = mutate(readWorkflowSubjects(), "prepare-release.yml", (source) => {
+      const withoutInstall = source.replace(compositeStepBlock, "\n");
+      return withoutInstall.replace(
+        "        run: bun run release:prepare\n",
+        "        run: bun run release:prepare\n\n      - name: Install pinned ggen toolchain\n        uses: ./.github/actions/ggen-toolchain\n"
+      );
+    });
+    const { violations } = toolchainCourt(subjects, toolchainScripts(packageScripts()));
+    expect(violations).toEqual([
+      {
+        workflow: "prepare-release.yml",
+        job: "prepare",
+        reason: `${toolchainAction} runs after "bun run release:prepare"`
+      }
+    ]);
+  });
+
+  test("refuses a conditional composite step and a reintroduced inline pin", () => {
+    const scripts = toolchainScripts(packageScripts());
+    const conditional = mutate(readWorkflowSubjects(), "publish.yml", (source) =>
+      source.replace("        uses: ./.github/actions/ggen-toolchain\n", "        if: false\n        uses: ./.github/actions/ggen-toolchain\n")
+    );
+    expect(toolchainCourt(conditional, scripts).violations).toEqual([
+      { workflow: "publish.yml", job: "validate", reason: `${toolchainAction} is conditional (if: false)` }
+    ]);
+    const inline = mutate(readWorkflowSubjects(), "ci.yml", (source) =>
+      source.replace("      - name: Build and test\n", `      - name: Build and test\n        env:\n          GGEN_SHA256: ${pinnedLinuxX64Sha256}\n`)
+    );
+    const reasons = toolchainCourt(inline, scripts).violations.map((violation) => `${violation.workflow}:${violation.reason}`);
+    expect(reasons).toContain(`ci.yml:inline ggen pin material "GGEN_SHA256"; use ${toolchainAction}`);
+  });
+
+  test("gates a job that runs a toolchain script it reaches only through another script", () => {
+    const scripts = toolchainScripts({ gate: "ZCODE_REQUIRE_TOOLCHAINS=1 bun test", wrapper: "bun run gate && echo ok", other: "bun test" });
+    expect([...scripts].sort()).toEqual(["gate", "wrapper"]);
+    const workflow = parse("on: push\njobs:\n  j:\n    steps:\n      - uses: actions/checkout@x\n      - run: bun run wrapper\n") as Workflow;
+    expect(toolchainCourt([{ name: "w.yml", source: "", workflow }], scripts).violations).toEqual([
+      { workflow: "w.yml", job: "j", reason: `runs "bun run wrapper" without ${toolchainAction}` }
+    ]);
+    const clean = parse("on: push\njobs:\n  j:\n    steps:\n      - run: bun run other\n") as Workflow;
+    expect(toolchainCourt([{ name: "w.yml", source: "", workflow: clean }], scripts)).toEqual({ gatedJobs: [], violations: [] });
+  });
+
+  test("the composite action holds the single pin set and verifies before exporting", () => {
+    const source = readFileSync(toolchainActionPath, "utf8");
+    const action = readToolchainAction();
+    expect(action.runs.using).toBe("composite");
+    expect(action.runs.steps).toHaveLength(1);
+    const step = action.runs.steps[0]!;
+    expect(step.shell).toBe("bash");
+    expect(step.env?.GGEN_VERSION).toBe("v26.9.18");
+    expect(step.env?.GGEN_SHA256_X86_64_UNKNOWN_LINUX_GNU).toBe(pinnedLinuxX64Sha256);
+    expect(step.env?.GGEN_MARKETPLACE_SHA).toBe(pinnedMarketplaceSha);
+    for (const [key, value] of Object.entries(step.env ?? {})) {
+      if (key.startsWith("GGEN_SHA256_")) expect(String(value)).toMatch(/^[0-9a-f]{64}$/u);
+    }
+    const run = step.run!;
+    const digestCheck = run.indexOf('if [[ "$actual" != "$GGEN_SHA256" ]]');
+    const pathExport = run.indexOf('>> "$GITHUB_PATH"');
+    const headCheck = run.indexOf('if [[ "$head" != "$GGEN_MARKETPLACE_SHA" ]]');
+    expect(digestCheck).toBeGreaterThan(-1);
+    expect(headCheck).toBeGreaterThan(-1);
+    expect(pathExport).toBeGreaterThan(digestCheck);
+    expect(pathExport).toBeGreaterThan(headCheck);
+    expect(run).toContain('echo "ZCODE_PACK_ROOT=$mp/packs" >> "$GITHUB_ENV"');
+    expect(action.outputs?.["pack-root"]?.value).toBe("${{ steps.install.outputs.pack-root }}");
+    // The pin set appears exactly once in the repository's CI surface.
+    expect(source.split(pinnedLinuxX64Sha256)).toHaveLength(2);
+    expect(source.split(pinnedMarketplaceSha)).toHaveLength(2);
+  });
+
+  test("refuses an unpinned platform before any download", async () => {
+    const result = await runToolchainAction({ RUNNER_OS: "Windows", RUNNER_ARCH: "X64" });
+    try {
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("REFUSED(UNSUPPORTED_PLATFORM)");
+      expect(result.githubPath).toBe("");
+      expect(result.githubEnv).toBe("");
+      expect(readdirSync(result.runnerTemp).some((name) => name.endsWith(".tar.gz"))).toBe(false);
+    } finally {
+      rmSync(result.runnerTemp, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a malformed pin before any download", async () => {
+    const result = await runToolchainAction({ ...hostRunner(), GGEN_SHA256_X86_64_UNKNOWN_LINUX_GNU: "abc", GGEN_SHA256_AARCH64_UNKNOWN_LINUX_GNU: "abc", GGEN_SHA256_X86_64_APPLE_DARWIN: "abc", GGEN_SHA256_AARCH64_APPLE_DARWIN: "abc" });
+    try {
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("REFUSED(INVALID_PIN)");
+      expect(result.githubPath).toBe("");
+    } finally {
+      rmSync(result.runnerTemp, { recursive: true, force: true });
+    }
+  });
+
+  // Network courts: real downloads from the pinned GitHub release. Named skip,
+  // never a substitute: set ZCODE_OFFLINE=1 only on a machine without network.
+  const offline = process.env.ZCODE_OFFLINE === "1";
+
+  test.skipIf(offline)("installs the verified ggen and pinned packs on this host (real download)", async () => {
+    const result = await runToolchainAction(hostRunner());
+    try {
+      expect({ code: result.code, refused: result.stderr.includes("REFUSED") }).toEqual({ code: 0, refused: false });
+      const bin = result.githubPath.trim();
+      expect(bin).toBe(join(result.runnerTemp, "ggen-bin"));
+      const version = Bun.spawnSync([join(bin, "ggen"), "--version"]);
+      expect(version.exitCode).toBe(0);
+      expect(new TextDecoder().decode(version.stdout) + new TextDecoder().decode(version.stderr)).toContain("26.9.18");
+      const packRoot = join(result.runnerTemp, "ggen-marketplace", "packs");
+      expect(result.githubEnv).toBe(`ZCODE_PACK_ROOT=${packRoot}\n`);
+      expect(result.githubOutput).toBe(`ggen-bin=${bin}\npack-root=${packRoot}\n`);
+      for (const pack of ["process-intelligence-pack", "state-transition-pack", "evidence-standing-pack", "shacl-projection-pack"]) {
+        expect(existsSync(join(packRoot, pack))).toBe(true);
+      }
+    } finally {
+      rmSync(result.runnerTemp, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  test.skipIf(offline)("refuses a tampered sha256 pin and never exports the binary (real download)", async () => {
+    const tampered = "0".repeat(64);
+    const result = await runToolchainAction({
+      ...hostRunner(),
+      GGEN_SHA256_X86_64_UNKNOWN_LINUX_GNU: tampered,
+      GGEN_SHA256_AARCH64_UNKNOWN_LINUX_GNU: tampered,
+      GGEN_SHA256_X86_64_APPLE_DARWIN: tampered,
+      GGEN_SHA256_AARCH64_APPLE_DARWIN: tampered
+    });
+    try {
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("REFUSED(DIGEST_MISMATCH)");
+      expect(result.githubPath).toBe("");
+      expect(result.githubEnv).toBe("");
+      expect(existsSync(join(result.runnerTemp, "ggen-bin"))).toBe(false);
+    } finally {
+      rmSync(result.runnerTemp, { recursive: true, force: true });
+    }
+  }, 180_000);
 });

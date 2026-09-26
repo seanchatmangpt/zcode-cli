@@ -86,32 +86,11 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # ZCODE_REQUIRE_TOOLCHAINS=1 turns a missing ggen into a hard failure
-      # (test/ocel-reuse.test.ts fixed-point + mutation courts). Pin the exact
-      # ggen release and verify its published sha256 before putting it on PATH.
-      - name: Install pinned ggen v26.9.18 and marketplace packs
-        env:
-          GGEN_VERSION: v26.9.18
-          GGEN_ASSET: ggen-x86_64-unknown-linux-gnu.tar.gz
-          GGEN_SHA256: 9f1d689d26c5628aa695ab775f3045387f54d17c07abb8383caf0ad88a5c09e4
-          GGEN_MARKETPLACE_SHA: 5eb71f7ed947f705a8d6b145cb9b0be82855d793
-        run: |
-          set -euo pipefail
-          curl -fsSL -o "$RUNNER_TEMP/$GGEN_ASSET" "https://github.com/seanchatmangpt/ggen/releases/download/$GGEN_VERSION/$GGEN_ASSET"
-          echo "$GGEN_SHA256  $RUNNER_TEMP/$GGEN_ASSET" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/ggen-bin"
-          tar -xzf "$RUNNER_TEMP/$GGEN_ASSET" -C "$RUNNER_TEMP/ggen-bin"
-          echo "$RUNNER_TEMP/ggen-bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ggen-bin/ggen" --version
-          # scripts/gen-ocel.ts --check also needs the four marketplace packs
-          # (default /Users/sac/ggen-marketplace/packs). Pin them by commit.
-          mp="$RUNNER_TEMP/ggen-marketplace"
-          git init -q "$mp"
-          git -C "$mp" remote add origin https://github.com/seanchatmangpt/ggen-marketplace
-          git -C "$mp" sparse-checkout set packs/process-intelligence-pack packs/state-transition-pack packs/evidence-standing-pack packs/shacl-projection-pack
-          git -C "$mp" fetch -q --depth 1 --filter=blob:none origin "$GGEN_MARKETPLACE_SHA"
-          git -C "$mp" checkout -q FETCH_HEAD
-          test "$(git -C "$mp" rev-parse HEAD)" = "$GGEN_MARKETPLACE_SHA"
-          echo "ZCODE_PACK_ROOT=$mp/packs" >> "$GITHUB_ENV"
+      # (test/ocel-reuse.test.ts fixed-point + mutation courts). The pins live
+      # only in .github/actions/ggen-toolchain; test/release-workflows.test.ts
+      # refuses any job that needs the toolchain without this step.
+      - name: Install pinned ggen toolchain
+        uses: ./.github/actions/ggen-toolchain
 
       - name: Build committed release
         run: bun run release:build
