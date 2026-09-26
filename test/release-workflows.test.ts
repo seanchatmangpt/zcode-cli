@@ -15,6 +15,7 @@ const actionShas = {
 } as const;
 
 interface WorkflowStep {
+  "continue-on-error"?: boolean | string;
   env?: Record<string, unknown>;
   shell?: string;
   id?: string;
@@ -341,6 +342,34 @@ function requiresToolchain(step: WorkflowStep, job: WorkflowJob, workflow: Workf
   return scriptRefs(step.run).some((ref) => scripts.has(ref));
 }
 
+/**
+ * A step whose failure does not stop the job. `continue-on-error: true` (or any
+ * expression that may evaluate true) lets a failed install fall through to the
+ * toolchain-requiring step, which reproduces run 36186796685. Only an absent key
+ * or a literal false keeps the install load-bearing.
+ */
+function failureTolerated(step: WorkflowStep): string | undefined {
+  const value = step["continue-on-error"];
+  if (value === undefined || value === false || value === "false") return undefined;
+  return String(value);
+}
+
+/** Court over the composite action itself: every internal step must be unconditional and fail-stop. */
+function compositeCourt(action: CompositeAction): string[] {
+  const violations: string[] = [];
+  if (action.runs?.using !== "composite") violations.push(`runs.using is ${String(action.runs?.using)}, not composite`);
+  for (const [index, step] of (action.runs?.steps ?? []).entries()) {
+    const label = step.id ?? step.name ?? String(index);
+    if (step.if !== undefined) violations.push(`step ${label} is conditional (if: ${step.if})`);
+    const tolerated = failureTolerated(step);
+    if (tolerated !== undefined) violations.push(`step ${label} tolerates failure (continue-on-error: ${tolerated})`);
+    if (step.run !== undefined && !/^\s*set -euo pipefail\s*$/mu.test(step.run)) {
+      violations.push(`step ${label} does not start fail-stop (set -euo pipefail)`);
+    }
+  }
+  return violations;
+}
+
 /** The court: returns every violation; an empty list is admission. */
 function toolchainCourt(subjects: WorkflowSubject[], scripts: Set<string>): { gatedJobs: string[]; violations: ToolchainViolation[] } {
   const violations: ToolchainViolation[] = [];
@@ -370,6 +399,10 @@ function toolchainCourt(subjects: WorkflowSubject[], scripts: Set<string>): { ga
       }
       if (steps[install]!.if !== undefined) {
         violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} is conditional (if: ${steps[install]!.if})` });
+      }
+      const tolerated = failureTolerated(steps[install]!);
+      if (tolerated !== undefined) {
+        violations.push({ workflow: name, job: jobName, reason: `${toolchainAction} tolerates failure (continue-on-error: ${tolerated})` });
       }
     }
   }
@@ -547,6 +580,57 @@ describe("ggen toolchain court", () => {
     );
     const reasons = toolchainCourt(inline, scripts).violations.map((violation) => `${violation.workflow}:${violation.reason}`);
     expect(reasons).toContain(`ci.yml:inline ggen pin material "GGEN_SHA256"; use ${toolchainAction}`);
+  });
+
+  test("refuses a composite step that tolerates failure (continue-on-error mutant M7)", () => {
+    const scripts = toolchainScripts(packageScripts());
+    for (const value of ["true", "${{ github.event_name == 'schedule' }}"]) {
+      const subjects = mutate(readWorkflowSubjects(), "prepare-release.yml", (source) =>
+        source.replace(
+          "        uses: ./.github/actions/ggen-toolchain\n",
+          `        uses: ./.github/actions/ggen-toolchain\n        continue-on-error: ${value}\n`
+        )
+      );
+      expect(toolchainCourt(subjects, scripts).violations).toEqual([
+        {
+          workflow: "prepare-release.yml",
+          job: "prepare",
+          reason: `${toolchainAction} tolerates failure (continue-on-error: ${value})`
+        }
+      ]);
+    }
+    // Boundary: an explicit literal false keeps the install fail-stop and is admitted.
+    const explicitFalse = mutate(readWorkflowSubjects(), "prepare-release.yml", (source) =>
+      source.replace(
+        "        uses: ./.github/actions/ggen-toolchain\n",
+        "        uses: ./.github/actions/ggen-toolchain\n        continue-on-error: false\n"
+      )
+    );
+    expect(toolchainCourt(explicitFalse, scripts).violations).toEqual([]);
+    // Every gated workflow is covered, not only prepare-release.yml.
+    for (const name of ["ci.yml", "publish.yml", "release-commit.yml"]) {
+      const mutant = mutate(readWorkflowSubjects(), name, (source) =>
+        source.replaceAll(
+          "        uses: ./.github/actions/ggen-toolchain\n",
+          "        uses: ./.github/actions/ggen-toolchain\n        continue-on-error: true\n"
+        )
+      );
+      const violations = toolchainCourt(mutant, scripts).violations;
+      expect(violations.length).toBeGreaterThan(0);
+      expect(violations.every((violation) => violation.workflow === name && violation.reason.includes("tolerates failure"))).toBe(true);
+    }
+  });
+
+  test("the composite action's own step is unconditional and fail-stop", () => {
+    const action = readToolchainAction();
+    expect(compositeCourt(action)).toEqual([]);
+    const source = readFileSync(toolchainActionPath, "utf8");
+    const tolerant = parse(source.replace("      id: install\n", "      id: install\n      continue-on-error: true\n")) as CompositeAction;
+    expect(compositeCourt(tolerant)).toEqual(["step install tolerates failure (continue-on-error: true)"]);
+    const conditional = parse(source.replace("      id: install\n", "      id: install\n      if: always()\n")) as CompositeAction;
+    expect(compositeCourt(conditional)).toEqual(["step install is conditional (if: always())"]);
+    const lax = parse(source.replace("        set -euo pipefail\n", "\n")) as CompositeAction;
+    expect(compositeCourt(lax)).toEqual(["step install does not start fail-stop (set -euo pipefail)"]);
   });
 
   test("gates a job that runs a toolchain script it reaches only through another script", () => {
