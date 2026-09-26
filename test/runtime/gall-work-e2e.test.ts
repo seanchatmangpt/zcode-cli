@@ -243,6 +243,95 @@ describe("gall-work end-to-end against a mocked fabric", () => {
     expect(order.epoch_id).toBe(epochId);
   });
 
+  test("descriptor run binds exact base and emits a portable fresh-job handoff", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    const leasePath = join(worktree, ".gall-lease.json");
+    writeFileSync(leasePath, JSON.stringify({
+      schema: "gall.work-lease/1",
+      work_order_iri: "urn:gall:work-order:handoff:1",
+      checkpoint_iri: "urn:gall:checkpoint:handoff:1",
+      graph_digest: "sha256:" + "a".repeat(64),
+      repository_identity: "seanchatmangpt/zcode-cli",
+      base_sha: baseHead,
+      epoch_id: epochId,
+      worker_id: workerId,
+      worktree
+    }));
+
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "heartbeat", respond: () => ({ ok: true, payload: { status: "renewed" } }) },
+      {
+        tool: "close_candidate",
+        respond: () => ({ ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } })
+      }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(["--lease", leasePath, "--json"], {
+      fabricTarget: { url: fabric.url },
+      construct: constructThat(worktree, { exitCode: 0 }),
+      io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+    });
+
+    expect(exit).toBe(0);
+    const result = JSON.parse(chunks.join("")) as Record<string, unknown>;
+    const handoff = result.handoff as Record<string, unknown>;
+    expect(handoff.schema).toBe("gall.work-handoff/1");
+    expect(handoff.base_sha).toBe(baseHead);
+    expect(handoff.final_head).toBe(baseHead);
+    expect(handoff.handoff_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(handoff.producer_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(handoff.authority).toBe("none");
+    expect(JSON.stringify(handoff)).not.toContain(worktree);
+    expect(JSON.stringify(handoff)).not.toContain(workerId);
+    expect(JSON.stringify(handoff)).not.toContain(epochId);
+
+    const close = fabric.callsFor("close_candidate")[0]!;
+    const evidence = close.evidence as Record<string, unknown>;
+    expect(evidence.handoff).toEqual(handoff);
+  });
+
+  test("descriptor base drift is refused before persist or construct", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    const leasePath = join(worktree, ".gall-lease-drift.json");
+    writeFileSync(leasePath, JSON.stringify({
+      schema: "gall.work-lease/1",
+      work_order_iri: "urn:gall:work-order:drift:1",
+      checkpoint_iri: "urn:gall:checkpoint:drift:1",
+      graph_digest: "sha256:" + "b".repeat(64),
+      repository_identity: "seanchatmangpt/zcode-cli",
+      base_sha: "f".repeat(40),
+      epoch_id: epochId,
+      worker_id: workerId,
+      worktree
+    }));
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "refuse", respond: () => ({ ok: true, payload: { status: "refused", epoch_id: epochId } }) }
+    ]);
+
+    let constructed = false;
+    const chunks: string[] = [];
+    const exit = await runGallWork(["--lease", leasePath, "--json"], {
+      fabricTarget: { url: fabric.url },
+      construct: async () => {
+        constructed = true;
+        return { exitCode: 0, signal: null, outputTail: "", durationMs: 1 };
+      },
+      io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+    });
+
+    expect(exit).toBe(0);
+    expect(constructed).toBe(false);
+    const result = JSON.parse(chunks.join("")) as Record<string, unknown>;
+    expect(result.standing).toBe("REFUSED_SUBJECT_MISMATCH");
+    expect(result.code).toBe("base_sha_mismatch");
+    expect(String(result.detail)).toContain(baseHead);
+    expect(fabric.calls.map((call) => call.tool)).toEqual(["claim_next", "refuse"]);
+    expect(existsSync(leaseFilePaths(worktree)[0]!)).toBe(false);
+  });
+
   test("claim refusal is typed, exit 1, and nothing else is called", async () => {
     const { fabric, worktree } = harness;
     fabric.script([
