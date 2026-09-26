@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -241,6 +241,36 @@ describe("release workflows", () => {
     expect(rebuild?.run).toContain("cmp --");
     expect(stateCheck?.run).toContain("gitHead");
     expect(stateCheck?.run).toContain("TAG_COMMIT");
+    // Typed skip reasons: every channel emits a machine-readable cause alongside
+    // its boolean, including on the refusal exits (emitted before `exit 1`).
+    expect(stateCheck?.run).toContain('PUBLISH_REASON="ALREADY_PUBLISHED"');
+    expect(stateCheck?.run).toContain('PUBLISH_REASON="NOT_REQUESTED"');
+    expect(stateCheck?.run).toContain("publish_reason=SUPERSEDED_NEWER_RELEASE");
+    expect(stateCheck?.run).toContain('TAG_REASON="TAG_EXISTS"');
+    expect(stateCheck?.run).toContain("create_tag_reason=TAG_MISMATCH_REFUSED");
+    expect(stateCheck?.run).toContain('RELEASE_REASON="RELEASE_EXISTS"');
+    expect(stateCheck?.run).toContain('ENABLED_REASON="NOT_REQUESTED"');
+    // Compat: the privileged steps still gate on the booleans, never on reasons.
+    expect(publish?.if).toBe(
+      "steps.release.outputs.enabled == 'true' && steps.release.outputs.publish == 'true'"
+    );
+    expect(publishJob.steps.find((step) => step.name === "Create immutable Git tag")?.if).toBe(
+      "steps.release.outputs.enabled == 'true' && steps.release.outputs.create_tag == 'true'"
+    );
+    expect(publishJob.steps.find((step) => step.name === "Create GitHub Release")?.if).toBe(
+      "steps.release.outputs.enabled == 'true' && steps.release.outputs.create_release == 'true'"
+    );
+    // The summary renders the active typed reason per channel, not a bare boolean.
+    const summary = publishJob.steps.find((step) => step.name === "Summarize release")!;
+    expect(summary.env?.ENABLED_REASON).toBe("${{ steps.release.outputs.enabled_reason }}");
+    expect(summary.env?.PUBLISH_REASON).toBe("${{ steps.release.outputs.publish_reason }}");
+    expect(summary.env?.CREATE_TAG_REASON).toBe("${{ steps.release.outputs.create_tag_reason }}");
+    expect(summary.env?.CREATE_RELEASE_REASON).toBe("${{ steps.release.outputs.create_release_reason }}");
+    expect(summary.run).toContain("(${ENABLED_REASON:-NOT_EVALUATED})");
+    expect(summary.run).toContain("(${PUBLISH_REASON:-NOT_EVALUATED})");
+    expect(summary.run).toContain("(${CREATE_TAG_REASON:-NOT_EVALUATED})");
+    expect(summary.run).toContain("(${CREATE_RELEASE_REASON:-NOT_EVALUATED})");
+    expect(summary.run).toContain("GitHub release:");
     await expect(runInlineVersionComparator(stateCheck!.run!, "3.3.7-1", "3.3.6-99")).resolves.toBe("1");
     await expect(runInlineVersionComparator(stateCheck!.run!, "3.3.6-5", "3.3.6-5")).resolves.toBe("0");
     await expect(runInlineVersionComparator(stateCheck!.run!, "3.3.6-4", "3.3.6-5")).resolves.toBe("-1");
@@ -259,6 +289,277 @@ describe("release workflows", () => {
 
   test("removes the direct scheduled publishing workflow", () => {
     expect(existsSync(resolve(root, ".github", "workflows", "sync-and-publish.yml"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Typed publish skip reasons: the real "Inspect release state" bash is executed
+// against stub npm/git/gh binaries so each skip cause is pinned to its reason
+// token (and its refusal exit) by observed execution, not string inspection.
+// ---------------------------------------------------------------------------
+
+interface BashStepRun {
+  code: number;
+  stderr: string;
+  outFile: string;
+  outputs: Record<string, string>;
+}
+
+function parseGitHubOutputs(content: string): Record<string, string> {
+  const outputs: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const match = /^([^=]+)=(.*)$/u.exec(line);
+    if (match) outputs[match[1]!] = match[2]!;
+  }
+  return outputs;
+}
+
+async function runBashStep(options: {
+  script: string;
+  env: Record<string, string>;
+  stubs?: Record<string, string>;
+  outFileEnv: "GITHUB_OUTPUT" | "GITHUB_STEP_SUMMARY";
+}): Promise<BashStepRun> {
+  const workspace = mkdtempSync(join(tmpdir(), "zcode-publish-skip-"));
+  const bin = join(workspace, "bin");
+  mkdirSync(bin, { recursive: true });
+  for (const [name, body] of Object.entries(options.stubs ?? {})) {
+    writeFileSync(join(bin, name), body);
+    chmodSync(join(bin, name), 0o755);
+  }
+  const outFile = join(workspace, options.outFileEnv);
+  writeFileSync(outFile, "");
+  const scriptPath = join(workspace, "step.sh");
+  writeFileSync(scriptPath, options.script);
+  const child = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", scriptPath], {
+    cwd: workspace,
+    env: {
+      PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      HOME: process.env.HOME ?? workspace,
+      ...options.env,
+      [options.outFileEnv]: outFile
+    },
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  const outFileContent = readFileSync(outFile, "utf8");
+  rmSync(workspace, { recursive: true, force: true });
+  return { code, stderr, outFile: outFileContent, outputs: parseGitHubOutputs(outFileContent) };
+}
+
+describe("publish skip reasons", () => {
+  const PACKAGE_NAME = "zcode-cli";
+  const PACKAGE_VERSION = "9.9.9-1";
+  const TAG = `v${PACKAGE_VERSION}`;
+  const EXPECTED_COMMIT = "2222222222222222222222222222222222222222";
+  const OTHER_COMMIT = "1111111111111111111111111111111111111111";
+
+  const inspectScript = async () =>
+    (await readWorkflow("publish.yml")).workflow.jobs.publish!.steps.find(
+      (step) => step.name === "Inspect release state"
+    )!.run!;
+
+  const baseEnv = (over: Record<string, string> = {}): Record<string, string> => ({
+    EXPECTED_COMMIT,
+    EVENT_NAME: "pull_request",
+    PACKAGE_NAME,
+    PACKAGE_VERSION,
+    PUBLISH_REQUESTED: "true",
+    GH_TOKEN: "stub",
+    ...over
+  });
+
+  // Stub binaries: npm/git/gh are scenario-driven via STUB_* env; `node` is
+  // delegated to the test runtime so the version comparator runs for real.
+  const stubs = (): Record<string, string> => ({
+    npm: [
+      "#!/usr/bin/env bash",
+      'if [[ "${1:-}" != "view" ]]; then exit 1; fi',
+      'spec="$2"; field="$3"',
+      'if [[ "$spec" == *"@latest" ]]; then',
+      '  if [[ -n "${STUB_LATEST_VERSION:-}" ]]; then echo "$STUB_LATEST_VERSION"; exit 0; fi',
+      "  exit 1",
+      "fi",
+      'if [[ "${STUB_PUBLISHED:-0}" == "1" ]]; then',
+      '  if [[ "$field" == "version" ]]; then echo "$spec"; exit 0; fi',
+      '  if [[ "$field" == "gitHead" ]]; then echo "${STUB_GITHEAD:-}"; exit 0; fi',
+      "fi",
+      "exit 1",
+      ""
+    ].join("\n"),
+    git: [
+      "#!/usr/bin/env bash",
+      'if [[ "${1:-}" == "fetch" ]]; then exit 0; fi',
+      'if [[ "${1:-}" == "rev-list" ]]; then',
+      '  if [[ -n "${STUB_TAG_COMMIT:-}" ]]; then echo "$STUB_TAG_COMMIT"; fi',
+      "  exit 0",
+      "fi",
+      "exit 0",
+      ""
+    ].join("\n"),
+    gh: [
+      "#!/usr/bin/env bash",
+      'if [[ "${1:-} ${2:-}" == "release view" ]]; then',
+      '  if [[ "${STUB_RELEASE_EXISTS:-0}" == "1" ]]; then exit 0; fi',
+      "  exit 1",
+      "fi",
+      "exit 0",
+      ""
+    ].join("\n"),
+    node: [
+      "#!/usr/bin/env bash",
+      'program="$(mktemp -d)/program.js"',
+      "cat > \"$program\"",
+      `exec ${JSON.stringify(process.execPath)} "$program"`,
+      ""
+    ].join("\n")
+  });
+
+  test("a fresh release reports the affirmative reasons and runs every channel", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv(),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(0);
+    expect(run.outputs).toEqual({
+      enabled: "true",
+      enabled_reason: "RELEASE_MERGE",
+      publish: "true",
+      publish_reason: "NEW_VERSION",
+      create_tag: "true",
+      create_tag_reason: "CREATE",
+      create_release: "true",
+      create_release_reason: "CREATE",
+      tag: TAG
+    });
+  });
+
+  test("an already-published release pins ALREADY_PUBLISHED, TAG_EXISTS, RELEASE_EXISTS", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv({
+        EVENT_NAME: "workflow_dispatch",
+        STUB_PUBLISHED: "1",
+        STUB_GITHEAD: EXPECTED_COMMIT,
+        STUB_TAG_COMMIT: EXPECTED_COMMIT,
+        STUB_RELEASE_EXISTS: "1"
+      }),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(0);
+    expect(run.outputs).toEqual({
+      enabled: "true",
+      enabled_reason: "MANUAL_REQUEST",
+      publish: "false",
+      publish_reason: "ALREADY_PUBLISHED",
+      create_tag: "false",
+      create_tag_reason: "TAG_EXISTS",
+      create_release: "false",
+      create_release_reason: "RELEASE_EXISTS",
+      tag: TAG
+    });
+  });
+
+  test("manual dispatch without publish keeps booleans but pins NOT_REQUESTED on every channel", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv({ EVENT_NAME: "workflow_dispatch", PUBLISH_REQUESTED: "false" }),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(0);
+    // The channels are still inspected (booleans keep their inspection meaning);
+    // the typed reasons carry the explanation for the skipped mutations.
+    expect(run.outputs).toEqual({
+      enabled: "false",
+      enabled_reason: "NOT_REQUESTED",
+      publish: "true",
+      publish_reason: "NOT_REQUESTED",
+      create_tag: "true",
+      create_tag_reason: "NOT_REQUESTED",
+      create_release: "true",
+      create_release_reason: "NOT_REQUESTED",
+      tag: TAG
+    });
+  });
+
+  test("a tag pointing elsewhere refuses with create_tag_reason=TAG_MISMATCH_REFUSED", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv({ STUB_TAG_COMMIT: OTHER_COMMIT }),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("already points to");
+    expect(run.outputs.create_tag_reason).toBe("TAG_MISMATCH_REFUSED");
+  });
+
+  test("an older-or-equal version refuses with publish_reason=SUPERSEDED_NEWER_RELEASE", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv({ STUB_LATEST_VERSION: "9.9.9-2" }),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("Refusing to move latest from");
+    expect(run.outputs.publish_reason).toBe("SUPERSEDED_NEWER_RELEASE");
+  });
+
+  test("a published release with an unverifiable gitHead still refuses", async () => {
+    const run = await runBashStep({
+      script: await inspectScript(),
+      env: baseEnv({ STUB_PUBLISHED: "1", STUB_GITHEAD: "", STUB_TAG_COMMIT: EXPECTED_COMMIT }),
+      stubs: stubs(),
+      outFileEnv: "GITHUB_OUTPUT"
+    });
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("no gitHead");
+    expect(run.outputs.publish_reason).toBeUndefined();
+  });
+
+  test("the summary renders each active typed reason and the NOT_EVALUATED fallback", async () => {
+    const { workflow } = await readWorkflow("publish.yml");
+    const summarize = workflow.jobs.publish!.steps.find(
+      (step) => step.name === "Summarize release"
+    )!.run!;
+    const rendered = await runBashStep({
+      script: summarize,
+      env: {
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        ENABLED: "true",
+        ENABLED_REASON: "MANUAL_REQUEST",
+        PUBLISH: "false",
+        PUBLISH_REASON: "ALREADY_PUBLISHED",
+        TAG,
+        CREATE_TAG_REASON: "TAG_EXISTS",
+        CREATE_RELEASE: "false",
+        CREATE_RELEASE_REASON: "RELEASE_EXISTS"
+      },
+      outFileEnv: "GITHUB_STEP_SUMMARY"
+    });
+    expect(rendered.code).toBe(0);
+    expect(rendered.outFile).toContain("Mutations enabled: true (MANUAL_REQUEST)");
+    expect(rendered.outFile).toContain("npm publication required: false (ALREADY_PUBLISHED)");
+    expect(rendered.outFile).toContain(`Git tag: ${TAG} (TAG_EXISTS)`);
+    expect(rendered.outFile).toContain("GitHub release: false (RELEASE_EXISTS)");
+
+    const unevaluated = await runBashStep({
+      script: summarize,
+      env: { PACKAGE_NAME, PACKAGE_VERSION },
+      outFileEnv: "GITHUB_STEP_SUMMARY"
+    });
+    expect(unevaluated.code).toBe(0);
+    expect(unevaluated.outFile).toContain("Mutations enabled: unknown (NOT_EVALUATED)");
+    expect(unevaluated.outFile).toContain("npm publication required: unknown (NOT_EVALUATED)");
+    expect(unevaluated.outFile).toContain("Git tag: unknown (NOT_EVALUATED)");
+    expect(unevaluated.outFile).toContain("GitHub release: unknown (NOT_EVALUATED)");
   });
 });
 
