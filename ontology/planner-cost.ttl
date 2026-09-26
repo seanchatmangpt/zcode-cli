@@ -1,0 +1,15 @@
+@prefix ce: <https://chatman.ai/equilibrium#> .
+ce:Planner a ce:SemanticClass .
+ce:Policy a ce:SemanticClass .
+ce:Role a ce:SemanticClass .
+ce:Agent a ce:SemanticClass .
+ce:Authority a ce:SemanticClass .
+ce:DO a ce:SemanticClass .
+ce:Standing a ce:SemanticClass .
+ce:HDDL a ce:Planner .
+ce:FOND a ce:Planner .
+ce:POWL a ce:Planner .
+ce:OcelCostPolicy a ce:Policy ; ce:authorityCeiling ce:SELECT ; ce:externalDoCount 0 ; ce:requiresExactSubject true ; ce:providerNeutral true ; ce:deterministicReplay true .
+ce:SELECT ce:distinctFrom ce:DO, ce:Authority, ce:Standing .
+ce:Planner ce:distinctFrom ce:Policy, ce:Role, ce:Agent, ce:Authority, ce:DO, ce:Standing .
+ce:DO ce:soleBoundary ce:BRCE .
