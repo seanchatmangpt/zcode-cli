@@ -818,6 +818,43 @@ export async function runGallWork(
     });
   }
 
+  if (request.descriptor) {
+    let observedBase: string;
+    try {
+      observedBase = await gitHead(request.cwd);
+    } catch (error) {
+      const receipt = await typedRefusal("blocked");
+      return finish({
+        schema: "gall.work-result/1",
+        standing: receipt ? "REFUSED" : "REFUSED_NO_BASE_HEAD",
+        epochId: request.epochId,
+        workerId: request.workerId,
+        receipt,
+        code: "base_head_unavailable",
+        detail: error instanceof Error ? error.message : String(error),
+        stages: {
+          claim: { ok: true },
+          persist: { ok: false, code: "base_head_unavailable" }
+        }
+      });
+    }
+    if (observedBase !== request.descriptor.base_sha) {
+      const receipt = await typedRefusal("no_authority");
+      return finish({
+        schema: "gall.work-result/1",
+        standing: "REFUSED_SUBJECT_MISMATCH",
+        epochId: request.epochId,
+        workerId: request.workerId,
+        receipt,
+        code: "base_sha_mismatch",
+        detail: `lease base ${request.descriptor.base_sha}, observed HEAD ${observedBase}`,
+        stages: {
+          claim: { ok: false, code: "base_sha_mismatch" }
+        }
+      });
+    }
+  }
+
   // -- persist --------------------------------------------------------------
   try {
     await saveLeaseFiles(request.cwd, claimResult);
@@ -894,6 +931,9 @@ export async function runGallWork(
 
   const turnCompleted = construct.exitCode === 0;
   const outcome = turnCompleted ? "alive" : "blocked";
+  const handoff = request.descriptor
+    ? buildGallWorkHandoff(request.descriptor, head)
+    : undefined;
   const semanticEvidence = request.descriptor
     ? {
         semantic_identity: {
@@ -902,7 +942,8 @@ export async function runGallWork(
           graph_digest: request.descriptor.graph_digest,
           repository_identity: request.descriptor.repository_identity,
           base_sha: request.descriptor.base_sha
-        }
+        },
+        handoff
       }
     : {};
   const closed = await call("close_candidate", {
@@ -949,6 +990,7 @@ export async function runGallWork(
     finalHead: head,
     runtimeExitCode: construct.exitCode,
     receipt: closed.result,
+    ...(handoff ? { handoff } : {}),
     stages: {
       claim: { ok: true },
       persist: { ok: true },
