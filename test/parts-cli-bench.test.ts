@@ -15,11 +15,15 @@ describe("parts alternatives benchmark bound", () => {
     expect(row.median_ms).toBeLessThan(1000);
   });
 
-  test("scaling is near-linear: 20k/2k median ratio stays under 40 (10x input)", () => {
-    const small = benchSize(2_000, 5);
-    const large = benchSize(20_000, 5);
-    const ratio = large.median_ms / Math.max(small.median_ms, 0.05);
-    expect(ratio).toBeLessThan(40);
+  // min_ms (not median) is the estimator least disturbed by GC pauses and host
+  // load. 32x more input: linear cost gives ~32x, quadratic ~1024x; the bound
+  // of 256 separates the two with room for a saturated host (measured: a
+  // 10x/median variant of this court flaked at ratio 147 under load ~335).
+  test("scaling is near-linear: 32k/1k min-time ratio stays under 256 (32x input)", () => {
+    const small = benchSize(1_000, 9);
+    const large = benchSize(32_000, 9);
+    const ratio = large.min_ms / Math.max(small.min_ms, 0.05);
+    expect(ratio).toBeLessThan(256);
   });
 
   test("seeded graph is deterministic: identical result digests across runs", () => {
