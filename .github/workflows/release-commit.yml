@@ -67,13 +67,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # Install https://github.com/apps/pkg-pr-new on this repository first.
-      # Upload the exact tarball that passed the install smoke test, without repacking it.
+      # The pkg-pr-new App (https://github.com/apps/pkg-pr-new) must be
+      # installed on the repository for the publish to work. When it is not,
+      # the CLI exits 1 with a 404 naming the app. That is a repo-configuration
+      # state, not a build defect — classify it as a typed skip so the standing
+      # red cannot mask real publish regressions (falsified 2026-09-26: PRs
+      # #9/#12/#14 all carried this red while build/pack/upload were green).
+      # Any other publish failure still fails the job.
       - name: Publish commit package
         env:
           PREVIEW_TARBALL: ${{ steps.pack.outputs.tarball }}
-        run: bun run pkg-pr-new publish "$PREVIEW_TARBALL" --bin --comment=update --commentWithSha --no-template --json .release/preview.json
+        run: |
+          set -o pipefail
+          if bun run pkg-pr-new publish "$PREVIEW_TARBALL" --bin --comment=update --commentWithSha --no-template --json .release/preview.json 2>&1 | tee /tmp/pkg-pr-new-publish.log; then
+            echo "preview publish: ok"
+          elif grep -q "apps/pkg-pr-new is not installed" /tmp/pkg-pr-new-publish.log; then
+            echo "::warning::pkg-pr-new App is not installed on this repository; commit preview not published. Build, pack, install smoke test and artifact upload above are still verified. Install https://github.com/apps/pkg-pr-new to enable preview publishes."
+            echo "### Preview publish skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "The pkg-pr-new App is not installed on this repository, so no commit-preview package was published. The tarball that passed the install smoke test is in the \`commit-preview-*\` artifact above." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "preview publish failed (not the known app-not-installed case):"
+            cat /tmp/pkg-pr-new-publish.log
+            exit 1
+          fi
 
       - name: Show preview command
+        if: hashFiles('.release/preview.json') != ''
         run: |
           jq -r '.packages[] | "Preview package: \(.url)\n\n```sh\nnpx --yes \(.url) --resume <session-id>\n```"' .release/preview.json >> "$GITHUB_STEP_SUMMARY"
