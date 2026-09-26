@@ -76,6 +76,14 @@ The following variables are supported host integration points:
 | `ZCODE_BASE_URL` | Override the official ZCode service base URL. |
 | `ZCODE_MODEL_RETRY_MAX_RETRIES` | Override the model retry limit. |
 | `ZCODE_TUI_RUNTIME_LOG` | Choose the bounded diagnostic log for TUI runtime stderr. |
+| `ZCODE_FABRIC_MAX_CONCURRENT` | Cap gall-work fabric concurrency (default 4). |
+
+Provider capacity handling: gall-work fabric calls classify HTTP 429 and
+business error 1302 as capacity errors and retry with bounded exponential
+backoff (3 attempts, 500 ms–4 s with jitter). Exhaustion is a typed
+`ProviderCapacityRefusal` with code `http_429`, `provider_1302`,
+`retry_exhausted`, or `concurrency_capped`; it is never re-dispatched as a
+prompt.
 
 Hosts should pass user configuration through the normal ZCode environment and
 configuration files. Do not put API keys or other secrets in command-line

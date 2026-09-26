@@ -321,4 +321,13 @@ zcode
 如果捆绑 runtime 没有官方 MCP 的可信来源 registry，官方 HTTP MCP 服务会显示为禁用，
 诊断码为 `official_auth_unavailable`。插件的其他组件仍然可用。
 这不会关闭证书、来源或权限校验；runtime 提供所需 registry 时也不会抑制服务。
+
+## 回合上限（--max-turns）
+
+`zcode --max-turns N ...`（或环境变量 `ZCODE_MAX_TURNS=N`，该变量同样会传给
+`zcode app-server`）限制每个回合的模型调用步数。达到 N 时，回合以 `error_max_turns`
+（"Reached maximum number of turns (N)."）失败。启动器会把该标志转换为对应的环境变量；
+sync-runtime 的 max-turns 补丁在 `runRegularTurnLoop` 内读取
+`config.maxTurns ?? ZCODE_MAX_TURNS`。
+实测驱动脚本：`node scripts/max-turns-live.mjs <N> <out.jsonl>`。
 该处理不会改写用户配置。
