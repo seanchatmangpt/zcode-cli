@@ -326,7 +326,7 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
   })();
   const outcome = await runConstruct(
     {
-      workerId, epochId, cwd: "/tmp", json: true, heartbeatSeconds: 15,
+      workerId, epochId, cwd: "/tmp", json: true, heartbeatSeconds: 15, constructDeadlineSeconds: 0,
       descriptor: {
         schema: "gall.work-lease/1",
         work_order_iri: "https://w3id.org/chatman/sjira/v26.9.22#ZOCEL-TEST",
@@ -341,7 +341,7 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
     },
     "prompt",
     async () => {},
-    spawnImpl
+    { spawnImpl }
   );
   expect(outcome.exitCode).toBe(0);
   expect(recorded.argv[0]?.endsWith("vendor/zcode.cjs")).toBe(true);
