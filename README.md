@@ -439,8 +439,19 @@ Z.AI browser OAuth currently requires macOS because the registered provider
 callback is `zcode://zai-auth/callback`; API-key and custom-provider access work
 on every supported platform.
 
-Set `ZCODE_NODE=/absolute/path/to/node` when the desired Node.js executable is
-not available on `PATH`.
+The launcher resolves a Node.js interpreter for the vendored runtime (which
+requires node ≥ 22.19 for `node:sqlite`) in this order:
+
+1. an explicit `ZCODE_NODE` override;
+2. the current process executable, when it is node ≥ 22;
+3. well-known Homebrew and system install paths (`/opt/homebrew/opt/node/bin/node`,
+   `/opt/homebrew/bin/node`, `/usr/local/bin/node`, `/usr/bin/node`, then the
+   first `node` on `PATH`).
+
+If nothing qualifies, the launcher refuses with a typed no-node-found error
+instead of dispatching a runtime that cannot boot. Set
+`ZCODE_NODE=/absolute/path/to/node` when the desired Node.js executable is
+not covered by this order.
 
 ## Configuration
 

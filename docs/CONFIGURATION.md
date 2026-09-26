@@ -53,6 +53,15 @@ settings again. The old
 file is never used as a runtime configuration fallback. Invalid new files are
 reported rather than replaced by old settings.
 
+When the legacy config yields zero importable candidates, migration records
+the completed no-op marker pre-flight without opening the shared provider
+config at all, so a registry that reports recovery on read does not re-trip
+the migration on every start. Conversely, if the shared provider config needs
+recovery, startup fails closed: both the registry and the marker are left
+untouched, and the error names the expected marker path with repair steps
+(fix or remove the provider config file, then relaunch — the migration reruns
+while the marker is absent).
+
 ## Setting ownership and precedence
 
 | Setting or action | Read/write behavior |
@@ -77,6 +86,15 @@ The native registry loads the bundled catalog and manages upstream catalog
 refreshes. `/model`, model cycling, and **Settings > Model providers** refresh
 the current registry from its configuration sources. The session is retained.
 The CLI does not keep a separate legacy model catalog cache.
+
+The `/model` picker reloads its options from the provider registry when it
+opens, so entries added since startup (for example by editing
+`provider_config.json` in another session) appear without relaunching. When
+startup model recovery opens the picker because no model could be restored,
+the notice leads with the fixed recovery text — "No models are available. Run
+`/login` or configure a provider in `/settings`, then use `/model`." — and
+appends the issue diagnosis (including the registry-repair guidance for bare
+family keys).
 
 `config.defaultModelSelection` in the provider file chooses the model for new
 sessions. `/settings` saves that selection through the native repository and

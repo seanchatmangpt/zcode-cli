@@ -273,6 +273,14 @@ registry where every provider is account-scoped — the spawn fails with
 family-keyed personal provider (`providerId` of `zai` or `bigmodel`), for
 example by merging a prepared failover configuration.
 
+**Session model recovery.** The same bare-family-key shape is diagnosed when a
+saved session model references a provider with no rules: the session issue is
+typed `provider-not-found`, and when the saved provider id is a bare family
+key (no `builtin:` or `account:` scope prefix) the issue message carries repair
+guidance naming `~/.zcode/v2/provider_config.json` — either add a
+family-keyed personal provider there, or select the account-scoped provider
+for this account.
+
 **Migration marker.** A legacy `~/.zcode/cli/config.json` is imported into the
 registry once, and completion is recorded as
 `~/.zcode/cli/migrations/provider-registry-<hash>.json`, where `<hash>` is the

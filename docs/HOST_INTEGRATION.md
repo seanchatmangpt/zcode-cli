@@ -150,3 +150,12 @@ A missing, stale, or tampered artifact is a typed refusal (non-zero exit). The
 command never searches HOME, session history, or workspace state for omitted
 evidence. This makes it suitable for a genuinely fresh host process.
 
+## Gall-work construct turns
+
+Leased gall-work workers (`gall-work --lease <n>`) pin `--mode yolo` on the
+headless construct turn. A `--prompt` runtime has no permission client, so the
+runtime's default `build` mode would route every Bash call to the permission
+broker and refuse each step with "No permission client configured for Bash".
+The lease plus the fabric's verifier court on the captured head is the stated
+authority and control for the turn — not the permission broker.
+

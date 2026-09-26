@@ -130,6 +130,27 @@ SemVer ignores it when comparing upgrades. The in-tree prepare workflow still
 carries the increment for legacy `<app-version>-<build>` maintenance; calver
 releases take their version from the release date instead.
 
+## Receipt governance
+
+Each release carries a DfCM receipt ledger under `receipts/<version>/`
+(following the `receipts/v26.9.22` convention): one JSON receipt per completed
+work order or session, a `_template.json` schema skeleton, and a README
+documenting the five R-fields (identity, authority, consequence, replay,
+standing). Receipts are subject-bound: `subject_sha` records the exact 40-hex
+head the work was verified at.
+
+Validation is fail-closed:
+
+```bash
+npm run receipts:validate            # bun scripts/validate-receipts.ts
+bun scripts/validate-receipts.ts --staged   # pre-commit: only staged receipts
+```
+
+The validator wraps the dfcm validator over `receipts/**/*.json` (files
+starting with `_` are treated as partials and skipped) and exits 1 if any
+receipt is refused **or** if zero receipts are found — an empty receipt set
+validates nothing. A release is not admissible with a red receipt ledger.
+
 ## Release flow
 
 Publishing is split into two workflows so the committed version, npm package,
