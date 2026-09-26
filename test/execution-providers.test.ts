@@ -46,6 +46,31 @@ describe("registry parsing", () => {
     expect(parseExecutionProviderRegistry(JSON.stringify({ schemaVersion: 2, executionProviderRules: [] }))).toBeUndefined();
     expect(parseExecutionProviderRegistry("not json")).toBeUndefined();
     expect(parseExecutionProviderRegistry(JSON.stringify({ schemaVersion: 1, executionProviderRules: [{ providerId: "" }] }))).toBeUndefined();
+    expect(parseExecutionProviderRegistry(JSON.stringify({
+      schemaVersion: 1,
+      executionProviderRules: [enabled("zcode"), enabled("zcode")]
+    }))).toBeUndefined();
+    expect(parseExecutionProviderRegistry(JSON.stringify({
+      schemaVersion: 1,
+      executionProviderRules: [{ providerId: "zcode", enabled: "false" }]
+    }))).toBeUndefined();
+  });
+
+  test("duplicate identities and non-boolean enabled fail closed through selection", async () => {
+    for (const malformed of [
+      {
+        schemaVersion: 1,
+        executionProviderRules: [enabled("zcode"), disabled("zcode")]
+      },
+      {
+        schemaVersion: 1,
+        executionProviderRules: [{ providerId: "zcode", enabled: 1 }]
+      }
+    ]) {
+      const selection = await selectExecutionProvider({ env: {}, read: registry(malformed) });
+      expect(selection.selected).toBe(false);
+      expect(selection.reason).toBe("registry_invalid");
+    }
   });
 });
 
