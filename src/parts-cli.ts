@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -35,8 +36,15 @@ function requiredString(value: unknown, label: string): string {
   return value;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Admission is total over the graph, not query-dependent: every part and every
+// semantic entry on every axis is checked before any SELECT runs, so a graph
+// that is malformed anywhere is refused regardless of which axes are asked for.
 function admitGraph(value: unknown): asserts value is SemanticPartsGraph {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     throw new Error("semantic-parts graph must be an object");
   }
   const graph = value as SemanticPartsGraph;
@@ -47,29 +55,55 @@ function admitGraph(value: unknown): asserts value is SemanticPartsGraph {
   if (!Array.isArray(graph.parts)) throw new Error("semantic-parts graph parts must be an array");
 
   const seen = new Set<string>();
-  for (const part of graph.parts) {
+  for (const [index, part] of graph.parts.entries()) {
+    if (!isPlainObject(part)) throw new Error(`semantic part at index ${index} must be an object`);
     const id = requiredString(part.part_id, "part_id");
     if (seen.has(id)) throw new Error(`duplicate semantic part ${id}`);
     seen.add(id);
     if (part.authority !== "NONE") throw new Error(`semantic part ${id} must carry authority=NONE`);
-    if (!part.semantics || typeof part.semantics !== "object") {
+    if (!isPlainObject(part.semantics)) {
       throw new Error(`semantic part ${id} is missing semantics`);
+    }
+    if (part.source !== undefined && !isPlainObject(part.source)) {
+      throw new Error(`semantic part ${id} source must be an object`);
+    }
+    for (const [axis, values] of Object.entries(part.semantics)) {
+      if (!Array.isArray(values)) {
+        throw new Error(`semantic part ${id} axis ${axis} must be an array`);
+      }
+      for (const entry of values) {
+        if (!isPlainObject(entry)) {
+          throw new Error(`semantic part ${id} axis ${axis} entries must be objects`);
+        }
+        requiredString(entry.semantic_id, "semantic_id");
+      }
     }
   }
 }
 
 function identities(part: SemanticPart, axis: string): Set<string> {
-  const values = part.semantics?.[axis];
+  // Own-property lookup only: an axis named after an Object.prototype member
+  // (toString, __proto__, constructor) must never resolve to inherited state.
+  if (!part.semantics || !Object.hasOwn(part.semantics, axis)) return new Set();
+  const values = part.semantics[axis];
   if (!Array.isArray(values)) return new Set();
   return new Set(values.map((value) => requiredString(value.semantic_id, "semantic_id")));
 }
 
+// A subject selector resolves by part_id or by source.file_id. It must name
+// exactly one part; a selector matching two parts is refused instead of
+// silently binding to whichever part happens to come first.
 function subject(graph: SemanticPartsGraph, subjectId: string): SemanticPart {
-  const found = graph.parts!.find((part) =>
-    part.part_id === subjectId || String(part.source?.file_id ?? "") === subjectId
+  const matches = graph.parts!.filter((part) =>
+    part.part_id === subjectId
+    || (part.source?.file_id !== undefined && String(part.source.file_id) === subjectId)
   );
-  if (!found) throw new Error(`unknown semantic-parts subject ${subjectId}`);
-  return found;
+  if (matches.length === 0) throw new Error(`unknown semantic-parts subject ${subjectId}`);
+  if (matches.length > 1) {
+    const ids = matches.map((part) => String(part.part_id)).sort().join(", ");
+    throw new Error(`ambiguous semantic-parts subject ${subjectId} matches ${ids}`);
+  }
+  return matches[0]!;
 }
 
 export function findPartAlternatives(
@@ -79,10 +113,14 @@ export function findPartAlternatives(
 ): PartAlternative[] {
   admitGraph(graphValue);
   if (axes.length === 0) throw new Error("at least one required semantic axis is required");
+  const requiredAxes = [...new Set(axes.map((axis) => requiredString(axis, "axis")))];
+  if (requiredAxes.length !== axes.length) {
+    throw new Error("required semantic axes must be distinct");
+  }
 
   const graph = graphValue as SemanticPartsGraph;
   const origin = subject(graph, subjectId);
-  const originSets = new Map(axes.map((axis) => [axis, identities(origin, axis)]));
+  const originSets = new Map(requiredAxes.map((axis) => [axis, identities(origin, axis)]));
 
   for (const [axis, values] of originSets) {
     if (values.size === 0) throw new Error(`subject has no observed semantics for required axis ${axis}`);
@@ -93,14 +131,14 @@ export function findPartAlternatives(
   return graph.parts!
     .filter((candidate) => candidate.part_id !== origin.part_id)
     .map((candidate) => {
-      const shared: Record<string, string[]> = {};
+      const sharedEntries: Array<[string, string[]]> = [];
       let sharedCount = 0;
       let allAxes = true;
 
-      for (const axis of axes) {
+      for (const axis of requiredAxes) {
         const candidateIds = identities(candidate, axis);
         const overlap = [...originSets.get(axis)!].filter((id) => candidateIds.has(id)).sort();
-        shared[axis] = overlap;
+        sharedEntries.push([axis, overlap]);
         sharedCount += overlap.length;
         if (overlap.length === 0) allAxes = false;
       }
@@ -108,7 +146,9 @@ export function findPartAlternatives(
       return {
         part_id: requiredString(candidate.part_id, "part_id"),
         language: typeof candidate.source?.language === "string" ? candidate.source.language : null,
-        shared,
+        // Object.fromEntries defines own data properties, so an axis literally
+        // named "__proto__" is reported instead of rewriting the prototype.
+        shared: Object.fromEntries(sharedEntries) as Record<string, string[]>,
         shared_count: sharedCount,
         coverage: subjectCount === 0 ? 0 : sharedCount / subjectCount,
         authority: "NONE" as const,
@@ -120,39 +160,66 @@ export function findPartAlternatives(
     .sort((left, right) =>
       right.coverage - left.coverage
       || right.shared_count - left.shared_count
-      || left.part_id.localeCompare(right.part_id)
+      || (left.part_id < right.part_id ? -1 : left.part_id > right.part_id ? 1 : 0)
     )
     .map(({ allAxes: _allAxes, ...candidate }) => candidate);
 }
 
+const VALUE_OPTIONS = new Set(["--graph", "--subject", "--axis", "--graph-sha256"]);
+
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (value === undefined || VALUE_OPTIONS.has(value) || value === "--json") {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
 }
 
 export async function runPartsCommand(args: string[]): Promise<number | undefined> {
   if (args[0] !== "parts") return undefined;
 
   if (args[1] !== "alternatives") {
-    console.error("Usage: zcode parts alternatives --graph FILE --subject ID [--axis algorithm,domain] [--json]");
+    console.error(
+      "Usage: zcode parts alternatives --graph FILE --subject ID [--axis algorithm,domain] [--graph-sha256 HEX] [--json]"
+    );
     return 2;
   }
 
-  const graphPath = option(args, "--graph");
-  const subjectId = option(args, "--subject");
+  let graphPath: string | undefined;
+  let subjectId: string | undefined;
+  try {
+    graphPath = option(args, "--graph");
+    subjectId = option(args, "--subject");
+  } catch (error) {
+    console.error("Error: " + (error instanceof Error ? error.message : String(error)));
+    return 2;
+  }
   if (!graphPath || !subjectId) {
     console.error("Error: --graph FILE and --subject ID are required");
     return 2;
   }
 
   try {
-    const graph = JSON.parse(readFileSync(resolve(graphPath), "utf8")) as unknown;
+    const bytes = readFileSync(resolve(graphPath));
+    // The digest binds the discovery result to the exact observed graph bytes,
+    // so a consumer can pin a stale or substituted graph and have it refused.
+    const graphSha256 = createHash("sha256").update(bytes).digest("hex");
+    const pinned = option(args, "--graph-sha256");
+    if (pinned !== undefined && pinned.toLowerCase() !== graphSha256) {
+      throw new Error(`graph digest mismatch: expected ${pinned.toLowerCase()} observed ${graphSha256}`);
+    }
+    const graph = JSON.parse(bytes.toString("utf8")) as unknown;
     const axisArg = option(args, "--axis");
-    const axes = axisArg ? axisArg.split(",").map((axis) => axis.trim()).filter(Boolean) : ["algorithm"];
+    const axes = axisArg !== undefined
+      ? axisArg.split(",").map((axis) => axis.trim()).filter(Boolean)
+      : ["algorithm"];
     const alternatives = findPartAlternatives(graph, subjectId, axes);
     const payload = {
       schema: "zcode.semantic-parts.discovery.v1",
       subject: subjectId,
+      graph_sha256: graphSha256,
       required_axes: axes,
       alternatives,
       authority: "NONE",
