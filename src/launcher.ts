@@ -36,6 +36,7 @@ import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runGallCommand } from "./gall-cli.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
+import { runPartsCommand } from "./parts-cli.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
   capabilitiesFromExtractionMetadata,
@@ -476,6 +477,11 @@ async function completeOfficialZaiLogin(
 }
 
 export async function main(args: string[]): Promise<number> {
+  // Semantic-parts discovery is a local SELECT surface over an already-admitted
+  // UNRDF graph. It runs before runtime bootstrap and carries no DO authority.
+  const partsCommand = await runPartsCommand(args);
+  if (partsCommand !== undefined) return partsCommand;
+
   // Public GALL-006 fresh-consumer command (restored from 9d2ccec; the
   // dispatch was dropped by a v26.9.22 merge while src/gall-cli.ts survived).
   const gallCommand = await runGallCommand(args);
