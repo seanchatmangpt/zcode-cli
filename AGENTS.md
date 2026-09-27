@@ -83,11 +83,15 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
 
 This repo contains zero xaas-specific application code; the coupling is documented in
 `docs/c4-zcode-cli-xaas.md` (C4 L1–L3 + a dynamic claim-to-receipt cycle) and runs through four
-surfaces: the marketplace plugin install, `.mcp.json` MCP registration (the `xaas-execution` fabric
-verbs), the `hooks.json` PreToolUse gate (`xaas-gate.mjs` — inert unless `XAAS_WORKER=1`; denies or
+surfaces: the marketplace plugin install, the plugin-shipped `.mcp.json` MCP registration (the
+`xaas-execution` fabric verbs — inside the installed xaas-fabric plugin cache, not a repo-root
+file), the plugin's `hooks/hooks.json` PreToolUse gate (`$CLAUDE_PLUGIN_ROOT/scripts/xaas-gate.mjs` — inert unless
+`XAAS_WORKER=1`; denies or
 defers, never grants, fails closed), and the gall-work lease contract (`src/gall-work.ts`; the
 contract is byte-identical to `~/xaas/priv/zcode_plugin/gall-work.contract.json`, sha256 pinned in
-both repos, fixture at `test/fixtures/gall-work.contract.json`). The OCEL tap (`src/ocel-tap.ts`,
+both repos, fixture at `test/fixtures/gall-work.contract.json` — drift resolved 2026-09-26 by
+forwarding the newer contract to the xaas side; both now hash `55157758…5fc4`). The OCEL tap
+(`src/ocel-tap.ts`,
 enabled with `ZCODE_OCEL=1`, output dir `ZCODE_OCEL_DIR`, default `~/.zcode/ocel`) feeds process
 mining on the xaas side. Every recorded event is credential-redacted at ingest (secret-shaped keys
 and embedded/Bearer token values become `REDACTED` before the hash chain is computed —
