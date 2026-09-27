@@ -502,12 +502,36 @@ export async function discoverFabricCapabilities(
 
 const leaseStateDir = () => join(tmpdir(), "xaas-fabric");
 
-export function leaseFilePaths(cwd: string): string[] {
+/**
+ * Per-epoch lease-state key: XAAS_LEASE_ID (the epoch id, already known to
+ * the xaas dispatcher, which adds it to the child env). Two dispatched
+ * workers sharing one work surface used to collide on the single per-cwd
+ * lease file (exit 65 lease_conflict); when the env is set, the lease
+ * state file path gains a `-<XAAS_LEASE_ID>` suffix before the extension.
+ * WITHOUT the env the path is byte-identical to the legacy per-cwd file
+ * (backward compatible). Note: the xaas-fabric PreToolUse gate
+ * (scripts/xaas-gate.mjs) still reads the legacy exact path -- a keyed
+ * worker's file is invisible to it until the gate learns the same key.
+ */
+export function leaseIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const id = env.XAAS_LEASE_ID?.trim();
+  return id ? id : undefined;
+}
+
+export function leaseFilePathsKeyed(cwd: string, leaseId: string | undefined): string[] {
+  // Path-segment-safe only: a foreign value is sanitized to a single
+  // segment, never allowed to traverse or embed separators.
+  const id = leaseId ? leaseId.replace(/[^A-Za-z0-9._-]/g, "_") : undefined;
+  const suffix = id ? `-${id}` : "";
   const paths = new Set<string>();
   for (const candidate of new Set([cwd, realpathSafe(cwd)])) {
-    paths.add(join(leaseStateDir(), `${createHash("sha256").update(candidate).digest("hex")}.json`));
+    paths.add(join(leaseStateDir(), `${createHash("sha256").update(candidate).digest("hex")}${suffix}.json`));
   }
   return [...paths];
+}
+
+export function leaseFilePaths(cwd: string): string[] {
+  return leaseFilePathsKeyed(cwd, leaseIdFromEnv());
 }
 
 export function workOrderPath(cwd: string): string {

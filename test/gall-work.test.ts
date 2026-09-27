@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -9,6 +11,9 @@ import {
   fabricCall,
   gallWorkContractSha256,
   isGallWorkInvocation,
+  leaseFilePaths,
+  leaseFilePathsKeyed,
+  leaseIdFromEnv,
   parseGallWorkArgs,
   parseGallWorkLease,
   resolveFabricTarget,
@@ -384,5 +389,68 @@ describe("outcome -> standing mapping", () => {
     expect(standingForOutcome("build_broken")).toBe("BUILD_BROKEN");
     expect(standingForOutcome("unsupported")).toBe("UNSUPPORTED");
     expect(standingForOutcome("refused")).toBe("REFUSED");
+  });
+});
+
+describe("lease state file keying (XAAS_LEASE_ID)", () => {
+  // An existing directory (realpathSafe must resolve for the dual-candidate
+  // path set: cwd + realpath(cwd)).
+  const cwd = tmpdir();
+  const epochId = "9f3c3c1e-5b1a-4c2d-8e7f-001122334455";
+
+  const withEnv = (value: string | undefined, run: () => void): void => {
+    const prior = process.env.XAAS_LEASE_ID;
+    if (value === undefined) delete process.env.XAAS_LEASE_ID;
+    else process.env.XAAS_LEASE_ID = value;
+    try {
+      run();
+    } finally {
+      if (prior === undefined) delete process.env.XAAS_LEASE_ID;
+      else process.env.XAAS_LEASE_ID = prior;
+    }
+  };
+
+  test("without the env the exact legacy per-cwd path stands", () => {
+    withEnv(undefined, () => {
+      const paths = leaseFilePaths(cwd);
+      // Byte-exact: the legacy construction, recomputed here independently.
+      const legacy = [...new Set([cwd, realpathSync(cwd)])].map((candidate) =>
+        join(tmpdir(), "xaas-fabric", `${createHash("sha256").update(candidate).digest("hex")}.json`)
+      );
+      expect(paths).toEqual(legacy);
+      expect(paths).toEqual(leaseFilePathsKeyed(cwd, undefined));
+    });
+  });
+
+  test("with XAAS_LEASE_ID the lease file is keyed per epoch (-<id> before the extension)", () => {
+    withEnv(epochId, () => {
+      // The env-driven surface and the pure keyed function agree.
+      expect(leaseFilePaths(cwd)).toEqual(leaseFilePathsKeyed(cwd, epochId));
+    });
+    const legacy = leaseFilePathsKeyed(cwd, undefined);
+    const keyed = leaseFilePathsKeyed(cwd, epochId);
+    expect(keyed).toHaveLength(legacy.length);
+    for (const path of keyed) {
+      expect(path.endsWith(`-${epochId}.json`)).toBe(true);
+      // Same hash stem as a legacy path: keying only adds the suffix.
+      expect(
+        legacy.some((p) => path.startsWith(p.slice(0, -".json".length) + "-")),
+        `keyed path ${path} carries no legacy hash stem`
+      ).toBe(true);
+    }
+  });
+
+  test("an empty/whitespace XAAS_LEASE_ID behaves as unset", () => {
+    expect(leaseIdFromEnv({})).toBeUndefined();
+    expect(leaseIdFromEnv({ XAAS_LEASE_ID: "  " })).toBeUndefined();
+    expect(leaseIdFromEnv({ XAAS_LEASE_ID: epochId })).toBe(epochId);
+  });
+
+  test("a foreign XAAS_LEASE_ID is sanitized to one path segment (no traversal)", () => {
+    for (const path of leaseFilePathsKeyed(cwd, "../../evil")) {
+      const segment = path.slice(join(tmpdir(), "xaas-fabric").length + 1);
+      expect(segment).not.toContain("/");
+      expect(segment).toMatch(/\.json$/);
+    }
   });
 });
