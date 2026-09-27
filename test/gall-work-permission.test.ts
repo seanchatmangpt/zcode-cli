@@ -302,7 +302,10 @@ test(
     const evidence = (close?.evidence ?? {}) as Record<string, unknown>;
     expect(evidence.worker).toBe("zcode-gall-work/1");
   },
-  240_000
+  // Real end-to-end turn budget: measured glm-5.3-flash agent turns average
+  // ~416s (2026-09-27 burn-in telemetry; steady-state ~287s) — 240s starved
+  // the claim->bash->close lifecycle and timed out deterministically.
+  600_000
 );
 
 test("runConstruct pins --mode yolo, stream-json output, and lease identity on the construct spawn", async () => {
