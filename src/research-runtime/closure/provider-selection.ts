@@ -1,0 +1,1 @@
+import{selectExecutionProvider}from"../../execution-providers.ts";export const selectProvider=(requestedProviderId?:string)=>selectExecutionProvider({requestedProviderId});

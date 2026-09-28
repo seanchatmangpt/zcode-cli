@@ -1,0 +1,1 @@
+export class AttemptBudget{constructor(readonly max:number,readonly used=0){}consume(){if(this.used>=this.max)throw new Error("REFUSED_BUDGET_EXHAUSTED");return new AttemptBudget(this.max,this.used+1)}}

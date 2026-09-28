@@ -1,0 +1,1 @@
+import{test,expect}from"bun:test";test("intervention runtime surface is importable",async()=>{const m=await import("../../src/research-runtime/intervention/work-order.ts");expect(Object.keys(m).length).toBeGreaterThan(0)});

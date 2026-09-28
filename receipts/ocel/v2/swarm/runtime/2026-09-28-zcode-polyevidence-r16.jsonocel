@@ -1,0 +1,65 @@
+{
+  "objectTypes": [
+    "repo",
+    "commit",
+    "branch",
+    "task"
+  ],
+  "eventTypes": [
+    "bind",
+    "construct",
+    "publish"
+  ],
+  "objects": [
+    {
+      "id": "seanchatmangpt/zcode-cli",
+      "type": "repo"
+    },
+    {
+      "id": "e561c4c0f2cdb6202f3cbcabfcabd82f8c2b619c",
+      "type": "commit"
+    },
+    {
+      "id": "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
+      "type": "commit"
+    },
+    {
+      "id": "runtime/v26.9.28-polyevidence-portable-execution-r16-published",
+      "type": "branch"
+    },
+    {
+      "id": "research-runtime-r16",
+      "type": "task"
+    }
+  ],
+  "events": [
+    {
+      "id": "bind-r16",
+      "type": "bind",
+      "time": "2026-09-28T16:24:08Z",
+      "objects": [
+        "seanchatmangpt/zcode-cli",
+        "e561c4c0f2cdb6202f3cbcabfcabd82f8c2b619c",
+        "research-runtime-r16"
+      ]
+    },
+    {
+      "id": "construct-r16",
+      "type": "construct",
+      "time": "2026-09-28T16:24:08Z",
+      "objects": [
+        "research-runtime-r16",
+        "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09"
+      ]
+    },
+    {
+      "id": "publish-r16",
+      "type": "publish",
+      "time": "2026-09-28T16:24:08Z",
+      "objects": [
+        "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
+        "runtime/v26.9.28-polyevidence-portable-execution-r16-published"
+      ]
+    }
+  ]
+}

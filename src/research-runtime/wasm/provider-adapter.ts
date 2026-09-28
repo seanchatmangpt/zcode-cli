@@ -1,0 +1,1 @@
+import type{ExecutionProviderRule}from"../../execution-providers.ts";export const wasmProvider=(r:ExecutionProviderRule)=>({providerId:r.providerId,runtime:r.runtime??"unknown",portable:r.enabled!==false});

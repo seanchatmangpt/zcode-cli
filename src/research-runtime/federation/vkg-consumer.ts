@@ -1,0 +1,1 @@
+import type{SourceBinding}from"./source-binding.ts";export const vkgSubject=(s:SourceBinding,subject:string)=>({source:s.id,subject,origin:s.origin});

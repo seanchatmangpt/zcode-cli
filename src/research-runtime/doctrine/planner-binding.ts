@@ -1,0 +1,1 @@
+import type{Intent}from"./intent.ts";export const bindPlanner=(i:Intent,planner:string)=>({intentId:i.id,planner,authority:i.authority});

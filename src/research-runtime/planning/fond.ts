@@ -1,0 +1,1 @@
+import{EdgeGraph}from"../interchange/graph.ts";export const recover=(g:EdgeGraph,f:string,c:string)=>g.exclude(f).candidates(c)[0];

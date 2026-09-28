@@ -1,0 +1,1 @@
+export interface Intent{id:string;goal:string;authority:"none"}export const intent=(id:string,goal:string):Intent=>({id,goal,authority:"none"});

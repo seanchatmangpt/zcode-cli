@@ -1,0 +1,1 @@
+export type Standing="UNKNOWN"|"PARTIAL"|"ADMITTED"|"REFUSED";export const mayExecute=(s:Standing)=>s==="ADMITTED";

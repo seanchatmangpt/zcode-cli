@@ -1,0 +1,1 @@
+export const boundedCompanion=()=>Object.freeze({observe:true,construct:false,do:false});
