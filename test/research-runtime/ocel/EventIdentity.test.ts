@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{eventIdentity}from"../../../src/research-runtime/ocel/EventIdentity.ts";test("ocel exact",()=>expect(eventIdentity({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("ocel refusal",()=>expect(eventIdentity({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

@@ -1,0 +1,1 @@
+import{describe,expect,test}from"bun:test";import{applyOutcome,nextEdge}from"../../../src/research-runtime/interchange/SubstitutionGuard.ts";describe("interchange",()=>test("fail removes one edge",()=>{const n=applyOutcome({edges:["a","b"],excluded:[],receipts:[]},{ok:false,edge:"a",reason:"x"});expect(nextEdge(n)).toBe("b")}));

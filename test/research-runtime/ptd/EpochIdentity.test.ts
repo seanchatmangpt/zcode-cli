@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{epochIdentity}from"../../../src/research-runtime/ptd/EpochIdentity.ts";test("ptd exact",()=>expect(epochIdentity({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("ptd refuse",()=>expect(epochIdentity({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

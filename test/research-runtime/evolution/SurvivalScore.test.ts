@@ -1,0 +1,1 @@
+import{describe,expect,test}from"bun:test";import{survivalScore}from"../../../src/research-runtime/evolution/SurvivalScore.ts";describe("evolution",()=>{test("exact",()=>expect(survivalScore({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("refuse",()=>expect(survivalScore({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false))});

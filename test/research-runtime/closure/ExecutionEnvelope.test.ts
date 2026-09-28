@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{executionEnvelope}from"../../../src/research-runtime/closure/ExecutionEnvelope.ts";test("closure exact",()=>expect(executionEnvelope({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("closure refusal",()=>expect(executionEnvelope({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

@@ -1,0 +1,1 @@
+import{describe,expect,test}from"bun:test";import{exactSubject}from"../../../src/research-runtime/identity-hilt/ExactSubject.ts";describe("identity-hilt",()=>{test("exact",()=>expect(exactSubject({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("refuse",()=>expect(exactSubject({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false))});

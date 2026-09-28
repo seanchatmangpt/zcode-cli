@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{intentBoundary}from"../../../src/research-runtime/doctrine/IntentBoundary.ts";test("doctrine exact",()=>expect(intentBoundary({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("doctrine refusal",()=>expect(intentBoundary({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

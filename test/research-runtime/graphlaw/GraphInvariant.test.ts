@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{graphInvariant}from"../../../src/research-runtime/graphlaw/GraphInvariant.ts";test("graphlaw exact",()=>expect(graphInvariant({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("graphlaw refusal",()=>expect(graphInvariant({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{edgeSet}from"../../../src/research-runtime/fond/EdgeSet.ts";test("fond exact",()=>expect(edgeSet({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("fond refuse",()=>expect(edgeSet({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

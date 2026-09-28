@@ -1,0 +1,1 @@
+import{describe,expect,test}from"bun:test";import{semanticPart}from"../../../src/research-runtime/interchange/SemanticPart.ts";describe("interchange",()=>{test("exact",()=>expect(semanticPart({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("refuse",()=>expect(semanticPart({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false))});

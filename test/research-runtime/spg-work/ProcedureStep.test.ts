@@ -1,0 +1,1 @@
+import{describe,expect,test}from"bun:test";import{procedureStep}from"../../../src/research-runtime/spg-work/ProcedureStep.ts";describe("spg-work",()=>{test("exact",()=>expect(procedureStep({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("refuse",()=>expect(procedureStep({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false))});

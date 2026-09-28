@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{applyOutcome,nextEdge}from"../../../src/research-runtime/graphlaw/MigrationGuard.ts";test("graphlaw excludes one edge",()=>{const n=applyOutcome({edges:["a","b"],excluded:[],receipts:[]},{ok:false,edge:"a",reason:"x"});expect(nextEdge(n)).toBe("b")});

@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{portableContract}from"../../../src/research-runtime/wasm/PortableContract.ts";test("wasm exact",()=>expect(portableContract({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("wasm refuse",()=>expect(portableContract({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

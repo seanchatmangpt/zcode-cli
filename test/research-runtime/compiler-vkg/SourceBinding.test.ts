@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{sourceBinding}from"../../../src/research-runtime/compiler-vkg/SourceBinding.ts";test("compiler-vkg exact",()=>expect(sourceBinding({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("compiler-vkg refusal",()=>expect(sourceBinding({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

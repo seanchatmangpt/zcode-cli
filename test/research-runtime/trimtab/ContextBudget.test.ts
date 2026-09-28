@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{contextBudget}from"../../../src/research-runtime/trimtab/ContextBudget.ts";test("trimtab exact",()=>expect(contextBudget({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("trimtab refusal",()=>expect(contextBudget({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));

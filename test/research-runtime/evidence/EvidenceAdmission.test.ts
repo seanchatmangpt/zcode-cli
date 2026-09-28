@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{evidenceAdmission}from"../../../src/research-runtime/evidence/EvidenceAdmission.ts";test("evidence exact",()=>expect(evidenceAdmission({subjectSha:"abcdef1",sourceSha:"1234567",value:"ok"}).admitted).toBe(true));test("evidence refuse",()=>expect(evidenceAdmission({subjectSha:"x",sourceSha:"y",value:"ok"}).admitted).toBe(false));
