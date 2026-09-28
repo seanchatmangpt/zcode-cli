@@ -1,0 +1,1 @@
+export type ModelAction="observe"|"construct"|"recommend"; export const admitModelAction=(action:string):ModelAction=>{if(action==="do")throw new Error("consequential_do_forbidden");if(!["observe","construct","recommend"].includes(action))throw new Error("unknown_action");return action as ModelAction};

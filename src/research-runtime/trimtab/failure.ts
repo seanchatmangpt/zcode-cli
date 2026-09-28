@@ -1,0 +1,1 @@
+export type FailureClass="transient"|"rate_limited"|"auth"|"refused"|"invalid"|"crash"; export type Failure={providerId:string;class:FailureClass;reason:unknown}; export const retryable=(f:Failure)=>["transient","rate_limited","crash"].includes(f.class);

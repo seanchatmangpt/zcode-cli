@@ -1,0 +1,1 @@
+export type ContextBudget={maxItems:number;maxBytes:number}; export const fits=(b:ContextBudget,items:unknown[])=>items.length<=b.maxItems&&Buffer.byteLength(JSON.stringify(items))<=b.maxBytes;

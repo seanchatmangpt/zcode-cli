@@ -1,0 +1,1 @@
+import type{ExactSubject}from"./exact-subject"; export type Evidence={subjectDigest:string;claim:string;witness:unknown;falsified:boolean}; export const evidence=(s:ExactSubject,claim:string,witness:unknown,falsified=false):Evidence=>({subjectDigest:s.digest,claim,witness,falsified});

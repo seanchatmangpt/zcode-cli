@@ -1,0 +1,1 @@
+import type{ExactSubject}from"./exact-subject"; export type Observation={subjectDigest:string;kind:string;value:unknown}; export const observation=(s:ExactSubject,kind:string,value:unknown):Observation=>({subjectDigest:s.digest,kind,value}); export const exactObservation=(s:ExactSubject,o:Observation)=>s.digest===o.subjectDigest;

@@ -1,0 +1,1 @@
+import{supports,type Provider}from"./provider"; export const candidates=(ps:Provider[],cap:string,excluded=new Set<string>())=>ps.filter(p=>supports(p,cap)&&!excluded.has(p.id)).sort((a,b)=>a.priority-b.priority||a.id.localeCompare(b.id)); export const select=(ps:Provider[],cap:string,excluded=new Set<string>())=>candidates(ps,cap,excluded)[0];

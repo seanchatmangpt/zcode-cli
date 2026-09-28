@@ -1,0 +1,1 @@
+import type{Provider}from"./provider";import type{Failure}from"./failure";import{select}from"./provider-set"; export const nextProvider=(ps:Provider[],cap:string,failures:Failure[])=>select(ps,cap,new Set(failures.map(f=>f.providerId)));

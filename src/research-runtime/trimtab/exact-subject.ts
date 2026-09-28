@@ -1,0 +1,1 @@
+export type ExactSubject={id:string;sourceSha:string;digest:string}; export const exactSubject=(id:string,sourceSha:string):ExactSubject=>{if(!id||!sourceSha)throw new Error("invalid_subject");return{id,sourceSha,digest:Bun.hash(JSON.stringify([id,sourceSha])).toString(16)}}; export const sameSubject=(a:ExactSubject,b:ExactSubject)=>a.digest===b.digest;

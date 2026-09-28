@@ -1,0 +1,1 @@
+import type{ExactSubject}from"./exact-subject"; export type TrimtabRequest={subjectDigest:string;capability:string;objective:string;payload:unknown}; export const request=(s:ExactSubject,capability:string,objective:string,payload:unknown):TrimtabRequest=>({subjectDigest:s.digest,capability,objective,payload});

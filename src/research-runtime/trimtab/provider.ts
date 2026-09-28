@@ -1,0 +1,1 @@
+export type Provider={id:string;capabilities:ReadonlySet<string>;priority:number;run:(request:unknown)=>Promise<unknown>}; export const supports=(p:Provider,c:string)=>p.capabilities.has(c);
