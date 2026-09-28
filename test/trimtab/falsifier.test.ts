@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{falsify}from"../../src/trimtab/falsifier.js";test("counterexample",()=>expect(falsify({id:"p",predicate:x=>Number(x)>0},[1,-1]).falsified).toBe(true));

@@ -1,0 +1,1 @@
+export interface Claim{id:string;predicate:(x:unknown)=>boolean}export function falsify(c:Claim,xs:unknown[]){const witness=xs.find(x=>!c.predicate(x));return witness===undefined?{falsified:false as const}:{falsified:true as const,witness}}

@@ -1,0 +1,1 @@
+export function stableJson(v:unknown):string{if(v===null||typeof v!=="object")return JSON.stringify(v)??"null";if(Array.isArray(v))return "["+v.map(stableJson).join(",")+"]";const o=v as Record<string,unknown>;return "{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+stableJson(o[k])).join(",")+"}"}

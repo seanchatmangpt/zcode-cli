@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{Backpressure}from"../../src/trimtab/backpressure.js";test("caps",()=>{const b=new Backpressure(1);expect(b.enter()).toBe(true);expect(b.enter()).toBe(false)});

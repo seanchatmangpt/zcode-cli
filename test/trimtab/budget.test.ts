@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{spend}from"../../src/trimtab/budget.js";test("bounded",()=>expect(spend({remaining:2,spent:0}).remaining).toBe(1));test("overrun refused",()=>expect(()=>spend({remaining:0,spent:2})).toThrow());

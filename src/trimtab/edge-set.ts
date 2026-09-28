@@ -1,0 +1,1 @@
+export class EdgeSet{constructor(readonly edges:readonly string[],readonly excluded:ReadonlySet<string>=new Set()){}available(){return this.edges.filter(e=>!this.excluded.has(e))}fail(e:string){return new EdgeSet(this.edges,new Set([...this.excluded,e]))}}

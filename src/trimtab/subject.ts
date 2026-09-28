@@ -1,0 +1,1 @@
+import type{Subject}from"./types.js";export function admitSubject(s:Subject){if(!/^[\w.-]+\/[\w.-]+$/u.test(s.repo))throw Error("REFUSED_REPO");if(!/^[0-9a-f]{40}$/u.test(s.baseSha))throw Error("REFUSED_BASE_SHA");if(!s.task.trim())throw Error("REFUSED_TASK");return s}

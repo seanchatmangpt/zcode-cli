@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{EdgeSet}from"../../src/trimtab/edge-set.js";import{route}from"../../src/trimtab/router.js";test("routes",()=>expect(route(new EdgeSet(["a","b"]),e=>e==="b")).toEqual({ok:true,edge:"b"}));

@@ -1,0 +1,1 @@
+export interface PromptFrame{goal:string;facts:string[];constraints:string[];question:string}export function renderFrame(f:PromptFrame){return["GOAL "+f.goal,...f.facts.map(x=>"FACT "+x),...f.constraints.map(x=>"BOUND "+x),"QUERY "+f.question].join("\n")}

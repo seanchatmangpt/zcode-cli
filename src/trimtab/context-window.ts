@@ -1,0 +1,1 @@
+export interface ContextItem{id:string;text:string;priority:number;tokens:number}export function fitContext(xs:ContextItem[],max:number){let used=0;return[...xs].sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id)).filter(x=>x.tokens>0&&used+x.tokens<=max&&(used+=x.tokens,true))}

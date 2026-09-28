@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{transition}from"../../src/trimtab/state-machine.js";test("illegal refused",()=>expect(()=>transition("complete","observing")).toThrow());

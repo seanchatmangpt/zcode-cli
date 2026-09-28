@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{decide}from"../../src/trimtab/steering-policy.js";test("delta steers",()=>expect(decide({subject:{repo:"o/r",baseSha:"a".repeat(40),task:"t"},goal:"g",observations:[{kind:"d",value:1,source:"x"}],budget:1}).decision).toBe("STEER"));

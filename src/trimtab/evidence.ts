@@ -1,0 +1,1 @@
+import type{Observation}from"./types.js";export const admittedEvidence=(xs:Observation[])=>xs.filter(x=>x.kind.trim()&&x.source.trim());

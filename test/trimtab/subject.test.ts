@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{admitSubject}from"../../src/trimtab/subject.js";test("pins exact subject",()=>expect(admitSubject({repo:"o/r",baseSha:"a".repeat(40),task:"t"}).task).toBe("t"));test("refuses floating sha",()=>expect(()=>admitSubject({repo:"o/r",baseSha:"main",task:"t"})).toThrow());

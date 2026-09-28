@@ -1,0 +1,1 @@
+export interface Epoch{id:number;startedAt:string;contextDigest:string}export function nextEpoch(prev:Epoch|undefined,contextDigest:string,at:string):Epoch{return{id:(prev?.id??-1)+1,startedAt:at,contextDigest}}

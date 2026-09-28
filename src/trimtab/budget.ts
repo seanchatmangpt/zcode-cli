@@ -1,0 +1,1 @@
+export interface Budget{remaining:number;spent:number}export function spend(b:Budget,n=1){if(n<0||b.remaining<n)throw Error("BUDGET_EXHAUSTED");return{remaining:b.remaining-n,spent:b.spent+n}}

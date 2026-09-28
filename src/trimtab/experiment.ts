@@ -1,0 +1,1 @@
+import{digest}from"./digest.js";export interface Experiment{subject:string;variant:string;seed:number;inputDigest:string}export const experimentId=(x:Experiment)=>digest(x);

@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{idempotencyKey}from"../../src/trimtab/idempotency.js";test("stable",()=>{const s={repo:"o/r",baseSha:"a".repeat(40),task:"t"};expect(idempotencyKey(s,1)).toBe(idempotencyKey(s,1))});

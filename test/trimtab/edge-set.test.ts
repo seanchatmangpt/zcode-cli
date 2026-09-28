@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{EdgeSet}from"../../src/trimtab/edge-set.js";test("failure removes only edge",()=>expect(new EdgeSet(["a","b"]).fail("a").available()).toEqual(["b"]));

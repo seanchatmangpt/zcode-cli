@@ -1,0 +1,1 @@
+import type{Input,Output}from"./types.js";import{digest}from"./digest.js";export function receipt(i:Input,o:Output){return{schema:"zcode.trimtab-receipt/1",subject:i.subject,decision:o.decision,contextDigest:digest(o.context),observationDigests:i.observations.map(digest),authority:"none" as const,externalDoCount:0 as const}}

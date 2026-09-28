@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{eligibleProvider}from"../../src/trimtab/provider.js";test("unhealthy excluded",()=>expect(eligibleProvider([{id:"a",capabilities:["x"],healthy:false},{id:"b",capabilities:["x"],healthy:true}],"x")?.id).toBe("b"));

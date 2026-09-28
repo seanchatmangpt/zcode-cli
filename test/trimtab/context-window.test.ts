@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{fitContext}from"../../src/trimtab/context-window.js";test("fits priority",()=>expect(fitContext([{id:"a",text:"",priority:1,tokens:3},{id:"b",text:"",priority:2,tokens:3}],3)[0]?.id).toBe("b"));

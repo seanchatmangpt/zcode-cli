@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{fenceAction}from"../../src/trimtab/authority-fence.js";test("cannot actuate",()=>expect(fenceAction({kind:"write",consequential:true}).admitted).toBe(false));

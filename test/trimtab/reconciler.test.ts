@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{reconcile}from"../../src/trimtab/reconciler.js";test("unknown explicit",()=>expect(reconcile(["a"],[])[0]?.status).toBe("unknown"));

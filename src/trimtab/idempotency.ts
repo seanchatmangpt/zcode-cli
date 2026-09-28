@@ -1,0 +1,1 @@
+import{digest}from"./digest.js";import type{Subject}from"./types.js";export const idempotencyKey=(s:Subject,epoch:number)=>digest({repo:s.repo,baseSha:s.baseSha,task:s.task,epoch});

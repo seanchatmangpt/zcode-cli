@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{classifyFailure}from"../../src/trimtab/failure.js";test("typed",()=>expect(classifyFailure("HTTP 429")).toBe("RATE_LIMIT"));

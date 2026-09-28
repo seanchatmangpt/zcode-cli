@@ -1,0 +1,1 @@
+import{EdgeSet}from"./edge-set.js";export function recover(g:EdgeSet,failed:string){const graph=g.fail(failed),edge=graph.available()[0];return edge?{status:"ROUTED" as const,edge,graph}:{status:"EXHAUSTED" as const,graph}}

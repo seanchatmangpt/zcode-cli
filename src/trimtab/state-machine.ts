@@ -1,0 +1,1 @@
+export type State="idle"|"observing"|"steering"|"refused"|"complete";const ok:Record<State,State[]>={idle:["observing"],observing:["steering","complete","refused"],steering:["observing","complete","refused"],refused:[],complete:[]};export function transition(a:State,b:State){if(!ok[a].includes(b))throw Error("REFUSED_TRANSITION");return b}

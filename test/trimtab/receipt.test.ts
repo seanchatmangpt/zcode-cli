@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{receipt}from"../../src/trimtab/receipt.js";test("no authority",()=>expect(receipt({subject:{repo:"o/r",baseSha:"a".repeat(40),task:"t"},goal:"g",observations:[],budget:1},{decision:"CONTINUE",context:[],reasons:[],authority:"none",externalDoCount:0}).authority).toBe("none"));

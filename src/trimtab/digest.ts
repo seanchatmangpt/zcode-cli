@@ -1,0 +1,1 @@
+import{createHash}from"node:crypto";import{stableJson}from"./stable-json.js";export const digest=(v:unknown)=>"sha256:"+createHash("sha256").update(stableJson(v)).digest("hex");

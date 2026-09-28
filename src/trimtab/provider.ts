@@ -1,0 +1,1 @@
+export interface Provider{id:string;capabilities:string[];healthy:boolean}export function eligibleProvider(ps:Provider[],cap:string){return ps.filter(p=>p.healthy&&p.capabilities.includes(cap)).sort((a,b)=>a.id.localeCompare(b.id))[0]}

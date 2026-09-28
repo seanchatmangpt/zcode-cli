@@ -1,0 +1,1 @@
+import type{Input,Output}from"./types.js";import{decide}from"./steering-policy.js";import{digest}from"./digest.js";export function replay(i:Input,expected:Output){const actual=decide(i);return{same:digest(actual)===digest(expected),actual}}

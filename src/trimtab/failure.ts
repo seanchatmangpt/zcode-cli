@@ -1,0 +1,1 @@
+export type FailureClass="LOCAL"|"TOOL"|"REFUSED"|"RATE_LIMIT"|"AUTH_MISSING";export function classifyFailure(x:unknown):FailureClass{const s=String(x).toLowerCase();if(s.includes("429")||s.includes("rate"))return"RATE_LIMIT";if(s.includes("auth"))return"AUTH_MISSING";if(s.includes("refus"))return"REFUSED";if(s.includes("tool"))return"TOOL";return"LOCAL"}

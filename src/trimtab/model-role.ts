@@ -1,0 +1,1 @@
+export function boundedModel(model:string){return{model,role:"context-window" as const,maySelect:false,mayConstruct:false,mayDo:false}}

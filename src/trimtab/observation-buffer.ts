@@ -1,0 +1,1 @@
+import type{Observation}from"./types.js";export class ObservationBuffer{#xs:Observation[]=[];constructor(readonly limit=128){}push(x:Observation){this.#xs.push(x);if(this.#xs.length>this.limit)this.#xs.shift()}snapshot(){return this.#xs.slice()}}

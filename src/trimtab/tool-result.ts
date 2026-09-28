@@ -1,0 +1,1 @@
+export type ToolResult<T>={ok:true;value:T}|{ok:false;edge:string;reason:string};export function foldTool<T,R>(r:ToolResult<T>,yes:(v:T)=>R,no:(e:string,r:string)=>R){return r.ok?yes(r.value):no(r.edge,r.reason)}

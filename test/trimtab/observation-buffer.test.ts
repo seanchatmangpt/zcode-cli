@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{ObservationBuffer}from"../../src/trimtab/observation-buffer.js";test("bounded",()=>{const b=new ObservationBuffer(1);b.push({kind:"a",value:1,source:"x"});b.push({kind:"b",value:2,source:"x"});expect(b.snapshot()[0]?.kind).toBe("b")});

@@ -1,0 +1,1 @@
+export interface Candidate{id:string;score:number;lawful:boolean}export function selectCandidate(xs:Candidate[]){return xs.filter(x=>x.lawful).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id))[0]}

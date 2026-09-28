@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{EdgeSet}from"../../src/trimtab/edge-set.js";import{recover}from"../../src/trimtab/recovery.js";test("routes after fail",()=>expect(recover(new EdgeSet(["a","b"]),"a").status).toBe("ROUTED"));

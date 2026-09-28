@@ -1,0 +1,1 @@
+export interface Health{id:string;ok:boolean}export function reconcile(expected:string[],health:Health[]){const m=new Map(health.map(x=>[x.id,x.ok]));return expected.map(id=>({id,status:m.get(id)===true?"healthy":m.has(id)?"unhealthy":"unknown"}))}

@@ -1,0 +1,1 @@
+export function fenceAction(a:{kind:string;consequential:boolean}){return a.consequential?{admitted:false as const,reason:"REFUSED_AUTHORITY"}:{admitted:true as const,reason:"NON_CONSEQUENTIAL"}}

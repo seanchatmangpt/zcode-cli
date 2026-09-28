@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{replay}from"../../src/trimtab/replay.js";test("deterministic",()=>{const i={subject:{repo:"o/r",baseSha:"a".repeat(40),task:"t"},goal:"g",observations:[],budget:1};expect(replay(i,{decision:"CONTINUE",context:[],reasons:["NO_NEW_OBSERVATION"],authority:"none",externalDoCount:0}).same).toBe(true)});

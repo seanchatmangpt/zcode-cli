@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{nextEpoch}from"../../src/trimtab/epoch.js";test("monotonic",()=>expect(nextEpoch({id:3,startedAt:"x",contextDigest:"a"},"b","y").id).toBe(4));

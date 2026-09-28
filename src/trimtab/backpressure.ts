@@ -1,0 +1,1 @@
+export class Backpressure{#active=0;constructor(readonly max:number){}enter(){if(this.#active>=this.max)return false;this.#active++;return true}leave(){this.#active=Math.max(0,this.#active-1)}get active(){return this.#active}}

@@ -1,0 +1,1 @@
+import{EdgeSet}from"./edge-set.js";export function route(g:EdgeSet,ok:(e:string)=>boolean){const edge=g.available().find(ok);return edge?{ok:true as const,edge}:{ok:false as const,reason:"NO_LAWFUL_EDGE"}}

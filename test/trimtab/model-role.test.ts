@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{boundedModel}from"../../src/trimtab/model-role.js";test("context only",()=>expect(boundedModel("m").mayDo).toBe(false));
