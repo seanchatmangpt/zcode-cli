@@ -1,0 +1,1 @@
+export interface PortableCapability{id:string;abi:"wasip2";digest:string}export const portable=(c:PortableCapability)=>{if(!c.digest.startsWith("sha256:"))throw new Error("REFUSED_WASM_DIGEST");return c};

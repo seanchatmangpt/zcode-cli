@@ -1,0 +1,1 @@
+export interface OcelEvent{id:string;type:string;objects:string[];time:string}export const event=(x:OcelEvent)=>Object.freeze({...x,objects:[...x.objects].sort()});

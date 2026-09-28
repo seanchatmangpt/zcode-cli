@@ -1,0 +1,1 @@
+export interface SurvivalEvidence{successes:number;failures:number}export const survivalScore=(e:SurvivalEvidence)=>{const n=e.successes+e.failures;return n?e.successes/n:0};

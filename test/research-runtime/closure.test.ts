@@ -1,0 +1,1 @@
+import{test,expect}from"bun:test";test("closure runtime surface is importable",async()=>{const m=await import("../../src/research-runtime/closure/provider-selection.ts");expect(Object.keys(m).length).toBeGreaterThan(0)});

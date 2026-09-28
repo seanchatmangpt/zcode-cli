@@ -1,0 +1,1 @@
+import{delta,type PairedWorld}from"./racap.ts";export const promote=(p:PairedWorld,min=0)=>delta(p)>min;

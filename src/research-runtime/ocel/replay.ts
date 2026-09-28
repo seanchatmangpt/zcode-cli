@@ -1,0 +1,1 @@
+import type{ExecutionReceipt}from"./receipt.ts";export const replayKey=(r:ExecutionReceipt)=>[r.subject,r.workOrder,r.epoch,r.failedEdges.join(",")].join("|");

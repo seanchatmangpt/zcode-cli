@@ -1,0 +1,1 @@
+import type{Authority}from"../identity/authority.ts";export const consequentialDo=(a:Authority)=>{if(a!=="do")throw new Error("REFUSED_DO_AUTHORITY");return true};

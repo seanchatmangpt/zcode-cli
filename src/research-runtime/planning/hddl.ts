@@ -1,0 +1,1 @@
+export interface Task{name:string;children?:Task[]}export function leaves(t:Task):string[]{return t.children?.length?t.children.flatMap(leaves):[t.name]}
