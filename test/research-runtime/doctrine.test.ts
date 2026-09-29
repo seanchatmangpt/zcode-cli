@@ -1,0 +1,1 @@
+import{test,expect}from"bun:test";test("doctrine runtime surface is importable",async()=>{const m=await import("../../src/research-runtime/doctrine/intent.ts");expect(Object.keys(m).length).toBeGreaterThan(0)});

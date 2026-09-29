@@ -1,0 +1,1 @@
+export interface CommandNode{id:string;parent?:string}export const roots=(x:CommandNode[])=>x.filter(v=>!v.parent);

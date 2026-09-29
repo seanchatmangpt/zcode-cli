@@ -1,0 +1,1 @@
+export interface Invariant<T>{name:string;check:(x:T)=>boolean}export function enforce<T>(i:Invariant<T>,x:T){if(!i.check(x))throw new Error("REFUSED_INVARIANT:"+i.name);return x}

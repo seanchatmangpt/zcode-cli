@@ -1,0 +1,1 @@
+export interface ExactSubject{repository:string;baseSha:string;subject:string} export function exactSubject(x:ExactSubject){if(!/^[\da-f]{40}$/.test(x.baseSha)||!x.repository.includes("/")||!x.subject)throw new Error("REFUSED_EXACT_SUBJECT");return Object.freeze({...x})}

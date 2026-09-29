@@ -1,0 +1,1 @@
+import type{Edge}from"./edge.ts";export class EdgeGraph{constructor(readonly edges:readonly Edge[]){}exclude(id:string){return new EdgeGraph(this.edges.filter(e=>e.id!==id))}candidates(c:string){return this.edges.filter(e=>e.enabled&&e.capability===c)}}

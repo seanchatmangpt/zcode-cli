@@ -1,0 +1,1 @@
+export interface WorkOrder{id:string;subject:string;capability:string;maxAttempts:number}export function workOrder(x:WorkOrder){if(x.maxAttempts<1)throw new Error("REFUSED_BUDGET");return Object.freeze({...x})}

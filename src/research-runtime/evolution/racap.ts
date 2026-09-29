@@ -1,0 +1,1 @@
+export interface PairedWorld{control:number;candidate:number}export const delta=(p:PairedWorld)=>p.candidate-p.control;

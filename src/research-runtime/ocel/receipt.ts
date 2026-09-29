@@ -1,0 +1,1 @@
+export interface ExecutionReceipt{subject:string;workOrder:string;provider:string;failedEdges:string[];epoch:number}export const receipt=(r:ExecutionReceipt)=>Object.freeze({...r,failedEdges:[...r.failedEdges]});

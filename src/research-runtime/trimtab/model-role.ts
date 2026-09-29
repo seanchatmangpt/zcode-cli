@@ -1,0 +1,1 @@
+export const modelRole=Object.freeze({context:true,select:false,construct:false,do:false});

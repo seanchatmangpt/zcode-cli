@@ -1,0 +1,1 @@
+export interface Event{id:string;after:string[]}export const ready=(e:Event,d:Set<string>)=>e.after.every(x=>d.has(x));

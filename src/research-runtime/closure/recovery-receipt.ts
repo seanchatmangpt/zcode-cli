@@ -1,0 +1,1 @@
+import type{ExecutionReceipt}from"../ocel/receipt.ts";export const recoveryReceipt=(r:ExecutionReceipt,replacement:string):ExecutionReceipt=>({...r,provider:replacement});

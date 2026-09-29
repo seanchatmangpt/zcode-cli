@@ -1,0 +1,1 @@
+export interface SourceBinding{id:string;origin:string;digest:string}export const bindSource=(b:SourceBinding)=>{if(!b.origin||!b.digest)throw new Error("REFUSED_SOURCE");return Object.freeze({...b})};
