@@ -1,0 +1,4 @@
+export const SA2A_REPLAN_VERSION="sa2a/replan-envelope/v1" as const;
+export type RecoveryDecision="retry"|"reconcile"|"refuse"|"complete";
+export interface Sa2aReplanEnvelope{version:typeof SA2A_REPLAN_VERSION;subject:unknown;effectId:string;replayIdentity:string;outcome:string;recovery:RecoveryDecision;authority:"none";provider?:string;attempt?:number}
+export const isSa2aEnvelope=(v:unknown):v is Sa2aReplanEnvelope=>{if(!v||typeof v!=="object")return false;const x=v as Record<string,unknown>;return x.version===SA2A_REPLAN_VERSION&&"subject"in x&&typeof x.effectId==="string"&&typeof x.replayIdentity==="string"&&typeof x.outcome==="string"&&["retry","reconcile","refuse","complete"].includes(String(x.recovery))&&x.authority==="none"};
