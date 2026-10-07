@@ -14,3 +14,9 @@ __pycache__/
 # Machine-local: contains credentials (Bearer tokens) — never commit
 .mcp.json
 setting.json
+
+# lane-lease build roots (fan-out campaign)
+_build/
+target/
+_build-lane*/
+target-lane*/
