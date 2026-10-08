@@ -158,3 +158,14 @@ A missing, stale, or tampered artifact is a typed refusal (non-zero exit). The
 command never searches HOME, session history, or workspace state for omitted
 evidence. This makes it suitable for a genuinely fresh host process.
 
+## Relay command admission
+
+Worker-side admission for the `xaas-remote-relay/1` contract checks envelope,
+expiry, execution manifest, authority and sequence, refusing with one of 14
+typed refusals; a repeated command answers `KNOWN_REPLAY`. Actuation also
+requires the worker's local opt-in `ZCODE_RELAY_ALLOW_DO=1` (otherwise
+`EXPLICIT_DO_ACK_REQUIRED`). Acknowledgements persist at
+`<tmpdir>/xaas-fabric/<sha256(worktree, epoch)>.relay-ack.json` with schema
+`zcode.relay-ack-state/2`, fail-closed on corruption; a refused ack makes
+`dispatchRelayCommand` report the outcome `unacknowledged`, never `executed`.
+

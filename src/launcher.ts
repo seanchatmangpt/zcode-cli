@@ -32,6 +32,7 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
+import { extractMaxTurns, resolveSubagentMaxTurnsEnv } from "./max-turns.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runGallCommand } from "./gall-cli.ts";
@@ -302,6 +303,7 @@ function runtimeEnvironment(extra: NodeJS.ProcessEnv = {}): Record<string, strin
     ZCODE_MODEL_RETRY_MAX_RETRIES: resolveModelRetryMaxRetries(inherited),
     ZCODE_APP_CLI_EXECUTABLE: process.execPath,
     ZCODE_APP_CLI_ENTRY: launcherPath,
+    ...(resolveSubagentMaxTurnsEnv(inherited) ? { ZCODE_SUBAGENT_MAX_TURNS: resolveSubagentMaxTurnsEnv(inherited) } : {}),
     ...(distributionVersion ? { ZCODE_APP_CLI_VERSION: distributionVersion } : {})
   };
   return Object.fromEntries(
@@ -590,8 +592,15 @@ export async function main(args: string[]): Promise<number> {
   }
   if (pluginCommand !== undefined) return pluginCommand;
 
-  const login = normalizeLoginArgs(args);
-  const zaiOAuth = classifyZaiOAuthInvocation(args);
+  // `--max-turns N` is lowered to env ZCODE_MAX_TURNS for the runtime spawn;
+  // it must not reach the runtime argv (the runtime CLI rejects unknown flags).
+  const maxTurns = extractMaxTurns(args);
+  if (maxTurns.error) {
+    console.error(`Error: ${maxTurns.error}`);
+    return 1;
+  }
+  const login = normalizeLoginArgs(maxTurns.args);
+  const zaiOAuth = classifyZaiOAuthInvocation(maxTurns.args);
   if (login.checkConfiguredAccess) {
     const access = await readConfiguredModelAccess();
     if (access || await hasConfiguredProviderAccess()) {
@@ -646,7 +655,10 @@ export async function main(args: string[]): Promise<number> {
       return 1;
     }
     const runtimeArgs = withDefaultBrowserUse(login.args);
-    return await runRuntime(node, runtimeArgs, firstRunSetupEnv(setupPending, runtimeArgs));
+    return await runRuntime(node, runtimeArgs, {
+      ...firstRunSetupEnv(setupPending, runtimeArgs),
+      ...(maxTurns.maxTurns !== undefined ? { ZCODE_MAX_TURNS: String(maxTurns.maxTurns) } : {})
+    });
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;

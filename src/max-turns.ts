@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { cliSettingsPath } from "./config-paths.ts";
+
 /**
  * `--max-turns N` launcher flag. The app-server protocol has no maxTurns
  * field, so the flag is lowered to env ZCODE_MAX_TURNS, which the sync-runtime
@@ -25,4 +28,32 @@ export function extractMaxTurns(args: string[]): MaxTurnsExtraction {
     maxTurns = Number(raw);
   }
   return { args: out, ...(maxTurns !== undefined ? { maxTurns } : {}) };
+}
+
+/**
+ * Subagent turn cap. Upstream hardcodes the child-session default to 4 turns
+ * (spawn site: `maxTurns:request.maxTurns ?? this.config.subagents?.maxTurns
+ * ?? 4`), and the settings→runtime-patch mapper drops the `subagents` block,
+ * so `subagents.maxTurns` in setting.json never reaches it. The sync-runtime
+ * subagent-max-turns patch extends the fallback with env
+ * ZCODE_SUBAGENT_MAX_TURNS; the launcher lowers setting.json
+ * `subagents.maxTurns` into that env here. Explicit env wins over the file;
+ * unset or malformed values leave the upstream default (4) in charge.
+ */
+export function readSubagentMaxTurnsSetting(settingsPath: string): number | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      subagents?: { maxTurns?: unknown };
+    };
+    const raw = parsed.subagents?.maxTurns;
+    return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveSubagentMaxTurnsEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const explicit = env.ZCODE_SUBAGENT_MAX_TURNS?.trim();
+  if (explicit) return explicit;
+  return readSubagentMaxTurnsSetting(cliSettingsPath(env))?.toString();
 }

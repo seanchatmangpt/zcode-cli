@@ -331,3 +331,13 @@ sync-runtime 的 max-turns 补丁在 `runRegularTurnLoop` 内读取
 `config.maxTurns ?? ZCODE_MAX_TURNS`。
 实测驱动脚本：`node scripts/max-turns-live.mjs <N> <out.jsonl>`。
 该处理不会改写用户配置。
+
+## 子代理回合上限（subagents.maxTurns）
+
+子代理（Agent 工具）会话默认上限为 **4** 回合。`~/.zcode/cli/setting.json`
+中的 `subagents.maxTurns` 可提高该上限：启动器将其转换为环境变量
+`ZCODE_SUBAGENT_MAX_TURNS`，sync-runtime 的 subagent-max-turns 补丁在
+spawn 站点读取该变量。优先级：显式 `ZCODE_SUBAGENT_MAX_TURNS` 环境变量 >
+`subagents.maxTurns` > 上游默认值 4。仅正整数生效；顶层 `--max-turns`
+上限不适用于子代理（子代理的回合上限在 spawn 时设置）。更改需重新启动
+进程生效——运行中的会话沿用自己的环境变量。
