@@ -153,12 +153,12 @@ sj:zcode-26108-01
     dcterms:title "Subagent max-turns resolution + expert-strategy config patch" ;
     dcterms:description "Runtime lane of the v26.10.8 fleet campaign: subagent max-turns resolution plus the expert-strategy configuration patch, landed as commit daaec82ee293aead6160301895713f711518c8ef on fix/v26926-preview-publish-typed-skip. Receipt shape is the repo 5-field schema (identity/authority/consequence/replay/standing) per receipts/v26.9.22/_template.json; standing cites the campaign receipt docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md (suite 1081 passed / 0 failed at HEAD 00b7cbc9a700cd3bd5a73481cc62fa5e7583a2f5)." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "8926518000000000000000000000000000000000" ;
+    sj:baseSha "89265187b387047ef887603df6ba6010ccf9cd1f" ;
     sj:subjectSha "daaec82ee293aead6160301895713f711518c8ef" ;
     sj:subject "zcode-cli:fix/v26926-preview-publish-typed-skip@daaec82" ;
     sj:standing "ALIVE" ;
     sj:evidenceCeiling "SPECIFIED" ;
-    sj:authorityCeiling "DO" ;
+    sj:authorityCeiling "CONSTRUCT" ;
     sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave); no lane holds ambient execution authority beyond the landed diff itself." ;
     sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable 5-field receipt for this subject." ;
     sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-01" ;
@@ -199,12 +199,12 @@ sj:zcode-26108-02
     dcterms:title "Migrate v26.9.22 receipts to 5-field schema" ;
     dcterms:description "Receipts lane: migrated all receipts/v26.9.22 receipts to the 5-field schema (identity/authority/consequence/replay/standing), with typed placeholders where fields were unrecoverable, landed as commit e416d731fd4877ac01269234bdc51faeebaf3af7. Court verdict: 27/27 receipts valid under the schema (fail-closed on zero files), witnessed in docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md." ;
     sj:repository "seanchatmangpt/zcode-cli" ;
-    sj:baseSha "aa0d359000000000000000000000000000000000" ;
+    sj:baseSha "aa0d359ed54e01a703516b162314241db282309b" ;
     sj:subjectSha "e416d731fd4877ac01269234bdc51faeebaf3af7" ;
     sj:subject "zcode-cli:receipts/v26.9.22@e416d73" ;
     sj:standing "ALIVE" ;
     sj:evidenceCeiling "SPECIFIED" ;
-    sj:authorityCeiling "DO" ;
+    sj:authorityCeiling "CONSTRUCT" ;
     sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
     sj:promotionRule "Standing may advance only from an independent schema court receipt; a hand-asserted valid count is not promotion." ;
     sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-02" ;
@@ -250,7 +250,7 @@ sj:zcode-26108-03
     sj:subject "zcode-cli:docs(zh-CN)@23c479a" ;
     sj:standing "ALIVE" ;
     sj:evidenceCeiling "SPECIFIED" ;
-    sj:authorityCeiling "DO" ;
+    sj:authorityCeiling "CONSTRUCT" ;
     sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
     sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
     sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-03" ;
@@ -293,7 +293,7 @@ sj:zcode-26108-04
     sj:subject "zcode-cli:docs(c4)@8cb1d4c" ;
     sj:standing "ALIVE" ;
     sj:evidenceCeiling "SPECIFIED" ;
-    sj:authorityCeiling "DO" ;
+    sj:authorityCeiling "CONSTRUCT" ;
     sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
     sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
     sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-04" ;
@@ -336,7 +336,7 @@ sj:zcode-26108-05
     sj:subject "zcode-cli:docs/reference@542d2238" ;
     sj:standing "ALIVE" ;
     sj:evidenceCeiling "SPECIFIED" ;
-    sj:authorityCeiling "DO" ;
+    sj:authorityCeiling "CONSTRUCT" ;
     sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
     sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
     sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-05" ;
