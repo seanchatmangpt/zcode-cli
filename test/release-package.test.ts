@@ -63,6 +63,68 @@ function result(files = requiredPaths.map(packFile)): PackResult {
 }
 
 describe("release package", () => {
+  test("keeps zh-CN docs at header parity with their English sources", async () => {
+    const enToZh: Record<string, Record<string, string>> = {
+      "docs/CONFIGURATION.md": {
+        "Configuration files": "配置文件",
+        "Startup migration": "启动迁移",
+        "Setting ownership and precedence": "设置归属与优先级",
+        "Model catalogs and default selection": "模型目录与默认选择",
+        "First-run setup": "首次设置",
+        "Model access": "模型访问",
+        "Custom provider": "自定义 Provider",
+        "Permission and planning state": "权限模式与计划状态",
+        "Execution provider registry": "执行 Provider registry",
+        "Prompt access preflight": "发送前的访问检查",
+        "Background agents": "后台 Agent",
+        "Expert workflow strategy": "Expert 工作流策略",
+        "Request retries and stalled streams": "请求重试和流中断",
+        "Runtime diagnostics": "Runtime 诊断日志",
+        "TUI display mode": "TUI 显示模式",
+        "Copy on select": "选中自动复制",
+        "Theme": "主题",
+        "Turn completion notifications": "轮次完成通知",
+        "Official MCP Availability": "官方 MCP 可用性",
+        "Registering a local or dev MCP server or plugin": "注册本地或开发中的 MCP 服务器或插件",
+        "Direct MCP server registration": "直接注册 MCP 服务器",
+        "Headless session registration: the project `.mcp.json`": "无界面会话注册：项目级 `.mcp.json`",
+        "Plugin marketplace install path": "插件市场安装路径",
+        "Known limitation: install fails for any `.mcp.json` with a plain env var":
+          "已知限制：`.mcp.json` 使用普通环境变量时安装失败",
+        "See Also": "参见",
+        "Turn cap (`--max-turns`)": "回合上限（--max-turns）",
+        "Subagent turn cap (`subagents.maxTurns`)": "子代理回合上限（subagents.maxTurns）"
+      },
+      "docs/PROVIDER_CONFIG.md": {
+        "Using the example": "使用示例文件",
+        "Top-level structure": "顶层结构",
+        "Provider fields": "Provider 字段",
+        "Authentication": "鉴权",
+        "Endpoint": "接口",
+        "Model fields: smart configuration": "模型字段：智能配置",
+        "Multimodal capabilities and the three capability switches": "多模态与三个能力开关",
+        "Token limits and request mappings": "Token 上限与参数映射",
+        "Model fields: manual configuration": "模型字段：手动配置",
+        "Defaults, inheritance and clearing overrides": "默认模型、继承与清除覆盖",
+        "Automatic upstream model updates": "自动同步上游模型",
+        "Provider registry and multi-agent waves": "Provider registry 与多智能体并行",
+        "Fields belonging elsewhere": "不属于此文件的字段"
+      }
+    };
+
+    for (const [enPath, headers] of Object.entries(enToZh)) {
+      const zhPath = enPath.replace(/\.md$/, ".zh-CN.md");
+      const enText = await Bun.file(new URL(`../${enPath}`, import.meta.url)).text();
+      const zhText = await Bun.file(new URL(`../${zhPath}`, import.meta.url)).text();
+      const enHeaders = enText.split("\n").filter(line => line.startsWith("#")).map(line => line.replace(/^#+\s*/, ""));
+      const zhHeaders = new Set(zhText.split("\n").filter(line => line.startsWith("#")).map(line => line.replace(/^#+\s*/, "")));
+      expect(enHeaders.filter(header => header !== "Configuration" && header !== "Provider configuration reference"))
+        .toEqual(Object.keys(headers));
+      for (const [enHeader, zhHeader] of Object.entries(headers)) {
+        expect(zhHeaders.has(zhHeader), `${zhPath} missing translated header for "${enHeader}"`).toBe(true);
+      }
+    }
+  });
   test("requires upstream notices and original plugin licenses in the tarball", async () => {
     const manifest = await Bun.file(new URL("../package.json", import.meta.url)).json();
     expect(manifest.files).toEqual(publishedFiles);

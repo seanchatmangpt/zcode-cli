@@ -155,6 +155,16 @@ Anthropic 兼容接口使用 `anthropic-messages`，Chat Completions 使用
 `optionSpecs.maxOutputTokens.max`，与上下文容量不同；请求参数映射写在对应选项的
 `map` 字符串中。完整说明见 [Provider 字段参考](PROVIDER_CONFIG.zh-CN.md)。
 
+ZCode 桌面端应用保存在 `<storage.dir>/v2/agents-state.json` 中的内置子代理模型覆盖使用
+桌面端 provider ID：3.12.3 在 `builtInModelSelectionOverrides` 下保存完整选择（例如
+`{"providerId": "account:zai-individual-coding-plan", "modelId": "GLM-5.3"}`），
+更早的文件使用 `builtInModelOverrides` 字符串，如
+`custom:builtin%3Azai-coding-plan:GLM-5.3-Flash`。CLI 从不注册这些 provider ID，
+因此 runtime 补丁会把 `builtin:zai-coding-plan` 以及 `account:zai-*-coding-plan` /
+`-start-plan` 形状解析到键为 `zai` 的 provider（`bigmodel` 等价形状解析到
+`bigmodel`）。要更改这些子代理使用的模型，请在桌面端应用中修改覆盖；
+`defaultModelSelection` 对它们不生效。
+
 上游目录更新后，智能配置模型会自动继承新的能力与参数规格；只有显式个人覆盖保持固定。
 同步 runtime 会复制完整目录，`/model` 会刷新实时 registry，不必把上游能力值逐个写进个人文件。
 
@@ -171,6 +181,16 @@ CLI 与桌面端一样提供三种权限模式：`build`（变更前确认）、
 Plan 开启时，在输入框上边框右端显示 `Plan`，不增加行数；空编辑器会显示规划提示。
 状态栏始终显示权限模式，`/status` 分别列出 Mode 和 Plan。
 标签跟随原生状态变化，包括批准计划、新会话及恢复会话，不额外写入 CLI Plan 偏好。
+
+## 执行 Provider registry
+
+`~/.zcode/v2/execution_provider_config.json`（`schemaVersion` 为 1）选择用于 XaaS
+work-order 分派的执行 provider。文件包含 `executionProviderRules`——一组带 `providerId`
+和 `enabled` 字段的规则——以及可选的 `defaultExecutionSelection`，用于指定默认 provider。
+选择是 fail-closed 的：文件不可读或格式错误时拒绝选择（`registry_invalid`）；默认 provider
+被禁用或未知时，回退到下一条启用的规则，或以类型化错误拒绝（`provider_disabled`、
+`provider_unknown`）。不存在 registry 文件时，使用内置的 `zcode` provider。
+`ZCODE_EXECUTION_PROVIDER_CONFIG_FILE` 可覆盖该路径。
 
 ## 发送前的访问检查
 
@@ -195,6 +215,40 @@ TUI 会把被拒绝的输入放回空编辑器，或保留在后续输入队列�
 ```
 
 设为 `0` 可禁用自动后台化。工具调用中显式设置 `run_in_background: true` 时会立即进入后台。
+
+### Expert 工作流策略
+
+内置 `/expert` 工作流的受限策略（clarify 轮数、executor 并发、critic 迭代、react-loop
+轮数）在上游硬编码。`expert-strategy-config` runtime 补丁会把 `~/.zcode/cli/setting.json`
+中 `expertWorkflow.strategy` 键的覆盖项深合并到上游默认值之上；配置只在进程启动时读取
+一次，修改后需重启生效。未知键会被忽略，每个叶子只接受有限正数——格式错误的值会静默
+保留上游默认值，因此坏配置永远不会使工作流定义失效：
+
+```json
+{
+  "expertWorkflow": {
+    "strategy": {
+      "clarify": { "confidenceThreshold": 0.6, "maxRounds": 5 },
+      "executor": {
+        "drainingChangeHours": 2,
+        "frontierTarget": 8,
+        "maxConcurrentLoops": 6,
+        "maxConsecutiveErrors": 6,
+        "maxPlannerRuns": 40
+      },
+      "finalCritic": { "maxIterations": 5 },
+      "reactLoop": { "maxRounds": 200 }
+    }
+  }
+}
+```
+
+上游默认值：clarify `confidenceThreshold 0.8, maxRounds 3, minRounds 1`；executor
+`drainingChangeHours 1, frontierTarget 3, maxConcurrentLoops 2, maxConsecutiveErrors 3,
+maxPlannerRuns 10`；finalCritic `maxIterations 3`；reactLoop `maxRounds 30`。取值必须是
+正整数（`confidenceThreshold` 和 `drainingChangeHours` 可为小数）；合并结果由 runtime
+自身的 schema 校验。注意 `/workflow` 运行以及外部分派（xaas/headless）的 zcode 进程
+不使用 expert 策略。
 
 ### 请求重试和流中断
 
@@ -321,6 +375,153 @@ zcode
 如果捆绑 runtime 没有官方 MCP 的可信来源 registry，官方 HTTP MCP 服务会显示为禁用，
 诊断码为 `official_auth_unavailable`。插件的其他组件仍然可用。
 这不会关闭证书、来源或权限校验；runtime 提供所需 registry 时也不会抑制服务。
+
+## 注册本地或开发中的 MCP 服务器或插件
+
+本仓库的其他文档都没有说明如何把本地或开发中的 MCP 服务器（或插件）接入 ZCode。
+本节记录两条受支持的路径，均在本会话中针对 ZCode 3.11.2-25 通过逆向捆绑 runtime
+（`vendor/zcode.cjs`）并在 TUI 中实际验证过。
+
+### 直接注册 MCP 服务器
+
+最快的路径——并且按照下文的已知限制，也是目前唯一对需要真实密钥的服务器有效的
+路径——是在 `config.json` 的 `mcp.servers` 键下直接注册服务器。整个过程不涉及插件、
+市场或信任系统：
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "my-server-name": {
+        "type": "http",
+        "url": "http://localhost:PORT/path",
+        "headers": { "Authorization": "Bearer <token>" }
+      }
+    }
+  }
+}
+```
+
+配置加载器会从全局配置（`~/.zcode/cli/config.json`，见上文"配置文件"）或项目级配置
+文件中读取该键——项目级文件是 `zcode.json` 或 `.zcode/config.json`，从当前工作目录
+向上查找到最近的 `.git` 祖先为止。这与 provider 和模型设置已有的项目级覆盖机制相同
+（见上文"自定义 Provider"）；`mcp.servers` 条目在这两个层级中用法一致。
+
+本会话已端到端验证：按上述方式添加条目后，服务器会出现在 TUI 的 `/mcp` 面板中，
+显示为 `connected · http · N tools`，并且启动（或重启）`zcode` 后，可以在实际任务中
+按名称真正调用。
+
+### 无界面会话注册：项目级 `.mcp.json`
+
+自本目录树的 runtime 重建（2026-09-21）起，**无界面（headless）**会话——
+`zcode --prompt "..."` 运行以及 XaaS 的 `node bin/zcode.js gall-work --lease <n>`
+等自动化入口——会从工作目录中的项目级 `.mcp.json` 文件注册 MCP 服务器。交互式会话
+不读取该文件；它们从用户级设置解析 `mcp.servers`（同一次重建后为
+`~/.zcode/cli/setting.json`——上文"直接注册 MCP 服务器"记录的是重建前 `config.json`
+中的位置，早于本次变更）。这种不对称对租约 worker 流程至关重要：worker 会话在
+consumer 仓库中运行，没有打开的交互式会话，因此像 xaas-fabric 的 `xaas-execution`
+MCP 服务器这样的集成必须注册在仓库的 `.mcp.json` 中，而不是只写在操作者的
+用户级设置里。
+
+Schema——已安装的 xaas-fabric 插件缓存中带的正是这个文件：
+
+```json
+{
+  "mcpServers": {
+    "xaas-execution": {
+      "type": "http",
+      "url": "http://localhost:4000/internal-api/execution/mcp",
+      "headers": {
+        "Authorization": "Bearer ${user_config.zcode_xaas_token}"
+      }
+    }
+  }
+}
+```
+
+`${user_config.*}` 占位符在加载时从用户配置插值。这个位置不支持普通的
+`${ENV_VAR}` 占位符；相关的 preflight 行为见下文的插件安装限制。
+
+凭证规则：项目 `.mcp.json` 携带 Bearer token，因此它是机器本地的，绝不能进入版本
+控制。本仓库在 `.gitignore` 中同时列出了 `.mcp.json` 和 `setting.json`；任何收到该
+文件的 consumer 仓库也需要相同的两条目。
+
+### 插件市场安装路径
+
+ZCode 还支持安装打包在插件内的 MCP 服务器，通过本地市场：
+
+```bash
+zcode plugins marketplace add <local-dir-with-marketplace.json> --yes --json
+zcode plugins install <plugin-name>@<marketplace-name> --yes --json
+```
+
+两个文件所需的确切格式由 `test/runtime/launcher.test.ts` 的 "adds a local
+marketplace and installs its Plugin end to end" 测试（约 267-336 行）端到端验证；
+权威且当前通过的示例请直接阅读该测试。其 `marketplace.json`：
+
+```json
+{
+  "name": "cli-smoke-marketplace",
+  "pluginRoot": ".",
+  "plugins": [
+    {
+      "description": "CLI smoke plugin",
+      "name": "cli-smoke-plugin",
+      "source": "./plugin",
+      "version": "1.0.0"
+    }
+  ]
+}
+```
+
+以及插件自己的 `.zcode-plugin/plugin.json`，位于 `plugins[].source` 相对 `pluginRoot`
+指定的路径：
+
+```json
+{
+  "description": "CLI smoke plugin",
+  "name": "cli-smoke-plugin",
+  "skills": "skills",
+  "version": "1.0.0"
+}
+```
+
+`skills` 指定一个目录（相对插件根目录），其中每个技能一个子目录，各自包含自己的
+`SKILL.md`。插件自己的 `.mcp.json`（其捆绑的 MCP 服务器定义）也放在同一个
+`.zcode-plugin/` 布局中。
+
+#### 已知限制：`.mcp.json` 使用普通环境变量时安装失败
+
+本会话确认：`zcode plugins install` 会失败并输出
+
+```json
+{
+  "code": "plugin_variable_missing",
+  "message": "Missing environment variable: <VAR>",
+  "severity": "error"
+}
+```
+
+只要插件的 `.mcp.json` 引用了普通的、非 `user_config.*` 占位符——
+`${ENV_VAR_NAME}`——即使该变量确实已在进程环境中设置，即使是无需 `allowSensitive`
+的 `ZCODE_` 前缀名称也会失败。通过阅读捆绑 runtime 找到的根因：插件诊断 preflight
+（此构建中的函数 `Y4o`）为该检查硬编码了空对象（`env: {}`）作为替换上下文，
+与真实进程环境无关。这是 vendored runtime 中已确认的 bug，不是插件作者的
+`.mcp.json` 写错了。
+
+**实际影响：** 在此 ZCode 构建（3.11.2-25）上，任何 `.mcp.json` 需要 bearer token
+或其他秘密环境变量的插件，目前都无法通过 `zcode plugins install` 安装。在 runtime
+修复之前，请改用上文的直接 `mcp.servers` 注册路径——它没有这样的 preflight，
+今天就可以用于需要真实密钥的服务器。
+
+### 参见
+
+- 上文"官方 MCP 可用性"——官方 HTTP MCP 服务独立的
+  `official_auth_unavailable` 诊断，与本节记录的本地/开发路径无关。
+- [宿主集成契约](./HOST_INTEGRATION.md)——宿主用于启动 `zcode` 的
+  进程/stdio 边界；它不涉及插件或 MCP 注册。
+- `test/runtime/launcher.test.ts`——上文本地市场加插件安装格式的权威、
+  当前通过的来源。
 
 ## 回合上限（--max-turns）
 
