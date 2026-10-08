@@ -75,8 +75,8 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
   `scripts/gen-ocel.ts`, `scripts/gen-zcode-loop.ts` + `zcode-events.ts`, the `test/ocel-*.test.ts` falsifiers).
   No row, no hand-written file.
 - Do not edit `vendor/zcode.cjs` by hand. The bundle is patched by `runtimePatchPlan` in
-  `scripts/sync-runtime.ts` (23 patches registered; the recorded 3.14.3 sync shows 16 applied,
-  2 already present upstream, 5 skipped as incompatible — see `vendor/extraction.json`).
+  `scripts/sync-runtime.ts` (25 patches registered; the recorded 3.14.3 sync shows 21 applied,
+  2 already present upstream, 2 skipped as incompatible — see `vendor/extraction.json`).
 - `zcode-runtime.lock.json` pins the upstream runtime; change it only through the release flow in `docs/RELEASING.md`.
 
 ## Coupling to xaas

@@ -96,6 +96,8 @@ The exact tested tarball is uploaded to pkg.pr.new without repacking it.
 Install the [pkg-pr-new GitHub App](https://github.com/apps/pkg-pr-new) on this
 repository before the first preview publication. No npm token or npm publish
 permission is needed. The publisher is pinned in `devDependencies` and `bun.lock`.
+If the pkg-pr-new App is not installed, publication is skipped with a `::warning`
+and the job still succeeds; any other publish failure still fails the job.
 
 The app updates a PR comment with a commit-specific preview link. The workflow
 summary also gives the command to test an existing session:
@@ -121,6 +123,13 @@ versioning: `<year>.<month>.<day>`, tagged `v<version>` as before (for example
 upstream ZCode App version is no longer encoded in the package version: it
 stays decoupled, recorded in `zcode-runtime.lock.json` (`appVersion`) and in
 `vendor/extraction.json` (`appVersion`, `cliVersion`).
+
+Since 1b0c604 (2026-09-25), the committed `package.json` version between
+releases is runtime-synchronized to `<appVersion>-<n>` (currently `3.14.3-1`,
+via `syncedReleaseVersion` in `scripts/release-version.ts`), so it tracks the
+extracted ZCode App rather than the last calver tag. Calver is stamped only by
+the release flow; the in-between `<appVersion>-<n>` value is a synchronization
+artifact, not the next release version.
 
 Under the retired scheme the prefix tracked the upstream ZCode App and a
 globally increasing build revision tracked fixes and features in this project
@@ -294,3 +303,11 @@ The publisher skips an identical existing version, refuses older versions,
 verifies every existing npm release's `gitHead`, and refuses to reuse a tag
 that points at another commit. The `latest` dist-tag therefore advances only
 to the newest validated App-plus-build release.
+
+Each publish run emits typed reason outputs, before every exit-1 refusal and
+rendered in the job summary: `enabled_reason` (`MANUAL_REQUEST`,
+`RELEASE_MERGE`, `NOT_REQUESTED`), `publish_reason` (`NEW_VERSION`,
+`ALREADY_PUBLISHED`, `SUPERSEDED_NEWER_RELEASE`, `NOT_REQUESTED`),
+`create_tag_reason` (`CREATE`, `TAG_EXISTS`, `TAG_MISMATCH_REFUSED`,
+`NOT_REQUESTED`) and `create_release_reason` (`CREATE`, `RELEASE_EXISTS`,
+`NOT_REQUESTED`).

@@ -8,7 +8,7 @@ Grounded in (2026-09-22):
 - Host contract: `~/dev/zcode-cli/docs/HOST_INTEGRATION.md` (plugin manifests, user_config interpolation)
 - Headless session registration: project `.mcp.json` in the working directory (2026-09-21 runtime rebuild); see [CONFIGURATION.md](./CONFIGURATION.md), "Headless session registration: the project `.mcp.json`"
 
-zcode-cli contains **zero** xaas-specific code; the entire coupling runs through three plugin contracts: the marketplace install, the `.mcp.json` MCP registration, and the `hooks.json` PreToolUse gate. Since xaas `1f429b4` (2026-09-20) there is a fourth, native surface in the other direction: the fabric dispatcher launches semantic runs with `zcode gall-work --lease <descriptor>` under the shared contract `~/xaas/priv/zcode_plugin/gall-work.contract.json` (byte-identical to `test/fixtures/gall-work.contract.json` here; both repos pin its sha256), implemented in `src/gall-work.ts` (landing on main from `w9-sweep/zcode-pr3`, commit `454ed62`) — a claim → persist → construct → close lifecycle alongside the gate and lease scripts.
+zcode-cli contains **zero** xaas-specific code; the entire coupling runs through three plugin contracts: the marketplace install, the `.mcp.json` MCP registration, and the `hooks.json` PreToolUse gate. Since xaas `1f429b4` (2026-09-20) there is a fourth, native surface in the other direction: the fabric dispatcher launches semantic runs with `zcode gall-work --lease <descriptor>` under the shared contract `~/xaas/priv/zcode_plugin/gall-work.contract.json` (byte-identical to `test/fixtures/gall-work.contract.json` here; both repos pin its sha256), implemented in `src/gall-work.ts` (landing on main from `w9-sweep/zcode-pr3`, commit `454ed62`) — a claim → persist → construct → close lifecycle alongside the gate and lease scripts. Since zcode-cli `c2adb24` (2026-09-26) the lease state file is keyed: when the dispatcher sets `XAAS_LEASE_ID` (the epoch id) the file gains a path-segment-sanitized `-<id>` suffix; without it the legacy per-cwd path is byte-identical. The gate and lease script must address the same key or a keyed worker is fenceless — the current 26.9.17 gate reads the keyed path first with the legacy path as fallback; a gate that reads only the legacy path cannot see a keyed worker's lease.
 
 ## L1 — System Context
 
@@ -49,7 +49,7 @@ C4Container
         Container(cache, "Installed plugin cache", "Files", "~/.zcode/cli/plugins/cache/xaas-fabric-marketplace/xaas-fabric/26.9.17 - plugin.json, .mcp.json, hooks, scripts, skills, agents")
         Container(hooks, "Hook runner", "TypeScript", "Runs PreToolUse hooks on every tool call")
         Container(gate, "xaas-gate.mjs", "Node script from plugin", "PreToolUse admission gate, active only when XAAS_WORKER=1; denies or defers, never grants, fails closed")
-        Container(leasecli, "xaas-lease.mjs", "Node script from plugin", "Persists the worker lease token in /tmp/xaas-fabric keyed by working directory")
+        Container(leasecli, "xaas-lease.mjs", "Node script from plugin", "Persists the worker lease token in /tmp/xaas-fabric keyed by working directory, with a -<XAAS_LEASE_ID> suffix when the dispatcher sets it")
     }
 
     System_Boundary(fabric, "XaaS (~/xaas, Phoenix on localhost:4000)") {
@@ -84,7 +84,7 @@ C4Component
         Component(dispatcher, "Dispatcher", "Main agent", "Spawns the xaas-worker subagent; holds no lease itself")
         Component(worker, "xaas-worker subagent", "Subagent with Read, Grep, Glob, Edit, Write, Bash", "Executes construction inside the leased worktree only; no merge or publish authority")
         Component(gate, "xaas-gate.mjs", "PreToolUse hook", "Defers xaas-execution MCP tools (that IS the lease protocol); Bash argv-allowlist limited to git without push, the lease script and read-only worktree helpers; write tools contained to the leased worktree, never .git; denies Agent spawning unless XAAS_ALLOW_SUBAGENTS=1; every failure path is a deny")
-        Component(leasecli, "xaas-lease.mjs", "Node script", "save / get / clear lease state in /tmp/xaas-fabric; refuses to clobber a live different-token lease")
+        Component(leasecli, "xaas-lease.mjs", "Node script", "save / get / clear lease state in /tmp/xaas-fabric keyed by cwd plus an optional -<XAAS_LEASE_ID> suffix; refuses to clobber a live different-token lease")
         Component(mcptools, "xaas-execution tool client", "MCP tools", "The seven fabric verbs surfaced to the model")
     }
 
