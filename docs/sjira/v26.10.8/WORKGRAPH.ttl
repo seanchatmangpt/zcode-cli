@@ -1,0 +1,366 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for ZCODE work orders v26.10.8: align zcode-cli to ZCode.app 3.14.3 and
+# cut release v26.10.8 (calver — a deliberate scheme change from v3.14.1-N) as one
+# ten-lane wave. Vocabulary is the semantic-jira-pack ontology; class and individual
+# definitions below are the same sj: vocabulary as v26.9.21/v26.9.22's canonical graphs,
+# declared once. This graph is hand-authored canonical source (法面 input), not a
+# projection; the ticket under jira/ is a hand-projection of it pending a
+# semantic-jira-pack re-run. Edit this file, never a ticket.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Action a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:ProjectionSpec a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+sj:source-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Source evidence" ;
+    dcterms:description "Exact canonical-source identity evidence." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+
+sj:projection-jira a sj:ProjectionSpec ;
+    rdfs:label "Jira/Markdown ticket" ;
+    dcterms:description "Deterministic jira/markdown ticket projection; authority is NONE." ;
+    sj:projectionType "jira" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-wbpr a sj:ProjectionSpec ;
+    rdfs:label "Working-backwards plan" ;
+    dcterms:description "Deterministic working-backwards plan projection; authority is NONE." ;
+    sj:projectionType "wbpr" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-prd a sj:ProjectionSpec ;
+    rdfs:label "Product requirements document" ;
+    dcterms:description "Deterministic product requirements document projection; authority is NONE." ;
+    sj:projectionType "prd" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-ard a sj:ProjectionSpec ;
+    rdfs:label "Architecture requirements document" ;
+    dcterms:description "Deterministic architecture requirements document projection; authority is NONE." ;
+    sj:projectionType "ard" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-vision a sj:ProjectionSpec ;
+    rdfs:label "Vision document" ;
+    dcterms:description "Deterministic vision document projection; authority is NONE." ;
+    sj:projectionType "vision" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-fond a sj:ProjectionSpec ;
+    rdfs:label "FOND planning projection" ;
+    dcterms:description "Deterministic fond planning projection projection; authority is NONE." ;
+    sj:projectionType "fond" ;
+    sj:extension "pddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-hddl a sj:ProjectionSpec ;
+    rdfs:label "HDDL task/method projection" ;
+    dcterms:description "Deterministic hddl task/method projection projection; authority is NONE." ;
+    sj:projectionType "hddl" ;
+    sj:extension "hddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-sa2a a sj:ProjectionSpec ;
+    rdfs:label "SA2A work/execution package" ;
+    dcterms:description "Deterministic sa2a work/execution package projection; authority is NONE." ;
+    sj:projectionType "sa2a" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-worker a sj:ProjectionSpec ;
+    rdfs:label "Bounded worker input envelope" ;
+    dcterms:description "Deterministic bounded worker input envelope projection; authority is NONE." ;
+    sj:projectionType "worker" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-verification a sj:ProjectionSpec ;
+    rdfs:label "Verification plan" ;
+    dcterms:description "Deterministic verification plan projection; authority is NONE." ;
+    sj:projectionType "verification" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-executive a sj:ProjectionSpec ;
+    rdfs:label "Executive status view" ;
+    dcterms:description "Deterministic executive status view projection; authority is NONE." ;
+    sj:projectionType "executive" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-machine a sj:ProjectionSpec ;
+    rdfs:label "Machine status view" ;
+    dcterms:description "Deterministic machine status view projection; authority is NONE." ;
+    sj:projectionType "machine" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-receipt a sj:ProjectionSpec ;
+    rdfs:label "Receipt requirement summary" ;
+    dcterms:description "Deterministic receipt requirement summary projection; authority is NONE." ;
+    sj:projectionType "receipt" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+sj:projection-replay a sj:ProjectionSpec ;
+    rdfs:label "Replay manifest" ;
+    dcterms:description "Deterministic replay manifest projection; authority is NONE." ;
+    sj:projectionType "replay" ;
+    sj:extension "json" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.9.19" ;
+    sj:authorityClaim "NONE" .
+
+
+
+# ---- ZCODE-26108-01 ----
+sj:zcode-26108-01
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26108-01: Subagent max-turns resolution + expert-strategy config patch" ;
+    dcterms:identifier "ZCODE-26108-01" ;
+    dcterms:title "Subagent max-turns resolution + expert-strategy config patch" ;
+    dcterms:description "Runtime lane of the v26.10.8 fleet campaign: subagent max-turns resolution plus the expert-strategy configuration patch, landed as commit daaec82ee293aead6160301895713f711518c8ef on fix/v26926-preview-publish-typed-skip. Receipt shape is the repo 5-field schema (identity/authority/consequence/replay/standing) per receipts/v26.9.22/_template.json; standing cites the campaign receipt docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md (suite 1081 passed / 0 failed at HEAD 00b7cbc9a700cd3bd5a73481cc62fa5e7583a2f5)." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "8926518000000000000000000000000000000000" ;
+    sj:subjectSha "daaec82ee293aead6160301895713f711518c8ef" ;
+    sj:subject "zcode-cli:fix/v26926-preview-publish-typed-skip@daaec82" ;
+    sj:standing "ALIVE" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave); no lane holds ambient execution authority beyond the landed diff itself." ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable 5-field receipt for this subject." ;
+    sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-01" ;
+    sj:pathScope "src", "test", "docs/sjira/v26.10.8" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26108-01 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26108-01-1, sj:acc-zcode-26108-01-2 ;
+    sj:falsifier sj:fal-zcode-26108-01-1 ;
+    sj:projection sj:projection-jira, sj:projection-receipt, sj:projection-replay ;
+    sj:nextCheckpoint sj:cp-zcode-26108-01 .
+
+sj:court-zcode-26108-01 a sj:Court ;
+    rdfs:label "ZCODE-26108-01 exact-subject court" ;
+    dcterms:description "Court for the subagent max-turns + expert-strategy lane: typecheck and unit tests at the exact landed head, verdict bound into a 5-field receipt." .
+
+sj:acc-zcode-26108-01-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Typecheck + suite green at landed head" ;
+    dcterms:description "cd /Users/sac/zcode-cli && bun run typecheck exits 0 and the unit suite reports 0 failed (witnessed 1081 passed / 0 failed at HEAD 00b7cbc in docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md). Earns: RUNTIME_LANE_GREEN." .
+sj:acc-zcode-26108-01-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Commit present with claimed diff" ;
+    dcterms:description "git log --format=%H -1 daaec82ee293aead6160301895713f711518c8ef resolves on fix/v26926-preview-publish-typed-skip and git show --stat names runtime/config files matching the expert-strategy patch. Earns: SUBJECT_IDENTITY_BOUND." .
+
+sj:fal-zcode-26108-01-1 a sj:Falsifier ;
+    rdfs:label "Green claim over red suite" ;
+    dcterms:description "Observation: the suite exiting nonzero at the pinned head while any receipt claims the lane green refutes the standing (admission_vacuous)." .
+
+sj:cp-zcode-26108-01 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26108-01 checkpoint" ;
+    dcterms:description "Closed when the court receipt binds subjectSha daaec82 with green gates; the frontier advances to dependent docs lanes." .
+
+
+# ---- ZCODE-26108-02 ----
+sj:zcode-26108-02
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26108-02: Migrate v26.9.22 receipts to 5-field schema (27/27)" ;
+    dcterms:identifier "ZCODE-26108-02" ;
+    dcterms:title "Migrate v26.9.22 receipts to 5-field schema" ;
+    dcterms:description "Receipts lane: migrated all receipts/v26.9.22 receipts to the 5-field schema (identity/authority/consequence/replay/standing), with typed placeholders where fields were unrecoverable, landed as commit e416d731fd4877ac01269234bdc51faeebaf3af7. Court verdict: 27/27 receipts valid under the schema (fail-closed on zero files), witnessed in docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "aa0d359000000000000000000000000000000000" ;
+    sj:subjectSha "e416d731fd4877ac01269234bdc51faeebaf3af7" ;
+    sj:subject "zcode-cli:receipts/v26.9.22@e416d73" ;
+    sj:standing "ALIVE" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
+    sj:promotionRule "Standing may advance only from an independent schema court receipt; a hand-asserted valid count is not promotion." ;
+    sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-02" ;
+    sj:pathScope "receipts/v26.9.22", "receipts/v26.9.23" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26108-02 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26108-02-1, sj:acc-zcode-26108-02-2 ;
+    sj:falsifier sj:fal-zcode-26108-02-1 ;
+    sj:projection sj:projection-jira, sj:projection-receipt ;
+    sj:nextCheckpoint sj:cp-zcode-26108-02 .
+
+sj:court-zcode-26108-02 a sj:Court ;
+    rdfs:label "ZCODE-26108-02 receipts schema court" ;
+    dcterms:description "Runs the repo receipts validator over receipts/v26.9.22 (and v26.9.23) and fails closed on any invalid or missing file; verdict 27/27 valid post-migration." .
+
+sj:acc-zcode-26108-02-1 a sj:AcceptanceCriterion ;
+    rdfs:label "27/27 receipts valid" ;
+    dcterms:description "cd /Users/sac/zcode-cli && bun run receipts:validate exits 0 with every receipt valid under the 5-field schema (identity/authority/consequence/replay/standing, per receipts/v26.9.22/_template.json); fail-closed on zero files. Witnessed 27/27. Earns: RECEIPTS_SCHEMA_VALID." .
+sj:acc-zcode-26108-02-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Typed placeholders disclosed" ;
+    dcterms:description "Every unrecoverable migrated field carries an explicit typed placeholder (never a fabricated value), greppable in receipts/v26.9.22; any fabricated-looking literal without a placeholder marker refutes the migration. Earns: PLACEHOLDERS_TYPED." .
+
+sj:fal-zcode-26108-02-1 a sj:Falsifier ;
+    rdfs:label "Validator green over invalid receipt" ;
+    dcterms:description "Observation: any receipt under receipts/v26.9.22 missing one of the five R-fields while the validator reports 27/27 valid refutes the court (admission_vacuous)." .
+
+sj:cp-zcode-26108-02 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26108-02 checkpoint" ;
+    dcterms:description "Closed when the schema court re-runs green at the current head; standing ALIVE persists only while the validator passes." .
+
+
+# ---- ZCODE-26108-03 ----
+sj:zcode-26108-03
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26108-03: zh-CN translation parity + header-parity guard" ;
+    dcterms:identifier "ZCODE-26108-03" ;
+    dcterms:title "zh-CN translation parity for CONFIGURATION/PROVIDER_CONFIG + header-parity guard" ;
+    dcterms:description "Docs lane: zh-CN translation parity for CONFIGURATION/PROVIDER_CONFIG docs plus a header-parity guard, landed as commit 23c479aaea64c8afe556491c818ce54b9010b5b1." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "e416d731fd4877ac01269234bdc51faeebaf3af7" ;
+    sj:subjectSha "23c479aaea64c8afe556491c818ce54b9010b5b1" ;
+    sj:subject "zcode-cli:docs(zh-CN)@23c479a" ;
+    sj:standing "ALIVE" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
+    sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
+    sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-03" ;
+    sj:pathScope "docs", "test", "scripts" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26108-03 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26108-03-1 ;
+    sj:falsifier sj:fal-zcode-26108-03-1 ;
+    sj:projection sj:projection-jira, sj:projection-receipt ;
+    sj:nextCheckpoint sj:cp-zcode-26108-03 .
+
+sj:court-zcode-26108-03 a sj:Court ;
+    rdfs:label "ZCODE-26108-03 parity court" ;
+    dcterms:description "Runs the header-parity guard over the zh-CN doc set at the exact head; drift in section headers between en and zh-CN refutes ALIVE." .
+
+sj:acc-zcode-26108-03-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Header-parity guard green" ;
+    dcterms:description "The header-parity guard (landed with 23c479a) exits 0 over CONFIGURATION/PROVIDER_CONFIG zh-CN docs: every translated doc's section headers match the English source. Earns: TRANSLATION_PARITY_GREEN." .
+
+sj:fal-zcode-26108-03-1 a sj:Falsifier ;
+    rdfs:label "Guard green over drifted headers" ;
+    dcterms:description "Observation: a zh-CN doc whose headers diverge from its English source while the guard exits 0 refutes the parity claim." .
+
+sj:cp-zcode-26108-03 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26108-03 checkpoint" ;
+    dcterms:description "Closed when the parity court runs green at the pinned head." .
+
+
+# ---- ZCODE-26108-04 ----
+sj:zcode-26108-04
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26108-04: zcode→xaas c4 integration doc verification" ;
+    dcterms:identifier "ZCODE-26108-04" ;
+    dcterms:title "Verify/sync zcode→xaas c4 integration doc (fleet campaign)" ;
+    dcterms:description "Docs-verification lane: verified and synced the zcode→xaas c4 integration documentation against the live integration surface, landed as commit 8cb1d4c881269f7b89ea81e66f3064a9bd2d243d. Verified content, not newly authored prose: each claim in the c4 doc re-checked against the referenced files at the exact head." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "23c479aaea64c8afe556491c818ce54b9010b5b1" ;
+    sj:subjectSha "8cb1d4c881269f7b89ea81e66f3064a9bd2d243d" ;
+    sj:subject "zcode-cli:docs(c4)@8cb1d4c" ;
+    sj:standing "ALIVE" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
+    sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
+    sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-04" ;
+    sj:pathScope "docs", "docs/reference" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26108-04 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26108-04-1 ;
+    sj:falsifier sj:fal-zcode-26108-04-1 ;
+    sj:projection sj:projection-jira, sj:projection-receipt ;
+    sj:nextCheckpoint sj:cp-zcode-26108-04 .
+
+sj:court-zcode-26108-04 a sj:Court ;
+    rdfs:label "ZCODE-26108-04 c4 doc court" ;
+    dcterms:description "Re-verifies each c4 doc claim (paths, symbols, integration edges) against the tree at the exact head; any claim naming a nonexistent path or symbol refutes ALIVE." .
+
+sj:acc-zcode-26108-04-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Every c4 doc referent resolves" ;
+    dcterms:description "For each file path and symbol named in the c4 integration doc at 8cb1d4c: the referent exists in the tree at HEAD. Spot-court via ls/test -f over the named paths exits 0 for all. Earns: C4_DOC_REFERENTS_RESOLVE." .
+
+sj:fal-zcode-26108-04-1 a sj:Falsifier ;
+    rdfs:label "Dangling referent" ;
+    dcterms:description "Observation: any path or symbol named by the c4 doc not existing at the pinned head refutes the verification claim." .
+
+sj:cp-zcode-26108-04 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26108-04 checkpoint" ;
+    dcterms:description "Closed when the c4 doc court re-verifies referents at the current head." .
+
+
+# ---- ZCODE-26108-05 ----
+sj:zcode-26108-05
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-26108-05: docs/reference generated TS skeletons (coverage remediation)" ;
+    dcterms:identifier "ZCODE-26108-05" ;
+    dcterms:title "doc-hdit scaffolded TS skeletons in docs/reference (coverage remediation)" ;
+    dcterms:description "Docs-generation lane: doc-hdit-scaffolded TypeScript skeletons under docs/reference as documentation-coverage remediation, landed as commit 542d22382961e84300fe51bee66e338649d278d6. Generated artifacts are projections; edits go through the generator, never by hand." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "23c479aaea64c8afe556491c818ce54b9010b5b1" ;
+    sj:subjectSha "542d22382961e84300fe51bee66e338649d278d6" ;
+    sj:subject "zcode-cli:docs/reference@542d2238" ;
+    sj:standing "ALIVE" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "DO" ;
+    sj:authorityRequirement "Operator fleet-campaign order 2026-10-08 (v26.10.8 wave)." ;
+    sj:promotionRule "Standing cites receipts: standing may advance only from an independent exact-head court receipt binding subjectSha and a durable 5-field receipt." ;
+    sj:replayIdentity "semantic-jira:v26.10.8:ZCODE-26108-05" ;
+    sj:pathScope "docs/reference" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-26108-05 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:postcondition-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-26108-05-1 ;
+    sj:falsifier sj:fal-zcode-26108-05-1 ;
+    sj:projection sj:projection-jira, sj:projection-receipt ;
+    sj:nextCheckpoint sj:cp-zcode-26108-05 .
+
+sj:court-zcode-26108-05 a sj:Court ;
+    rdfs:label "ZCODE-26108-05 skeleton court" ;
+    dcterms:description "Confirms the scaffolded skeletons under docs/reference exist at the exact head and typecheck against the documented surfaces; regenerated output drifting from the committed skeletons refutes ALIVE." .
+
+sj:acc-zcode-26108-05-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Skeletons present and resolvable" ;
+    dcterms:description "git show --stat 542d22382961e84300fe51bee66e338649d278d6 lists only docs/reference skeleton files, and those files exist at HEAD. Earns: SKELETONS_PRESENT." .
+
+sj:fal-zcode-26108-05-1 a sj:Falsifier ;
+    rdfs:label "Hand-edited generated skeleton" ;
+    dcterms:description "Observation: a committed skeleton diverging from regenerated generator output without a graph change refutes the generated-artifact claim (projection drift)." .
+
+sj:cp-zcode-26108-05 a sj:Checkpoint ;
+    rdfs:label "ZCODE-26108-05 checkpoint" ;
+    dcterms:description "Closed when the skeleton court confirms presence at the pinned head; the v26.10.8 frontier then closes into the campaign receipt." .
