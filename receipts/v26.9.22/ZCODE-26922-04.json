@@ -1,12 +1,64 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-04: fleet gall-work readiness observation after bin/zcode.js rebuild (3.14.1 bundle + native gall-work)",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "b8570dcd6d7c9af7fb2345dcb0bcbcbc65a252c4",
+  "base_sha": "b8570dcd6d7c9af7fb2345dcb0bcbcbc65a252c4",
+  "subject_note": "recorded base 'b8570dc (main, post-rebuild)' (full: b8570dcd6d7c9af7fb2345dcb0bcbcbc65a252c4); the receipt attests the rebuilt binary state at this head, no merge commit"
+ },
+ "authority": {
+  "ceiling": "OBSERVE",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [],
+  "files_changed": [
+   "UNRECOVERED (observation receipt; no construct claimed)"
+  ],
+  "remote_effects": [
+   "none: observation-only receipt (fleet dispatch observation was pending at observation time; acceptance deferred to XAAS-26922-12 dependency per legacy text)"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "observation over $TMPDIR/xaas-dispatch-*.log after bin/zcode.js rebuild (3.14.1 bundle + native gall-work + node>=22 resolution)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "Readiness proven, dispatch observation pending: as of observation time the newest dispatch log is 17:11:07 (pre-rebuild) -- the fleet polling is in a paused/drain phase, so no post-rebuild dispatch has landed yet. Pre-rebuild state: 45 of 3741 logs carried 'unknown command: gall-work' (all pre-rebuild). After the rebuild the binary exposes gall-work (probe exit 2 contract) and the claim path reaches the fabric (typed 401 without token; the dispatcher supplies the token). The 0-unknown-command + claim_next+close acceptance will be observable at the fleet's next materialized epoch dispatch (XAAS-26922-12 dependency)."
+   },
+   {
+    "cmd": "fleet dispatcher: cd  && node bin/zcode.js gall-work --lease <descriptor> (xaas-glm-failover-dispatcher.sh:202)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "Readiness proven, dispatch observation pending: as of observation time the newest dispatch log is 17:11:07 (pre-rebuild) -- the fleet polling is in a paused/drain phase, so no post-rebuild dispatch has landed yet. Pre-rebuild state: 45 of 3741 logs carried 'unknown command: gall-work' (all pre-rebuild). After the rebuild the binary exposes gall-work (probe exit 2 contract) and the claim path reaches the fabric (typed 401 without token; the dispatcher supplies the token). The 0-unknown-command + claim_next+close acceptance will be observable at the fleet's next materialized epoch dispatch (XAAS-26922-12 dependency)."
+   },
+   {
+    "cmd": "field probes this session: gall-work missing-lease typed ENOENT+usage exit 2; real claim against live fabric = typed REFUSED_CLAIM fabric_http_401 (no token in probe shell; fail-closed, no prompt fallback)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "Readiness proven, dispatch observation pending: as of observation time the newest dispatch log is 17:11:07 (pre-rebuild) -- the fleet polling is in a paused/drain phase, so no post-rebuild dispatch has landed yet. Pre-rebuild state: 45 of 3741 logs carried 'unknown command: gall-work' (all pre-rebuild). After the rebuild the binary exposes gall-work (probe exit 2 contract) and the claim path reaches the fabric (typed 401 without token; the dispatcher supplies the token). The 0-unknown-command + claim_next+close acceptance will be observable at the fleet's next materialized epoch dispatch (XAAS-26922-12 dependency)."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-04.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt itself declared PARTIAL_ALIVE: readiness proven (typed ENOENT contract, typed 401 claim refusal), fleet 0-unknown-command acceptance observation pending. Unchanged by migration; historical, not re-witnessed."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-04",
   "base_sha": "b8570dc (main, post-rebuild)",
   "command": [
-    "observation over $TMPDIR/xaas-dispatch-*.log after bin/zcode.js rebuild (3.14.1 bundle + native gall-work + node>=22 resolution)",
-    "fleet dispatcher: cd  && node bin/zcode.js gall-work --lease <descriptor> (xaas-glm-failover-dispatcher.sh:202)",
-    "field probes this session: gall-work missing-lease typed ENOENT+usage exit 2; real claim against live fabric = typed REFUSED_CLAIM fabric_http_401 (no token in probe shell; fail-closed, no prompt fallback)"
+   "observation over $TMPDIR/xaas-dispatch-*.log after bin/zcode.js rebuild (3.14.1 bundle + native gall-work + node>=22 resolution)",
+   "fleet dispatcher: cd  && node bin/zcode.js gall-work --lease <descriptor> (xaas-glm-failover-dispatcher.sh:202)",
+   "field probes this session: gall-work missing-lease typed ENOENT+usage exit 2; real claim against live fabric = typed REFUSED_CLAIM fabric_http_401 (no token in probe shell; fail-closed, no prompt fallback)"
   ],
   "exit": 0,
   "output_excerpt": "Readiness proven, dispatch observation pending: as of observation time the newest dispatch log is 17:11:07 (pre-rebuild) -- the fleet polling is in a paused/drain phase, so no post-rebuild dispatch has landed yet. Pre-rebuild state: 45 of 3741 logs carried 'unknown command: gall-work' (all pre-rebuild). After the rebuild the binary exposes gall-work (probe exit 2 contract) and the claim path reaches the fabric (typed 401 without token; the dispatcher supplies the token). The 0-unknown-command + claim_next+close acceptance will be observable at the fleet's next materialized epoch dispatch (XAAS-26922-12 dependency).",
   "standing": "PARTIAL_ALIVE"
+ }
 }

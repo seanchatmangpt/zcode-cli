@@ -1,15 +1,81 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-10: provider-backoff (real local HTTP 429/1302 courts) + Chicago mock-grep gate",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "df9cd2484f8e5d1ab66ea410f09a88cd8fd22344",
+  "base_sha": "f5e2a36740131703aa6dde251c7569275df60579",
+  "subject_note": "merge_sha df9cd24 (full: df9cd2484f8e5d1ab66ea410f09a88cd8fd22344); new src/provider-backoff.ts + fabricCall wiring per legacy text"
+ },
+ "authority": {
+  "ceiling": "DO",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [
+   "df9cd24"
+  ],
+  "files_changed": [
+   "UNRECOVERED (legacy text names src/provider-backoff.ts and fabricCall wiring, ZCODE_FABRIC_MAX_CONCURRENT default 4; exact file set unrecorded)"
+  ],
+  "remote_effects": [
+   "none recorded in legacy receipt"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "bun run typecheck",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4)."
+   },
+   {
+    "cmd": "bun test test/provider-backoff.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4)."
+   },
+   {
+    "cmd": "bun test test/gall-work.test.ts test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4)."
+   },
+   {
+    "cmd": "bun test test/ocel-conformance.test.ts test/ocel-tap.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4)."
+   },
+   {
+    "cmd": "grep -rn 'jest.mock|jest.fn' test/provider-backoff.test.ts",
+    "exit": 1,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4)."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-10.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt recorded provider-backoff 9 pass/0 fail against real local HTTP servers, gall 36 pass, ocel 8 pass, Chicago mock grep 0 hits at merge df9cd24 (historical). Downgraded ALIVE -> PARTIAL_ALIVE: not re-witnessed in the current session."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-10",
   "base_sha": "f5e2a36",
   "merge_sha": "df9cd24",
   "command": [
-    "bun run typecheck",
-    "bun test test/provider-backoff.test.ts",
-    "bun test test/gall-work.test.ts test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
-    "bun test test/ocel-conformance.test.ts test/ocel-tap.test.ts",
-    "grep -rn 'jest.mock|jest.fn' test/provider-backoff.test.ts"
+   "bun run typecheck",
+   "bun test test/provider-backoff.test.ts",
+   "bun test test/gall-work.test.ts test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
+   "bun test test/ocel-conformance.test.ts test/ocel-tap.test.ts",
+   "grep -rn 'jest.mock|jest.fn' test/provider-backoff.test.ts"
   ],
   "exit": 0,
   "output_excerpt": "typecheck rc=0. provider-backoff: 9 pass / 0 fail against real local HTTP servers (429 retry then typed refusal; 1302 envelope classified + retried; ConcurrencyCap bound observed server-side maxInFlight<=3 at limit 3; fabricCall integration incl. fabric_capacity:retry_exhausted typed outcome). Gall suites 36 pass; ocel 8 pass. Chicago mock grep: 0 hits. New: src/provider-backoff.ts; fabricCall wired (ZCODE_FABRIC_MAX_CONCURRENT default 4).",
   "standing": "ALIVE"
+ }
 }

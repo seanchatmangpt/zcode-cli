@@ -1,15 +1,81 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-06: OCEL receipt binding (runConstruct OcelRecorder, env-carried work-order identity) + gall/ocel gates",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "6867783baddfb88fdd9f6f4755be452436cadcb2",
+  "base_sha": "df9cd2484f8e5d1ab66ea410f09a88cd8fd22344",
+  "subject_note": "merge_sha 6867783 (full: 6867783baddfb88fdd9f6f4755be452436cadcb2) resolved in this repo"
+ },
+ "authority": {
+  "ceiling": "DO",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [
+   "6867783"
+  ],
+  "files_changed": [
+   "UNRECOVERED (legacy text names src construct surface: runConstruct/OcelRecorder stream-json, ZCODE_OCEL=1, XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA env, evidence.ocel_receipt; exact file set unrecorded)"
+  ],
+  "remote_effects": [
+   "none recorded in legacy receipt"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "bun run typecheck",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code)."
+   },
+   {
+    "cmd": "bun test test/ocel-lease-identity.test.ts test/ocel-launcher.test.ts test/ocel-conformance.test.ts test/ocel-generated.test.ts test/ocel-coverage.test.ts test/ocel-reuse.test.ts test/ocel-real-run.test.ts test/gall-work.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code)."
+   },
+   {
+    "cmd": "bun test test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code)."
+   },
+   {
+    "cmd": "uv run --with pytest python -m pytest -q test/py",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code)."
+   },
+   {
+    "cmd": "bun scripts/gen-ocel.ts --check",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code)."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-06.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt recorded 104 unit tests 0 fail, e2e 16 pass, pytest 2 pass, gen-ocel fixed point at merge 6867783 (historical). Downgraded ALIVE -> PARTIAL_ALIVE: not re-witnessed in the current session."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-06",
   "base_sha": "df9cd24",
   "merge_sha": "6867783",
   "command": [
-    "bun run typecheck",
-    "bun test test/ocel-lease-identity.test.ts test/ocel-launcher.test.ts test/ocel-conformance.test.ts test/ocel-generated.test.ts test/ocel-coverage.test.ts test/ocel-reuse.test.ts test/ocel-real-run.test.ts test/gall-work.test.ts",
-    "bun test test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
-    "uv run --with pytest python -m pytest -q test/py",
-    "bun scripts/gen-ocel.ts --check"
+   "bun run typecheck",
+   "bun test test/ocel-lease-identity.test.ts test/ocel-launcher.test.ts test/ocel-conformance.test.ts test/ocel-generated.test.ts test/ocel-coverage.test.ts test/ocel-reuse.test.ts test/ocel-real-run.test.ts test/gall-work.test.ts",
+   "bun test test/runtime/gall-work-e2e.test.ts test/runtime/gall-fresh-consumer.test.ts",
+   "uv run --with pytest python -m pytest -q test/py",
+   "bun scripts/gen-ocel.ts --check"
   ],
   "exit": 0,
   "output_excerpt": "typecheck rc=0. ocel* + gall unit: 104 tests, 0 fail (2 skip pre-existing). Receipt binding proven hermetically on real recorded fixture lines + real git repos: subject_sha == exact lease-worktree HEAD at seal time; work_order_iri/epoch_id/base_sha bound only when carried; no identity fabricated when absent. e2e 16 pass; pytest 2 pass; gen-ocel --check 'src/generated matches a fresh ggen sync run'. Implementation: runConstruct feeds an OcelRecorder (stream-json) when ZCODE_OCEL=1, env carries XAAS_WORK_ORDER_IRI/XAAS_EPOCH_ID/XAAS_BASE_SHA, close evidence gains evidence.ocel_receipt. Shared gall-work contract fixture left byte-identical (additive env/evidence documented in-code).",
   "standing": "ALIVE"
+ }
 }
