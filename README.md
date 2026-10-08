@@ -50,8 +50,14 @@ set of environment overrides.
 See [Host integration](./docs/HOST_INTEGRATION.md) for the versioned contract,
 Node.js example, terminal/PTY requirements, and compatibility rules.
 
+## Documentation
+
+Generated API reference (doc-hdit scaffold over the TypeScript code surface):
+[docs/reference/generated/README.md](./docs/reference/generated/README.md).
+
 ## Table of contents
 
+- [Documentation](#documentation)
 - [Quick start](#quick-start)
 - [Host integration](#host-integration)
 - [Relationship to the official project](#relationship-to-the-official-project)

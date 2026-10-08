@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "appVersion": "3.14.3",
+  "appVersion": "3.14.4",
   "platform": "darwin",
   "arch": "arm64",
-  "url": "https://cdn-zcode.z.ai/zcode/electron/releases/3.14.3/macos-arm64/ZCode-3.14.3-mac-arm64.zip",
-  "sha512": "esVVWPJ6zD/bzxIFPTV0J+mjO81AtUaEAv3uZ5SfnwSEskx8sNiSCDSPce/MU2QUefMnFGoMtJW8xbzlWQpE9g=="
+  "url": "https://cdn-zcode.z.ai/zcode/electron/releases/3.14.4/macos-arm64/ZCode-3.14.4-mac-arm64.zip",
+  "sha512": "FZ6R2xPJnpGfL1Jz7MjspXYDyH4Xm/OaTd21M3stgNxOv2FDR5yVB3lx3UW96rbu5s/ffKImeit1kuZ6qot+3A=="
 }
