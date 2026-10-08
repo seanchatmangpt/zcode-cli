@@ -116,7 +116,10 @@ describe("composite court: fail-stop evasions", () => {
 
   test("refuses a relax after another command on the same line", () => {
     expect(judge(beforeAsset("true; set +e"))).toEqual(["step install relaxes fail-stop (true; set +e)"]);
-    expect(judge(beforeAsset("true && set +o pipefail"))).toEqual(["step install relaxes fail-stop (true && set +o pipefail)"]);
+    expect(judge(beforeAsset("true && set +o pipefail"))).toEqual([
+      "step install suspends errexit in an && list (true && set +o pipefail)",
+      "step install relaxes fail-stop (true && set +o pipefail)"
+    ]);
   });
 
   for (const suffix of ["|| echo skipped", "|| /bin/true", "|| exit 0", "|| { echo skipped; }"]) {
