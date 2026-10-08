@@ -14,6 +14,8 @@ import { appendOutcome, appendPending, seal, unpaired, verify, type Chain, type 
 
 export const STREAM_SOURCE = "zcode_stream";
 export const APP_SERVER_SOURCE = "zcode_app_server";
+/** gall-work orchestrator lifecycle events (ALOOP vocabulary, ontology Source-GallWorkHook). */
+export const GALL_WORK_SOURCE = "gall_work";
 
 export function ocelEnabled(env: NodeJS.ProcessEnv): boolean {
   return env.ZCODE_OCEL === "1";
@@ -44,6 +46,8 @@ export interface LeaseIdentity {
   workOrderIri?: string;
   epochId?: string;
   baseSha?: string;
+  /** Replay binding (dispatch identity + contract digest); carried as-is when present. */
+  replayBinding?: Record<string, unknown>;
 }
 
 const gitShaPattern = /^[0-9a-f]{40}$/u;
@@ -58,8 +62,22 @@ export function leaseIdentityFromEnv(env: NodeJS.ProcessEnv): LeaseIdentity {
     subjectCwd: trim(env.XAAS_LEASE_CWD),
     workOrderIri: trim(env.XAAS_WORK_ORDER_IRI),
     epochId: trim(env.XAAS_EPOCH_ID),
-    baseSha: trim(env.XAAS_BASE_SHA)
+    baseSha: trim(env.XAAS_BASE_SHA),
+    replayBinding: parseReplayBinding(env.XAAS_REPLAY_BINDING)
   };
+}
+
+/** XAAS_REPLAY_BINDING carries a JSON object; anything else binds nothing. */
+function parseReplayBinding(value: string | undefined): Record<string, unknown> | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Exact head of the leased subject at seal time; undefined when unresolvable. */
@@ -243,6 +261,7 @@ export class OcelRecorder {
       ...(this.identity.workOrderIri ? { work_order_iri: this.identity.workOrderIri } : {}),
       ...(this.identity.epochId ? { epoch_id: this.identity.epochId } : {}),
       ...(this.identity.baseSha ? { base_sha: this.identity.baseSha } : {}),
+      ...(this.identity.replayBinding ? { replay_binding: this.identity.replayBinding } : {}),
       chain_intact: verify(chain),
       unpaired: unpaired(chain),
       chain

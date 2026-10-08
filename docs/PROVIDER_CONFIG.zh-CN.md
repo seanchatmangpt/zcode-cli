@@ -220,8 +220,8 @@ Anthropic 兼容接口可能使用上游目录中的 `thinking`／`output_config
 ## 自动同步上游模型
 
 同步 runtime 时会复制完整的上游 `config/provider/zcode-builtin.json`，包括模型匹配规则、
-全部能力、Token 上限和请求参数映射。已有的提取目录文件也会更新，不再跳过旧文件。
-原生 runtime 同时负责正常的目录刷新和 revision 管理。
+全部能力、Token 上限和请求参数映射。已有的提取文件会被当前源目录替换，不会固定在
+上一个 revision。原生 runtime 同时负责正常的目录刷新和 revision 管理。
 
 registry 将上游目录与个人文件组合。智能配置模型会自动继承更新后的多模态、
 工具／联网／系统消息能力、上下文和输出上限、推理等级与映射。显式个人覆盖优先，

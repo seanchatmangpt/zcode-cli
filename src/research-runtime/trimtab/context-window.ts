@@ -1,0 +1,1 @@
+export interface ContextItem{id:string;tokens:number;salience:number}export function fit(xs:ContextItem[],budget:number){const out:ContextItem[]=[];for(const x of[...xs].sort((a,b)=>b.salience-a.salience)){if(x.tokens<=budget){out.push(x);budget-=x.tokens}}return out}

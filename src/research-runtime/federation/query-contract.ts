@@ -1,0 +1,1 @@
+export interface QueryContract{id:string;requires:string[];returns:string[]}export const supports=(q:QueryContract,f:string[])=>f.every(x=>q.returns.includes(x));

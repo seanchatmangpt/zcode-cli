@@ -1,0 +1,1 @@
+export interface Edge{id:string;capability:string;provider:string;enabled:boolean}export const edge=(x:Edge)=>{if(!x.id||!x.capability||!x.provider)throw new Error("REFUSED_EDGE");return Object.freeze({...x})};

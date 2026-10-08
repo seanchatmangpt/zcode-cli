@@ -215,6 +215,18 @@ the permission mode, and `/status` lists Mode and Plan separately. The marker
 follows native state changes, including plan approval, new sessions and resume;
 no separate CLI preference is written for Plan.
 
+## Execution provider registry
+
+`~/.zcode/v2/execution_provider_config.json` (`schemaVersion` 1) selects the
+execution provider used for XaaS work-order dispatch. It holds
+`executionProviderRules` — an array of rules with `providerId` and `enabled` —
+and an optional `defaultExecutionSelection` naming the default provider.
+Selection is fail-closed: an unreadable or malformed file refuses selection
+(`registry_invalid`), and a disabled or unknown default falls through to the
+next enabled rule or refuses typed (`provider_disabled`, `provider_unknown`).
+With no registry file present, the built-in `zcode` provider stands.
+`ZCODE_EXECUTION_PROVIDER_CONFIG_FILE` overrides the path.
+
 ## Prompt access preflight
 
 New headless prompts and ordinary TUI input diagnose missing provider setup or
@@ -244,6 +256,45 @@ Configure the threshold in milliseconds:
 
 Set the value to `0` to disable automatic backgrounding. Agent tool calls that
 use `run_in_background: true` detach immediately regardless of this threshold.
+
+### Expert workflow strategy
+
+The built-in `/expert` workflow's bounded strategy (clarify rounds, executor
+concurrency, critic iterations, react-loop rounds) is upstream-hardcoded. The
+`expert-strategy-config` runtime patch deep-merges overrides from
+`~/.zcode/cli/setting.json` key `expertWorkflow.strategy` over the upstream
+defaults; the config is read once at process boot, so a restart applies
+changes. Unknown keys are ignored, and only finite positive numbers are
+accepted per leaf — malformed values silently keep the upstream default, so
+bad config can never invalidate the workflow definition:
+
+```json
+{
+  "expertWorkflow": {
+    "strategy": {
+      "clarify": { "confidenceThreshold": 0.6, "maxRounds": 5 },
+      "executor": {
+        "drainingChangeHours": 2,
+        "frontierTarget": 8,
+        "maxConcurrentLoops": 6,
+        "maxConsecutiveErrors": 6,
+        "maxPlannerRuns": 40
+      },
+      "finalCritic": { "maxIterations": 5 },
+      "reactLoop": { "maxRounds": 200 }
+    }
+  }
+}
+```
+
+Upstream defaults: clarify `confidenceThreshold 0.8, maxRounds 3, minRounds 1`;
+executor `drainingChangeHours 1, frontierTarget 3, maxConcurrentLoops 2,
+maxConsecutiveErrors 3, maxPlannerRuns 10`; finalCritic `maxIterations 3`;
+reactLoop `maxRounds 30`. Values must remain positive integers
+(`confidenceThreshold` and `drainingChangeHours` may be fractional); the
+runtime's own schema validates the merged result. Note that `/workflow` runs
+and externally dispatched (xaas/headless) zcode processes do not use the
+expert strategy.
 
 ### Request retries and stalled streams
 
@@ -573,3 +624,14 @@ caps model steps per turn. On reaching N the turn fails with `error_max_turns`
 ("Reached maximum number of turns (N)."). The launcher lowers the flag to the env var; the
 sync-runtime max-turns patch reads `config.maxTurns ?? ZCODE_MAX_TURNS` inside `runRegularTurnLoop`.
 Live driver: `node scripts/max-turns-live.mjs <N> <out.jsonl>`.
+
+## Subagent turn cap (`subagents.maxTurns`)
+
+Subagent (Agent tool) child sessions default to **4** turns upstream. The
+`subagents.maxTurns` key in `~/.zcode/cli/setting.json` raises that cap: the
+launcher lowers it to `ZCODE_SUBAGENT_MAX_TURNS` and the sync-runtime
+subagent-max-turns patch extends the spawn-site fallback with it. Precedence:
+explicit `ZCODE_SUBAGENT_MAX_TURNS` env > `subagents.maxTurns` > upstream
+default 4. Only positive integers take effect; the top-level `--max-turns`
+cap does not apply to subagents (the child's turn cap is set at spawn). A
+launch is required to pick up changes — a running session keeps its env.

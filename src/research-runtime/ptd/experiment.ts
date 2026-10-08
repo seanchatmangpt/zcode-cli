@@ -1,0 +1,1 @@
+export interface EpochResult{epoch:number;provider:string;ok:boolean}export const failureRate=(x:EpochResult[])=>x.length?x.filter(v=>!v.ok).length/x.length:0;

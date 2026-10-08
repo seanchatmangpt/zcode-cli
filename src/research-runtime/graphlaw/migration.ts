@@ -1,0 +1,1 @@
+export interface Migration{from:string;to:string;preserves:string[]}export const validMigration=(m:Migration)=>m.from!==m.to&&m.preserves.includes("subject");

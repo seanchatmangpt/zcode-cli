@@ -31,6 +31,8 @@ REPO="${ZCODE_REPO:-${HOME}/dev/zcode-cli}"
 APP="${ZCODE_APP:-${HOME}/Applications/ZCode.app}"
 APP_GLM="$APP/Contents/Resources/glm"
 APP_PLIST="$APP/Contents/Info.plist"
+staging=""
+dest=""
 
 # Paths snapshotted, relative to $HOME unless absolute.
 USER_PATHS=(
@@ -45,6 +47,34 @@ USER_PATHS=(
 )
 
 die() { echo "error: $*" >&2; exit 1; }
+
+# Secret redaction: snapshots must never carry credential values. Text files are
+# staged (APFS clonefile copy), credential-shaped values are replaced with
+# REDACTED, and a fail-closed scan refuses the snapshot if any survive outside
+# the redaction size window. Restore yields REDACTED credential fields; re-enter
+# them from the live registry / failover copy (both excluded from snapshots).
+REDACT_EXTS=(-name '*.json' -o -name '*.jsonl' -o -name '*.jsonc' -o -name '*.md' -o -name '*.txt' -o -name '*.toml' -o -name '*.yaml' -o -name '*.yml')
+
+redact_tree() {
+  local root="$1"
+  find "$root" -type f -size -2M \( "${REDACT_EXTS[@]}" \) -print0 |
+    xargs -0 perl -pi -e 's/("apiKey"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g;
+                          s/("api_key"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g;
+                          s/("(?:token|secret|password)"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g' 2>/dev/null || true
+}
+
+# Asserts the same value shapes REDACTION covers (minus "token", too generic to
+# assert on) and scans files of ANY size: a >2MB text file is skipped by
+# redaction for cost, so this is the tripwire that fails the save instead.
+assert_no_secrets() {
+  local root="$1" hits
+  hits=$(find "$root" -type f \( "${REDACT_EXTS[@]}" \) -print0 |
+    xargs -0 perl -ne 'if (/"(?:apiKey|api_key|secret|password)"\s*:\s*"(?!REDACTED)[^"]{8,}/) { print "  $ARGV\n"; $bad = 1; close ARGV } END { exit($bad ? 1 : 0) }' 2>/dev/null || true)
+  if [ -n "$hits" ]; then
+    printf 'secret-shaped values survived redaction:\n%s\n' "$hits" >&2
+    die "refusing to snapshot: credential-shaped values remain in staging ($root)"
+  fi
+}
 
 file_list() {
   for p in "${USER_PATHS[@]}"; do
@@ -83,17 +113,53 @@ snapshot_repo_state() {
     mkdir -p "$dest/repo/untracked/$(dirname "$f")"
     cp -R "$REPO/$f" "$dest/repo/untracked/$f"
   done <"$dest/repo/untracked-list.txt"
+  redact_tree "$dest/repo/untracked"
+  assert_no_secrets "$dest/repo/untracked"
 }
 
 cmd_save() {
   local ts dest
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   dest="$BACKUP_ROOT/caps-$ts"
+  staging="$(mktemp -d "${TMPDIR:-/tmp}/caps-staging.XXXXXX")"
+  # A refused save must not leave a lookalike snapshot dir: the trap drops
+  # staging always, and dest unless a tarball was actually produced
+  # (falsified 2026-09-26: the tripwire refusal left a file-list-only husk).
+  trap '{ [ -n "${staging:-}" ] && rm -rf "$staging"
+          [ -n "${dest:-}" ] && [ ! -f "$dest/user-state.tar.gz" ] && rm -rf "$dest"
+          true; }' EXIT
   mkdir -p -m 700 "$dest"
 
   file_list >"$dest/file-list.txt"
   [ -s "$dest/file-list.txt" ] || die "nothing to snapshot (no capability paths exist)"
-  tar -czf "$dest/user-state.tar.gz" -T "$dest/file-list.txt" || die "tar failed creating user-state.tar.gz"
+
+  # Stage user state under a mirrored tree (clonefile: cheap; plain copy as
+  # fallback), redact credentials, then tar with member paths identical to the
+  # original layout ("Users/..."), so restore over / keeps working. The runtime
+  # bundle is not staged; it is appended from / below.
+  local p
+  while IFS= read -r p; do
+    case "$p" in "$APP_GLM"|"$APP_PLIST") continue ;; esac
+    [ -e "$p" ] || continue
+    mkdir -p "$staging$(dirname "$p")"
+    cp -Rc "$p" "$staging$p" 2>/dev/null || cp -R "$p" "$staging$p"
+  done < <(file_list)
+  redact_tree "$staging"
+  assert_no_secrets "$staging"
+  while IFS= read -r p; do
+    case "$p" in "$APP_GLM"|"$APP_PLIST") continue ;; esac
+    [ -e "$p" ] && echo "${p#/}"
+  done < <(file_list) >"$dest/tar-list.txt"
+  # Runtime bundle joins as ABSOLUTE entries: a trailing `-C /` would re-point
+  # bsdtar's -T list resolution away from the staging tree (observed: the live,
+  # unredacted files were archived instead of the staged ones).
+  if [ -d "$APP_GLM" ]; then
+    echo "$APP_GLM" >>"$dest/tar-list.txt"
+    [ -f "$APP_PLIST" ] && echo "$APP_PLIST" >>"$dest/tar-list.txt"
+  fi
+
+  tar -czf "$dest/user-state.tar.gz" -C "$staging" -T "$dest/tar-list.txt" \
+    || die "tar failed creating user-state.tar.gz"
 
   # Hash every snapshotted file (recursing into dirs) plus the tarball itself.
   ( while IFS= read -r f; do
@@ -109,6 +175,12 @@ cmd_save() {
 Contents: user-state.tar.gz (paths in file-list.txt), hashes in
 manifest.sha256, repo unpushed commits (bundle + patch list) and untracked
 files under repo/.
+
+Credential values under the exact keys apiKey/api_key/token/secret/password
+with ≥8 characters are REDACTED in the snapshot; shorter values and
+compound/authorization-shaped keys pass (see docs/CAPABILITY_SNAPSHOT.md).
+After a restore, re-enter them from the live registry / failover copy, which
+snapshots exclude by design.
 
 Restore:  $0 restore $dest --apply
 Verify:   $0 verify $dest

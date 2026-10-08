@@ -618,6 +618,62 @@ export function patchRuntimeMaxTurnsEnforcement(runtime: string): string {
   return patched;
 }
 
+/**
+ * Subagent turn cap. Upstream defaults every subagent child session to 4
+ * turns (`maxTurns:request.maxTurns ?? this.config.subagents?.maxTurns ?? 4`
+ * at the Agent spawn site) and nothing populates `config.subagents.maxTurns`
+ * on CLI sessions: the settings→runtime-patch mapper drops the `subagents`
+ * block, and no request sets it. Extend the fallback chain with env
+ * ZCODE_SUBAGENT_MAX_TURNS (lowered from setting.json `subagents.maxTurns`
+ * by the launcher); `Number()||4` keeps unset/garbage env on the upstream
+ * default.
+ */
+export function patchRuntimeSubagentMaxTurns(runtime: string): string {
+  if (runtime.includes("ZCODE_SUBAGENT_MAX_TURNS")) return runtime;
+
+  const pattern = /maxTurns:([A-Za-z_$][\w$]*)\.maxTurns\?\?this\.config\.subagents\?\.maxTurns\?\?4\b/u;
+  const match = pattern.exec(runtime);
+  if (!match || countRegExpMatches(runtime, pattern) !== 1) {
+    throw new Error("ZCode runtime is incompatible with the subagent max turns patch (spawn default anchor missing).");
+  }
+  const patched = runtime.replace(
+    match[0],
+    `maxTurns:${match[1]}.maxTurns??this.config.subagents?.maxTurns??(Number(process.env.ZCODE_SUBAGENT_MAX_TURNS)||4)`
+  );
+  if (!patched.includes("ZCODE_SUBAGENT_MAX_TURNS")) {
+    throw new Error("ZCode runtime subagent max turns patch failed postcondition verification.");
+  }
+  return patched;
+}
+
+/**
+ * Make the built-in expert workflow's strategy configurable. Upstream
+ * hardcodes the strategy literal (clarify/executor/finalCritic/reactLoop
+ * knobs); the patch replaces the literal with a builder that deep-merges
+ * overrides from `~/.zcode/cli/setting.json` key `expertWorkflow.strategy`
+ * over the upstream defaults. Read once at definition-module init (process
+ * boot), like the rest of the file config — a restart applies changes.
+ * Fail-closed: any read/parse error keeps upstream defaults, and only finite
+ * positive numbers are accepted per leaf, so malformed config can never
+ * invalidate the definition zod schema (positive ints; confidenceThreshold a
+ * finite number).
+ */
+export function patchRuntimeExpertStrategyConfig(runtime: string): string {
+  if (runtime.includes("$zExpertStrategyMerge")) return runtime;
+
+  const pattern = /([A-Za-z_$][\w$]*)=\{clarify:\{confidenceThreshold:\.8,maxRounds:3,minRounds:1\},executor:\{drainingChangeHours:1,frontierTarget:3,maxConcurrentLoops:2,maxConsecutiveErrors:3,maxPlannerRuns:10\},finalCritic:\{maxIterations:3\},reactLoop:\{maxRounds:30\}\}/u;
+  const match = pattern.exec(runtime);
+  if (!match || countRegExpMatches(runtime, pattern) !== 1) {
+    throw new Error("ZCode runtime is incompatible with the expert strategy config patch (strategy literal anchor missing).");
+  }
+  const builder = `${match[1]}=function(){var d={clarify:{confidenceThreshold:.8,maxRounds:3,minRounds:1},executor:{drainingChangeHours:1,frontierTarget:3,maxConcurrentLoops:2,maxConsecutiveErrors:3,maxPlannerRuns:10},finalCritic:{maxIterations:3},reactLoop:{maxRounds:30}};try{var f=require("node:fs"),p=require("node:path"),o=require("node:os");var c=JSON.parse(f.readFileSync(p.join(o.homedir(),".zcode","cli","setting.json"),"utf8"));var v=c&&c.expertWorkflow&&c.expertWorkflow.strategy;if(v&&"object"==typeof v&&!Array.isArray(v)){var $zExpertStrategyMerge=function(a,b){var r={};for(var k in a){var y=a[k],x=b?b[k]:void 0;if("number"==typeof y){r[k]="number"==typeof x&&isFinite(x)&&x>0?x:y}else{var s={};for(var k2 in y){var z=y[k2],w=x&&"object"==typeof x&&!Array.isArray(x)?x[k2]:void 0;s[k2]="number"==typeof w&&isFinite(w)&&w>0?w:z}r[k]=s}}return r};d=$zExpertStrategyMerge(d,v)}}catch(e){}return d}()`;
+  const patched = runtime.replace(match[0], () => builder);
+  if (!patched.includes("$zExpertStrategyMerge")) {
+    throw new Error("ZCode runtime expert strategy config patch failed postcondition verification.");
+  }
+  return patched;
+}
+
 /** Let StreamingToolLedgerUpdated events reach external consumers. */
 export function patchRuntimeStreamingLedgerForwarding(runtime: string): string {
 
@@ -2068,6 +2124,18 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     id: "max-turns-enforcement",
     requirement: "required",
     apply: patchRuntimeMaxTurnsEnforcement
+  },
+  {
+    id: "subagent-max-turns-env",
+    requirement: "required",
+    apply: patchRuntimeSubagentMaxTurns,
+    verify: (runtime) => runtime.includes("ZCODE_SUBAGENT_MAX_TURNS")
+  },
+  {
+    id: "expert-strategy-config",
+    requirement: "required",
+    apply: patchRuntimeExpertStrategyConfig,
+    verify: (runtime) => runtime.includes("$zExpertStrategyMerge")
   },
   {
     id: "streaming-ledger-forwarding",

@@ -1,13 +1,67 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-03: gall-work Bash permission fix (--mode yolo pinned in construct turn); BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "f5e2a36740131703aa6dde251c7569275df60579",
+  "base_sha": "f5e2a36740131703aa6dde251c7569275df60579",
+  "subject_note": "wo3 merge f5e2a36 (full: f5e2a36740131703aa6dde251c7569275df60579), carried through the 3.14.1 relock per legacy text"
+ },
+ "authority": {
+  "ceiling": "DO",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [
+   "f5e2a36"
+  ],
+  "files_changed": [
+   "UNRECOVERED (legacy receipt does not record the changed-file set)"
+  ],
+  "remote_effects": [
+   "none recorded in legacy receipt"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "bun test test/gall-work-permission.test.ts -t 'pins --mode yolo'  (hermetic: construct argv pins [--mode yolo] after --json)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed for gall-work runs: the construct turn now pins --mode yolo (the runtime's build-mode default routed every Bash call to the DenyPermissionBroker -> 'No permission client configured for Bash'; sj-001 field receipt). Hermetic gates green. Live e2e leg (real gall-work run on a fixture lease executing one Bash step inside the lease cwd, closing ALIVE, no mocks): deferred typed by the test's own environmental classifier -- provider 1302 throttle windows and sandboxed model-catalog model-creation failures; the deferral is printed as SKIP-GALL-PERMISSION and re-arms each run. Standing PARTIAL_ALIVE: fix landed + hermetically proven; the live leg needs a clear model-surface window (e.g. the operator's field shell)."
+   },
+   {
+    "cmd": "bun test test/gall-work.test.ts  (20 pass)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed for gall-work runs: the construct turn now pins --mode yolo (the runtime's build-mode default routed every Bash call to the DenyPermissionBroker -> 'No permission client configured for Bash'; sj-001 field receipt). Hermetic gates green. Live e2e leg (real gall-work run on a fixture lease executing one Bash step inside the lease cwd, closing ALIVE, no mocks): deferred typed by the test's own environmental classifier -- provider 1302 throttle windows and sandboxed model-catalog model-creation failures; the deferral is printed as SKIP-GALL-PERMISSION and re-arms each run. Standing PARTIAL_ALIVE: fix landed + hermetically proven; the live leg needs a clear model-surface window (e.g. the operator's field shell)."
+   },
+   {
+    "cmd": "bun test ./test/gall-work-permission.test.ts  (live e2e leg)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed for gall-work runs: the construct turn now pins --mode yolo (the runtime's build-mode default routed every Bash call to the DenyPermissionBroker -> 'No permission client configured for Bash'; sj-001 field receipt). Hermetic gates green. Live e2e leg (real gall-work run on a fixture lease executing one Bash step inside the lease cwd, closing ALIVE, no mocks): deferred typed by the test's own environmental classifier -- provider 1302 throttle windows and sandboxed model-catalog model-creation failures; the deferral is printed as SKIP-GALL-PERMISSION and re-arms each run. Standing PARTIAL_ALIVE: fix landed + hermetically proven; the live leg needs a clear model-surface window (e.g. the operator's field shell)."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-03.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt itself declared PARTIAL_ALIVE: fix landed + hermetically proven; the live e2e leg was typed-deferred (SKIP-GALL-PERMISSION, provider 1302/model-catalog environmental window). Unchanged by migration; historical execution not re-witnessed."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-03",
   "base_sha": "f5e2a36 (wo3 merge) — carried through 3.14.1 relock",
   "merge_sha": "f5e2a36",
   "command": [
-    "bun test test/gall-work-permission.test.ts -t 'pins --mode yolo'  (hermetic: construct argv pins [--mode yolo] after --json)",
-    "bun test test/gall-work.test.ts  (20 pass)",
-    "bun test ./test/gall-work-permission.test.ts  (live e2e leg)"
+   "bun test test/gall-work-permission.test.ts -t 'pins --mode yolo'  (hermetic: construct argv pins [--mode yolo] after --json)",
+   "bun test test/gall-work.test.ts  (20 pass)",
+   "bun test ./test/gall-work-permission.test.ts  (live e2e leg)"
   ],
   "exit": 0,
   "output_excerpt": "BLOCKED:BASH_PERMISSION_CLIENT_ABSENT removed for gall-work runs: the construct turn now pins --mode yolo (the runtime's build-mode default routed every Bash call to the DenyPermissionBroker -> 'No permission client configured for Bash'; sj-001 field receipt). Hermetic gates green. Live e2e leg (real gall-work run on a fixture lease executing one Bash step inside the lease cwd, closing ALIVE, no mocks): deferred typed by the test's own environmental classifier -- provider 1302 throttle windows and sandboxed model-catalog model-creation failures; the deferral is printed as SKIP-GALL-PERMISSION and re-arms each run. Standing PARTIAL_ALIVE: fix landed + hermetically proven; the live leg needs a clear model-surface window (e.g. the operator's field shell).",
   "standing": "PARTIAL_ALIVE"
+ }
 }

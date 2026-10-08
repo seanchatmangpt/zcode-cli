@@ -76,6 +76,14 @@ The following variables are supported host integration points:
 | `ZCODE_BASE_URL` | Override the official ZCode service base URL. |
 | `ZCODE_MODEL_RETRY_MAX_RETRIES` | Override the model retry limit. |
 | `ZCODE_TUI_RUNTIME_LOG` | Choose the bounded diagnostic log for TUI runtime stderr. |
+| `ZCODE_FABRIC_MAX_CONCURRENT` | Cap gall-work fabric concurrency (default 4). |
+
+Provider capacity handling: gall-work fabric calls classify HTTP 429 and
+business error 1302 as capacity errors and retry with bounded exponential
+backoff (3 attempts, 500 ms–4 s with jitter). Exhaustion is a typed
+`ProviderCapacityRefusal` with code `http_429`, `provider_1302`,
+`retry_exhausted`, or `concurrency_capped`; it is never re-dispatched as a
+prompt.
 
 Hosts should pass user configuration through the normal ZCode environment and
 configuration files. Do not put API keys or other secrets in command-line
@@ -149,4 +157,15 @@ perform an external consequence, or import `vendor/` modules.
 A missing, stale, or tampered artifact is a typed refusal (non-zero exit). The
 command never searches HOME, session history, or workspace state for omitted
 evidence. This makes it suitable for a genuinely fresh host process.
+
+## Relay command admission
+
+Worker-side admission for the `xaas-remote-relay/1` contract checks envelope,
+expiry, execution manifest, authority and sequence, refusing with one of 14
+typed refusals; a repeated command answers `KNOWN_REPLAY`. Actuation also
+requires the worker's local opt-in `ZCODE_RELAY_ALLOW_DO=1` (otherwise
+`EXPLICIT_DO_ACK_REQUIRED`). Acknowledgements persist at
+`<tmpdir>/xaas-fabric/<sha256(worktree, epoch)>.relay-ack.json` with schema
+`zcode.relay-ack-state/2`, fail-closed on corruption; a refused ack makes
+`dispatchRelayCommand` report the outcome `unacknowledged`, never `executed`.
 

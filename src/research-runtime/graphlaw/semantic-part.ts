@@ -1,0 +1,1 @@
+export interface SemanticPart{id:string;source:string;digest:string}export const samePart=(a:SemanticPart,b:SemanticPart)=>a.id===b.id&&a.digest===b.digest;

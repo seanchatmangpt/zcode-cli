@@ -1,0 +1,1 @@
+export interface Epoch{id:number;subject:string;generation:string}export const nextEpoch=(e:Epoch,g:string):Epoch=>({id:e.id+1,subject:e.subject,generation:g});

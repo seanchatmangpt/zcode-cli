@@ -1,0 +1,1 @@
+import type{Edge}from"./edge.ts";export const equivalent=(a:Edge,b:Edge)=>a.capability===b.capability&&a.id!==b.id&&b.enabled;

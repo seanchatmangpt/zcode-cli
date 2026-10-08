@@ -86,32 +86,11 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # ZCODE_REQUIRE_TOOLCHAINS=1 turns a missing ggen into a hard failure
-      # (test/ocel-reuse.test.ts fixed-point + mutation courts). Pin the exact
-      # ggen release and verify its published sha256 before putting it on PATH.
-      - name: Install pinned ggen v26.9.18 and marketplace packs
-        env:
-          GGEN_VERSION: v26.9.18
-          GGEN_ASSET: ggen-x86_64-unknown-linux-gnu.tar.gz
-          GGEN_SHA256: 9f1d689d26c5628aa695ab775f3045387f54d17c07abb8383caf0ad88a5c09e4
-          GGEN_MARKETPLACE_SHA: 5eb71f7ed947f705a8d6b145cb9b0be82855d793
-        run: |
-          set -euo pipefail
-          curl -fsSL -o "$RUNNER_TEMP/$GGEN_ASSET" "https://github.com/seanchatmangpt/ggen/releases/download/$GGEN_VERSION/$GGEN_ASSET"
-          echo "$GGEN_SHA256  $RUNNER_TEMP/$GGEN_ASSET" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/ggen-bin"
-          tar -xzf "$RUNNER_TEMP/$GGEN_ASSET" -C "$RUNNER_TEMP/ggen-bin"
-          echo "$RUNNER_TEMP/ggen-bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ggen-bin/ggen" --version
-          # scripts/gen-ocel.ts --check also needs the four marketplace packs
-          # (default /Users/sac/ggen-marketplace/packs). Pin them by commit.
-          mp="$RUNNER_TEMP/ggen-marketplace"
-          git init -q "$mp"
-          git -C "$mp" remote add origin https://github.com/seanchatmangpt/ggen-marketplace
-          git -C "$mp" sparse-checkout set packs/process-intelligence-pack packs/state-transition-pack packs/evidence-standing-pack packs/shacl-projection-pack
-          git -C "$mp" fetch -q --depth 1 --filter=blob:none origin "$GGEN_MARKETPLACE_SHA"
-          git -C "$mp" checkout -q FETCH_HEAD
-          test "$(git -C "$mp" rev-parse HEAD)" = "$GGEN_MARKETPLACE_SHA"
-          echo "ZCODE_PACK_ROOT=$mp/packs" >> "$GITHUB_ENV"
+      # (test/ocel-reuse.test.ts fixed-point + mutation courts). The pins live
+      # only in .github/actions/ggen-toolchain; test/release-workflows.test.ts
+      # refuses any job that needs the toolchain without this step.
+      - name: Install pinned ggen toolchain
+        uses: ./.github/actions/ggen-toolchain
 
       - name: Build committed release
         run: bun run release:build
@@ -233,6 +212,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_COMMIT: ${{ needs.validate.outputs.expected_commit }}
+          EVENT_NAME: ${{ github.event_name }}
           PACKAGE_NAME: ${{ needs.validate.outputs.package_name }}
           PACKAGE_VERSION: ${{ needs.validate.outputs.package_version }}
           PUBLISH_REQUESTED: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
@@ -254,15 +234,21 @@ jobs:
 
           TAG="v${PACKAGE_VERSION}"
           PUBLISHED=false
+          ENABLED_REASON="REQUESTED"
+          PUBLISH_REASON="NEW_VERSION"
+          TAG_REASON="CREATE"
+          RELEASE_REASON="CREATE"
           git fetch --tags --force origin
           if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
             PUBLISHED=true
+            PUBLISH_REASON="ALREADY_PUBLISHED"
           else
             LATEST_VERSION=$(npm view "${PACKAGE_NAME}@latest" version 2>/dev/null || true)
             if [[ -n "$LATEST_VERSION" ]]; then
               IS_NEWER=$(compare_release_versions "$PACKAGE_VERSION" "$LATEST_VERSION")
               if [[ "$IS_NEWER" != "1" ]]; then
                 echo "Refusing to move latest from ${LATEST_VERSION} to ${PACKAGE_VERSION}." >&2
+                echo "publish_reason=SUPERSEDED_NEWER_RELEASE" >> "$GITHUB_OUTPUT"
                 exit 1
               fi
             fi
@@ -271,7 +257,11 @@ jobs:
           TAG_COMMIT=$(git rev-list -n 1 "$TAG" 2>/dev/null || true)
           if [[ -n "$TAG_COMMIT" && "$TAG_COMMIT" != "$EXPECTED_COMMIT" ]]; then
             echo "${TAG} already points to ${TAG_COMMIT}, not ${EXPECTED_COMMIT}." >&2
+            echo "create_tag_reason=TAG_MISMATCH_REFUSED" >> "$GITHUB_OUTPUT"
             exit 1
+          fi
+          if [[ -n "$TAG_COMMIT" ]]; then
+            TAG_REASON="TAG_EXISTS"
           fi
 
           if [[ "$PUBLISHED" == "true" ]]; then
@@ -288,14 +278,31 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             RELEASE_EXISTS=true
+            RELEASE_REASON="RELEASE_EXISTS"
           else
             RELEASE_EXISTS=false
           fi
 
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            ENABLED_REASON="MANUAL_REQUEST"
+          else
+            ENABLED_REASON="RELEASE_MERGE"
+          fi
+          if [[ "$PUBLISH_REQUESTED" != "true" ]]; then
+            ENABLED_REASON="NOT_REQUESTED"
+            PUBLISH_REASON="NOT_REQUESTED"
+            TAG_REASON="NOT_REQUESTED"
+            RELEASE_REASON="NOT_REQUESTED"
+          fi
+
           echo "enabled=$PUBLISH_REQUESTED" >> "$GITHUB_OUTPUT"
+          echo "enabled_reason=$ENABLED_REASON" >> "$GITHUB_OUTPUT"
           echo "publish=$([[ "$PUBLISHED" == "true" ]] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "publish_reason=$PUBLISH_REASON" >> "$GITHUB_OUTPUT"
           echo "create_tag=$([[ -n "$TAG_COMMIT" ]] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "create_tag_reason=$TAG_REASON" >> "$GITHUB_OUTPUT"
           echo "create_release=$([[ "$RELEASE_EXISTS" == "true" ]] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "create_release_reason=$RELEASE_REASON" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm with Trusted Publishing
@@ -333,13 +340,19 @@ jobs:
       - name: Summarize release
         if: always()
         env:
+          CREATE_RELEASE: ${{ steps.release.outputs.create_release }}
+          CREATE_RELEASE_REASON: ${{ steps.release.outputs.create_release_reason }}
+          CREATE_TAG_REASON: ${{ steps.release.outputs.create_tag_reason }}
           ENABLED: ${{ steps.release.outputs.enabled }}
+          ENABLED_REASON: ${{ steps.release.outputs.enabled_reason }}
           PACKAGE_NAME: ${{ needs.validate.outputs.package_name }}
           PACKAGE_VERSION: ${{ needs.validate.outputs.package_version }}
           PUBLISH: ${{ steps.release.outputs.publish }}
+          PUBLISH_REASON: ${{ steps.release.outputs.publish_reason }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           echo "Release: ${PACKAGE_NAME}@${PACKAGE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Mutations enabled: ${ENABLED:-unknown}" >> "$GITHUB_STEP_SUMMARY"
-          echo "npm publication required: ${PUBLISH:-unknown}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Git tag: ${TAG:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Mutations enabled: ${ENABLED:-unknown} (${ENABLED_REASON:-NOT_EVALUATED})" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm publication required: ${PUBLISH:-unknown} (${PUBLISH_REASON:-NOT_EVALUATED})" >> "$GITHUB_STEP_SUMMARY"
+          echo "Git tag: ${TAG:-unknown} (${CREATE_TAG_REASON:-NOT_EVALUATED})" >> "$GITHUB_STEP_SUMMARY"
+          echo "GitHub release: ${CREATE_RELEASE:-unknown} (${CREATE_RELEASE_REASON:-NOT_EVALUATED})" >> "$GITHUB_STEP_SUMMARY"

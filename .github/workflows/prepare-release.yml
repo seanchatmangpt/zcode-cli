@@ -49,6 +49,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # ZCODE_REQUIRE_TOOLCHAINS=1 turns a missing ggen into a hard failure
+      # (test/ocel-reuse.test.ts fixed-point + mutation courts). The pins live
+      # only in .github/actions/ggen-toolchain; test/release-workflows.test.ts
+      # refuses any job that needs the toolchain without this step.
+      - name: Install pinned ggen toolchain
+        uses: ./.github/actions/ggen-toolchain
+
       - name: Capture base release
         id: base
         run: |

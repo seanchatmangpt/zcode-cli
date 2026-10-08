@@ -1,18 +1,100 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-02: integrate/gall-into-main merged to main with hand-resolved 3-file conflict set, gall court green",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "15d3a9174f6d9f2139b2a69728268ba54a0f02b2",
+  "base_sha": "00b3a89ff449ced40d285ed0f8ccfafb2871557a",
+  "subject_note": "wo2 hand-resolved gall merge 15d3a91 (full: 15d3a9174f6d9f2139b2a69728268ba54a0f02b2); integration head a01a583f019782aa5390ef843dfa771c669edc15; merged branch head b01634ffc1bbbafcdbe12157cb672b3d378508fe"
+ },
+ "authority": {
+  "ceiling": "DO",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [
+   "a01a583",
+   "15d3a91",
+   "b01634f"
+  ],
+  "files_changed": [
+   "UNRECOVERED (legacy receipt records only the conflict set: package.json, scripts/sync-runtime.ts, src/launcher.ts)"
+  ],
+  "remote_effects": [
+   "none recorded beyond local integration; acceptance 'merge-base --is-ancestor b01634f main' noted as satisfied at the final release->main merge (legacy text)"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "git merge-tree --write-tree 00b3a89 b01634f  (conflict set: package.json, scripts/sync-runtime.ts, src/launcher.ts)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "bun run typecheck",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts test/runtime/gall-work-e2e.test.ts",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "bun run build  (PATH=/opt/homebrew/opt/node/bin: node 26 required, default node 20 fails tsdown)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "node bin/zcode.js gall-work --lease /nonexistent.json --json",
+    "exit": 2,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   },
+   {
+    "cmd": "node bin/zcode.js --prompt /mcp status --json  (headless regression probe)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-02.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt recorded gall court 36 pass/0 fail, typecheck rc=0, build rc=0 at the wo2 merge (historical). Headless /mcp probe was explicitly incomplete (api.z.ai connect timeout, environmental). Downgraded ALIVE -> PARTIAL_ALIVE: not re-witnessed in the current session."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-02",
   "base_sha": "00b3a89",
   "merge_sha": "a01a583 (integration), 15d3a91 (wo2 hand-resolved gall merge)",
-  "merged": { "integrate/gall-into-main": "b01634f" },
+  "merged": {
+   "integrate/gall-into-main": "b01634f"
+  },
   "command": [
-    "git merge-tree --write-tree 00b3a89 b01634f  (conflict set: package.json, scripts/sync-runtime.ts, src/launcher.ts)",
-    "bun run typecheck",
-    "bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts test/runtime/gall-work-e2e.test.ts",
-    "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
-    "bun run build  (PATH=/opt/homebrew/opt/node/bin: node 26 required, default node 20 fails tsdown)",
-    "node bin/zcode.js gall-work --lease /nonexistent.json --json",
-    "node bin/zcode.js --prompt /mcp status --json  (headless regression probe)"
+   "git merge-tree --write-tree 00b3a89 b01634f  (conflict set: package.json, scripts/sync-runtime.ts, src/launcher.ts)",
+   "bun run typecheck",
+   "bun test test/gall-work.test.ts test/runtime/gall-fresh-consumer.test.ts test/runtime/gall-work-e2e.test.ts",
+   "cmp test/fixtures/gall-work.contract.json /Users/sac/xaas/priv/zcode_plugin/gall-work.contract.json",
+   "bun run build  (PATH=/opt/homebrew/opt/node/bin: node 26 required, default node 20 fails tsdown)",
+   "node bin/zcode.js gall-work --lease /nonexistent.json --json",
+   "node bin/zcode.js --prompt /mcp status --json  (headless regression probe)"
   ],
   "exit": 0,
   "output_excerpt": "typecheck rc=0. gall court: 36 pass / 0 fail. fixture cmp rc=0 identical. build rc=0 (bin/zcode.js 143.36 kB). gall-work missing-lease: typed ENOENT + usage, exit 2. Review redo appended to ZOCEL-009-review.md: 3-file conflict set re-resolved reading both sides (build script = gall literal per updated release-package assertion; sync-runtime execWarmed kept; launcher keeps gall dispatch first + maxTurns after), reviewed-by recorded as operator-delegated per wave binding decisions. Mock grep over gall tests: 0 hits. Headless /mcp probe: bundle boots through runtime load + model-call setup; api.z.ai connect times out from this network (curl rc=28, ping fail: environmental), so full model round-trip re-proves at main-checkout rebuild. Acceptance 'merge-base --is-ancestor b01634f main' becomes true at the final release->main merge.",
   "standing": "ALIVE"
+ }
 }

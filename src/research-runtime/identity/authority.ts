@@ -1,0 +1,1 @@
+export type Authority="none"|"read"|"construct"|"do";export function requireAuthority(a:Authority,r:Authority){const n={none:0,read:1,construct:2,do:3};if(n[a]<n[r])throw new Error("REFUSED_AUTHORITY");return true}

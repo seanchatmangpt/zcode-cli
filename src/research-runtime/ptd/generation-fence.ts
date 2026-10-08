@@ -1,0 +1,1 @@
+import type{Epoch}from"./epoch.ts";export function sameGeneration(a:Epoch,b:Epoch){if(a.subject!==b.subject||a.generation!==b.generation)throw new Error("REFUSED_GENERATION_DRIFT");return true}

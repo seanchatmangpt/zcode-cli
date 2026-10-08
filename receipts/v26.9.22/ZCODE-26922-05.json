@@ -1,16 +1,87 @@
 {
+ "identity": {
+  "subject": "ZCODE-26922-05: upstream merge origin/main (kingsword09) + 3.14.1 relock, anchors ported",
+  "repo": "/Users/sac/zcode-cli",
+  "subject_sha": "da178249d54b0c2f8a34977d694300c1f039e7da",
+  "base_sha": "da178249d54b0c2f8a34977d694300c1f039e7da",
+  "subject_note": "subject_sha is the recorded base da17824 (full: da178249d54b0c2f8a34977d694300c1f039e7da) as the only locally resolvable anchor: the integration merge head itself is UNRECOVERED (legacy text: 'see integration branch (wo5/upstream d194d98 + 8cb486c merged)'; resolved constituents d194d982f9a9b9abc371c2ef10da44cd6e9a0f6c, 8cb486c2512eed5ccb2f995357360ef6cc626e6e, dc82485b1a8b1b32ab49a69ef6e24555d1e73dca). The receipt's verified state was the post-merge relocked tree, not this base alone."
+ },
+ "authority": {
+  "ceiling": "DO",
+  "grant": "UNRECOVERED (legacy flat receipt records no authority grant; migrated under the v26.9.22 wave bookkeeping order, receipts:validate typed-skip remediation)",
+  "actor": "UNRECOVERED (legacy flat receipt does not name the actor)",
+  "notes": "authority fields are typed placeholders: the legacy flat receipt carried no authority/scope statements to map"
+ },
+ "consequence": {
+  "commits": [
+   "d194d98",
+   "8cb486c",
+   "dc82485"
+  ],
+  "files_changed": [
+   "UNRECOVERED (legacy receipt records only hand-resolved files: package.json, scripts/sync-runtime.ts, test/runtime/launcher.test.ts)"
+  ],
+  "remote_effects": [
+   "git fetch origin (legacy command list); push not recorded"
+  ]
+ },
+ "replay": {
+  "commands": [
+   {
+    "cmd": "git fetch origin && git merge origin/main (hand-resolved: package.json, scripts/sync-runtime.ts, test/runtime/launcher.test.ts)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event."
+   },
+   {
+    "cmd": "jq -r .appVersion zcode-runtime.lock.json  (= 3.14.1)",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event."
+   },
+   {
+    "cmd": "bun run sync:locked",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event."
+   },
+   {
+    "cmd": "bun run typecheck",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event."
+   },
+   {
+    "cmd": "bun run test:unit | test:tui | test:runtime | test:node",
+    "exit": 0,
+    "cwd": "/Users/sac/zcode-cli",
+    "summary": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event."
+   }
+  ],
+  "durable_location": "receipts/v26.9.22/ZCODE-26922-05.json",
+  "note": "commands/exits are the legacy receipt's recorded command list and overall recorded exit (2026-09-22 historical execution); they have not been re-run in the current session"
+ },
+ "standing": {
+  "value": "PARTIAL_ALIVE",
+  "derived_from": "Legacy receipt itself declared PARTIAL_ALIVE: sync:locked/typecheck/test:node green on 3.14.1, but test:runtime retained 9 failures classified pre-existing/sandbox-bound and live permission qualification was typed-deferred. Unchanged by migration; not re-witnessed."
+ },
+ "provider_ext.legacy_v26922": {
   "wo": "ZCODE-26922-05",
   "base_sha": "da17824",
   "merge_sha": "see integration branch (wo5/upstream d194d98 + 8cb486c merged)",
-  "merged": { "origin/main (kingsword09)": "dc82485", "skipped": "origin/release/zcode-upstream 05d3f49 (superseded)" },
+  "merged": {
+   "origin/main (kingsword09)": "dc82485",
+   "skipped": "origin/release/zcode-upstream 05d3f49 (superseded)"
+  },
   "command": [
-    "git fetch origin && git merge origin/main (hand-resolved: package.json, scripts/sync-runtime.ts, test/runtime/launcher.test.ts)",
-    "jq -r .appVersion zcode-runtime.lock.json  (= 3.14.1)",
-    "bun run sync:locked",
-    "bun run typecheck",
-    "bun run test:unit | test:tui | test:runtime | test:node"
+   "git fetch origin && git merge origin/main (hand-resolved: package.json, scripts/sync-runtime.ts, test/runtime/launcher.test.ts)",
+   "jq -r .appVersion zcode-runtime.lock.json  (= 3.14.1)",
+   "bun run sync:locked",
+   "bun run typecheck",
+   "bun run test:unit | test:tui | test:runtime | test:node"
   ],
   "exit": 0,
   "output_excerpt": "sync:locked rc=0: 3.14.1 deb sha512-verified, all required patches apply+verify, anchor-drift + loop-gaps 9 pass (maxTurns + warm-up anchors re-proven on 3.14.1). typecheck rc=0. test:node 5 pass incl. #163 sqlite-session-store. test:unit 789 pass (live permission qualification typed-deferred on 1302/model-catalog environmental window). test:runtime 9 fail vs 18 pre-existing on the pre-merge tree (sandbox-bound TUI/resume smokes + 2 pre-existing subagent-harness failures; pre-existing environmental, not a merge regression). Runtime anchors ported to 3.14.1: warm-up exec for session-model-recovery (cold-exec misses all 3 anchors on the multi-MB bundle), helper-agnostic runRegularTurnLoop label, native streaming-ledger no-op, tui-bridge/model-catalog-reload graceful degradation with ontology TTL row added for the new internal event.",
   "standing": "PARTIAL_ALIVE"
+ }
 }

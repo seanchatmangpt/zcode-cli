@@ -22,7 +22,11 @@ export const ontologyText = (): string => readFileSync(ontologyPath, "utf8");
 export function declaredRuntimeEvents(ttl = ontologyText()): { source: string; name: string; unmappedReason?: string }[] {
   const out: { source: string; name: string; unmappedReason?: string }[] = [];
   for (const m of ttl.matchAll(/^zl:RuntimeEvent-\S+ a pi:RuntimeEvent(?: , (pi:Unmapped))? ; pi:runtimeEventName "([^"]+)" ; pi:emittedBy zl:Source-(\w+)(?: ; pi:unmappedReason "([^"]+)")? \.$/gm)) {
-    out.push({ source: m[3] === "StreamJson" ? "zcode_stream" : "zcode_app_server", name: m[2], unmappedReason: m[4] });
+    out.push({
+      source: m[3] === "StreamJson" ? "zcode_stream" : m[3] === "GallWorkHook" ? "gall_work" : "zcode_app_server",
+      name: m[2],
+      unmappedReason: m[4]
+    });
   }
   return out;
 }

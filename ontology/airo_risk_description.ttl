@@ -1,0 +1,148 @@
+# AIRo risk description for zcode-cli's CLI agent runtime.
+# Vocabulary: https://w3id.org/airo (DelaramGlp/airo airo.ttl), per the landed
+# W603/W604 pattern. Every `file:` citation below is a real path (checked by
+# test/airo-risk-description.test.ts).
+
+@prefix airo: <https://w3id.org/airo#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix zc: <https://zcode-cli.example/ontology/airo#> .
+
+<https://zcode-cli.example/airo/cli-agent-runtime> rdf:type airo:AISystem ;
+    rdfs:label "zcode-cli CLI agent runtime"@en ;
+    dcterms:description """TypeScript/BUN CLI coding-agent runtime: toolchain
+        requirements (ggen et al.) enforced via the ZCODE_REQUIRE_TOOLCHAINS
+        gate, workflow toolchain court scripts, runtime-anchor sync, expert
+        strategy configuration, and typed-skip mutation/report streams, shipped
+        against byte-pinned cross-repo contracts."""@en ;
+    airo:hasPurpose zc:Purpose_AgentRuntime ;
+    airo:hasRisk zc:Risk_ToolchainDrift ;
+    airo:hasRisk zc:Risk_SilentSkip ;
+    airo:hasRisk zc:Risk_ContractDrift ;
+    airo:hasRiskControl zc:Control_BunTestGate ;
+    airo:hasRiskControl zc:Control_ContractShaPins ;
+    airo:hasModality zc:Modality_Assessed .
+
+# ---------------------------------------------------------------- Purpose
+zc:Purpose_AgentRuntime rdf:type airo:Purpose ;
+    rdfs:label "Run a governed CLI coding-agent runtime with enforced toolchains"@en .
+
+# ---------------------------------------------------------------- Risks
+zc:Risk_ToolchainDrift rdf:type airo:Risk ;
+    rdfs:label "A workflow job reaches toolchain-requiring scripts on a drifted or missing toolchain"@en ;
+    dcterms:description """Scripts gate on ZCODE_REQUIRE_TOOLCHAINS=1 (and
+        ZCODE_REQUIRE_BUNDLE=1); without the workflow-toolchain court, a job
+        could run against a missing or drifted pinned toolchain (ggen et al.)
+        and still appear green."""@en ;
+    rdfs:seeAlso <file:package.json> ;
+    rdfs:seeAlso <file:scripts/workflow-toolchain-court.ts> ;
+    airo:hasConsequence zc:Consequence_UnqualifiedRun .
+
+zc:Risk_SilentSkip rdf:type airo:Risk ;
+    rdfs:label "Skipped expert-strategy or mutation work silently reported as evaluated"@en ;
+    dcterms:description """The expert-strategy config and the typed-skip report
+        stream exist so skips carry a typed reason rather than a bare boolean;
+        the risk is a skip class rendered without its typed reason (the
+        NOT_EVALUATED fallback is the honest state)."""@en ;
+    rdfs:seeAlso <file:test/expert-strategy-config.test.ts> ;
+    rdfs:seeAlso <file:test/release-workflows.test.ts> ;
+    airo:hasConsequence zc:Consequence_UnqualifiedRun .
+
+zc:Risk_ContractDrift rdf:type airo:Risk ;
+    rdfs:label "Cross-repo contract fixtures drift from the pinned shas"@en ;
+    dcterms:description """W356 re-verified byte-identical parity for
+        test/fixtures/gall-work.contract.json (sha256
+        5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4) and
+        test/fixtures/xaas-remote-relay.contract.json (sha256
+        76ff551c16cea5afb40b385ecee9ab7462ce1d73bee47655c0e0c63dc0a33f89);
+        silent drift across the zcode-cli/xaas boundary would invalidate the
+        pinned plugin/relay surface."""@en ;
+    rdfs:seeAlso <file:test/fixtures/gall-work.contract.json> ;
+    rdfs:seeAlso <file:test/fixtures/xaas-remote-relay.contract.json> ;
+    airo:hasConsequence zc:Consequence_CrossRepoInvalidation .
+
+# ------------------------------------------------------------- Consequences
+zc:Consequence_UnqualifiedRun rdf:type airo:Consequence ;
+    rdfs:label "A runtime or release claim rests on an unqualified run"@en ;
+    airo:hasSeverity zc:Severity_Major ;
+    airo:hasImpact zc:Impact_EvidenceIntegrity .
+
+zc:Consequence_CrossRepoInvalidation rdf:type airo:Consequence ;
+    rdfs:label "Cross-repo consumers operate on a stale contract identity"@en ;
+    airo:hasSeverity zc:Severity_Major ;
+    airo:hasImpact zc:Impact_EvidenceIntegrity .
+
+zc:Impact_EvidenceIntegrity rdf:type airo:Impact ;
+    rdfs:label "Loss of evidence integrity for runtime and contract claims"@en ;
+    airo:hasSeverity zc:Severity_Major ;
+    airo:hasImpactOnStakeholder zc:Stakeholder_ContractConsumer .
+
+zc:Stakeholder_ContractConsumer rdf:type airo:Stakeholder ;
+    rdfs:label "Consumers of the pinned contracts and runtime claims (xaas plugin/relay side, release consumers)"@en .
+
+zc:Severity_Major rdf:type airo:Severity ;
+    rdfs:label "major (qualitative, self-assessed)"@en .
+
+# --------------------------------------------------------- Risk sources
+zc:Source_EnvVarOnlyGate rdf:type airo:RiskSource ;
+    rdfs:label "Toolchain enforcement that reduces to environment variables only"@en ;
+    dcterms:description """The court tests
+        (test/workflow-toolchain-court-hardening.test.ts) exist because a
+        workflow shape could otherwise reach ZCODE_REQUIRE_TOOLCHAINS=1 scripts
+        without the pinned-toolchain install step."""@en ;
+    airo:isRiskSourceFor zc:Risk_ToolchainDrift .
+
+zc:Source_UntypedSkipChannel rdf:type airo:RiskSource ;
+    rdfs:label "Skip channels that can render without their typed reason"@en ;
+    dcterms:description """test/release-workflows.test.ts asserts the summary
+        renders the active typed reason per channel and the NOT_EVALUATED
+        fallback; an untyped channel is the documented hazard."""@en ;
+    airo:isRiskSourceFor zc:Risk_SilentSkip .
+
+zc:Source_ByteIdentityLease rdf:type airo:RiskSource ;
+    rdfs:label "Byte-identity of cross-repo contracts is a recomputed property, not a stored one"@en ;
+    dcterms:description """W356's parity is point-in-time; both sides must keep
+        recomputing sha256 to hold it."""@en ;
+    airo:isRiskSourceFor zc:Risk_ContractDrift .
+
+# --------------------------------------------------------- Risk controls
+zc:Control_BunTestGate rdf:type airo:RiskControl ;
+    rdfs:label "bun test unit gate (1072 pass / 0 fail, w356-era)"@en ;
+    dcterms:description """`ZCODE_REQUIRE_TOOLCHAINS=1 bun test test/*.test.ts`
+        (package.json test:unit) — the w356 receipt records 1072 pass / 0 fail /
+        268359 expect() calls across 125 files in 101.83s; court tests for the
+        toolchain gate and typed-skip rendering run inside it."""@en ;
+    rdfs:seeAlso <file:package.json> ;
+    rdfs:seeAlso <file:test/workflow-toolchain-court-hardening.test.ts> ;
+    airo:mitigatesRiskConcept zc:Risk_ToolchainDrift ;
+    airo:mitigatesRiskConcept zc:Risk_SilentSkip .
+
+zc:Control_ContractShaPins rdf:type airo:RiskControl ;
+    rdfs:label "Contract sha pins: gall-work + xaas-remote-relay (w356 shas)"@en ;
+    dcterms:description """Both contract fixtures are sha256-pinned (w356);
+        test/airo-risk-description.test.ts recomputes and asserts the exact
+        pins so drift fails a test rather than surfacing at integration."""@en ;
+    rdfs:seeAlso <file:test/fixtures/gall-work.contract.json> ;
+    rdfs:seeAlso <file:test/fixtures/xaas-remote-relay.contract.json> ;
+    airo:mitigatesRiskConcept zc:Risk_ContractDrift .
+
+# ------------------------------------------------- Qualitative assessment
+zc:Risk_ToolchainDrift airo:hasLikelihood zc:Likelihood_Possible ;
+    airo:hasRiskControl zc:Control_BunTestGate .
+
+zc:Risk_SilentSkip airo:hasLikelihood zc:Likelihood_Rare ;
+    airo:hasRiskControl zc:Control_BunTestGate .
+
+zc:Risk_ContractDrift airo:hasLikelihood zc:Likelihood_Possible ;
+    airo:hasRiskControl zc:Control_ContractShaPins .
+
+zc:Likelihood_Possible rdf:type airo:Likelihood ;
+    rdfs:label "possible (qualitative, self-assessed)"@en .
+
+zc:Likelihood_Rare rdf:type airo:Likelihood ;
+    rdfs:label "rare (qualitative, self-assessed: court tests gate it)"@en .
+
+zc:Modality_Assessed rdf:type airo:Modality ;
+    rdfs:label "as-is assessment, qualitative, self-assessed on this checkout"@en .

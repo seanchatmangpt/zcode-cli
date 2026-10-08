@@ -243,7 +243,13 @@ zcode skills list                 # every discovered skill, plugin-qualified
 zcode skills inspect <name>       # full description, source path and metadata
 zcode commands list               # discovered custom slash commands
 zcode commands inspect <name>     # argument hints and resolved body
+zcode parts <verb> --graph FILE   # inspect, alternatives and falsify over a semantic-parts graph
+zcode parts alternatives …        # also [--minimum-shared N] [--limit N]
 ```
+
+Every `parts` payload carries a `receipt_digest` — a sha256 binding the payload
+to the exact observed graph bytes (`--graph-sha256` pins them and refuses a
+stale or substituted graph before parsing).
 
 ### Active-turn input
 

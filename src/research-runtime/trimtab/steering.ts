@@ -1,0 +1,1 @@
+import{modelRole}from"./model-role.ts";export const steer=(context:string[],hint:string)=>({context,hint,authority:modelRole});

@@ -1,0 +1,1 @@
+import type{EvidenceAdmissionReceipt}from"../../evidence-cli.ts";export function admitReceipt(r:EvidenceAdmissionReceipt){if(r.standing!=="ADMITTED"||r.authority!=="none")throw new Error("REFUSED_EVIDENCE");return r}

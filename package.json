@@ -82,7 +82,8 @@
     "release:build": "bun scripts/build-release.ts",
     "release:pack": "bun scripts/pack-release.ts",
     "prepack": "bun scripts/check-package.ts --prepack",
-    "receipts:validate": "bun scripts/validate-receipts.ts"
+    "receipts:validate": "bun scripts/validate-receipts.ts",
+    "test:live": "bun test test/live/"
   },
   "engines": {
     "node": ">=22.19.0"

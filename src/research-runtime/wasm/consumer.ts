@@ -1,0 +1,1 @@
+import type{PortableCapability}from"./contract.ts";export const consume=(subject:string,c:PortableCapability)=>({subject,capabilityId:c.id});

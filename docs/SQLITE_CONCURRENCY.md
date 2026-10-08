@@ -52,5 +52,6 @@ add bounded retries only at persistence boundaries that can be safely rolled bac
 and replayed. Never retry a whole agent turn and repeat completed external tools.
 Per-session databases or a shared writer service are separate architectural changes
 requiring discovery, lifecycle, and migration design. The contention regression
-tests also pass against the locked Desktop 3.14.0 runtime. They do not establish
+tests also pass against the locked Desktop runtime (observed on the 3.14.0 lock;
+the lock now selects 3.14.3 — `zcode-runtime.lock.json`). They do not establish
 that sustained high-concurrency workloads are free of contention.
