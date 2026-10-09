@@ -70,6 +70,16 @@ ran against the branch's docs state at `2cdc58a` with a different
 docs-scope and generator version; both are honest, this one is at main
 HEAD with the pinned extractor.
 
+## As-of note (R70 round-3 refresh, 2026-10-09)
+
+Re-run at pin `b88297e6` (ledger current row; committed gmp extractor
+re-verified `shasum -a 256` — note gmp's working tree carries an uncommitted
+R64 `module_coverage` addition, run used committed bytes
+`/tmp/gen_doc_surface.pinned.py`): same standing. At main `a649d43`:
+S_coverage 0.1800 FAIL / coverage_raw 0.2240 / Phi_halluc 0.0031 PASS /
+Q_density 0.9969 PASS (185 modules / 1560 claims). Grounding ~18% more of
+the public API remains content work; no threshold touched.
+
 ## Stale-claim correction
 
 `docs/sjira/v26.10.8/CAMPAIGN-RECEIPT.md` claimed "No `v26.10.8` tag exists
