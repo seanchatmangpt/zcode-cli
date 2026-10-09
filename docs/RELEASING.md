@@ -74,9 +74,10 @@ It contains only:
   their original licenses) and the compiled local `@zcode/tui` adapter;
 - `setting.example.json`, `provider.example.json` and `zcode-runtime.lock.json`;
 - the English and Simplified Chinese configuration guides and provider field
-  references in `docs/`;
+  references in `docs/CONFIGURATION.md`, `docs/CONFIGURATION.zh-CN.md`,
+  `docs/PROVIDER_CONFIG.md` and `docs/PROVIDER_CONFIG.zh-CN.md`;
 - `docs/THIRD_PARTY_CONTENT.md` and the license texts, upstream notices and
-  source provenance in `LICENSES/`;
+  source provenance in `LICENSES/README.md`;
 - `README.md`, `LICENSE` and the required npm `package.json`.
 
 Tests, GitHub workflows, build scripts, launcher/TUI TypeScript sources, local
@@ -277,8 +278,9 @@ Before enabling publication:
 2. review the licenses of the selected Desktop artifact and its dependencies.
    The public first-party source is Apache-2.0, but its source revision is not
    the provenance record for the extracted binary. Keep the license and copied
-   notices in `LICENSES/`, the runtime modification notice, and the artifact
-   metadata. The four document-related plugins are included in this project's
+   notices in the LICENSES directory (`LICENSES/README.md` indexes the license
+   text, notices and provenance files), the runtime modification notice, and
+   the artifact metadata. The four document-related plugins are included in this project's
    non-commercial distribution with their original skill license files. See
    [Third-party content](./THIRD_PARTY_CONTENT.md);
 3. under the GitHub repository's **Settings** → **Actions** → **General**,
