@@ -82,8 +82,10 @@ Manual mode prints the temporary workspace path before opening the TUI. Enter
   buffer API so dependency upgrades must be reviewed explicitly.
 - `test/tui/harness/scenario-workspace.ts` creates an isolated HOME and working
   tree with a separate real Git directory and deterministic configuration.
-- `test/tui/scenarios/` declares user-visible actions and assertions.
-- `test/tui/fixtures/` provides typed `RuntimeAdapter` behavior to the real TUI.
+- Scenario declarations under `test/tui/scenarios/*.ts` declare user-visible
+  actions and assertions.
+- Fixture modules under `test/tui/fixtures/*.ts` provide typed `RuntimeAdapter`
+  behavior to the real TUI.
 - `test/tui/runtime/scenario-runtime.ts` maps declared prompt routes to typed
   event, delay, permission, file-write, and response steps.
 - `test/tui/runtime/scenario-http.ts` maps declared MSW routes to real fixture
@@ -190,9 +192,9 @@ container/VM runtime test instead of weakening the hermetic TUI suite.
 
 ## Adding a scenario
 
-1. Add a fixture under `test/tui/fixtures/` that calls `runTui()` with deterministic
+1. Add a fixture under `test/tui/fixtures/*.ts` that calls `runTui()` with deterministic
    adapter functions.
-2. Add a declaration under `test/tui/scenarios/` with optional baseline files
+2. Add a declaration under `test/tui/scenarios/*.ts` with optional baseline files
    and the automatic interaction.
 3. Register it in `test/tui/scenarios/index.ts`.
 4. Add a `bun:test` entry when the scenario should run as part of `bun test`.

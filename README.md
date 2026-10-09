@@ -116,8 +116,8 @@ Node.js npm launcher (config / login / version metadata)
 ```
 
 `@zcode/tui` is the interface package loaded by the upstream runtime. During
-synchronization this project installs its local implementation from
-`packages/zcode-tui`, built on `@earendil-works/pi-tui`. This is separate from
+synchronization this project installs its local implementation from the local
+package declared in `packages/zcode-tui/package.json`, built on `@earendil-works/pi-tui`. This is separate from
 the official OpenTUI implementation in `apps/zcode-cli/packages/tui`.
 
 The official agent, model, session, tool, plugin, MCP, credential store and

@@ -30,7 +30,7 @@ nodes are read-only: no file edits, no git state mutations; `git status`/`git st
 verification lanes.
 Standing vocabulary: PASS | FAIL | BLOCKED | REFUSED_NO_AUTHORITY | PARTIAL_ALIVE. Never weaken a
 test to make it pass. Never "fix" the 5 documented pre-existing failures in
-test/runtime/launcher.test.ts. `src/generated/` and `vendor/zcode.cjs` are never hand-edited.
+test/runtime/launcher.test.ts. Files under src/generated/ and `vendor/zcode.cjs` are never hand-edited.
 Env facts: ZCODE_SUBAGENT_MAX_TURNS=100 is set in the parent session; `mix` only resolves from
 inside ~/xaas (asdf shim); never run `deps.get` from a lane; use MIX_BUILD_ROOT=_build-lane<N> for
 xaas builds; postgres localhost:5432 is up; PATH node is v20 (use `nvm use 22` only if

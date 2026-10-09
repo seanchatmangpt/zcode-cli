@@ -12,7 +12,7 @@ EXIT=0
 
 ## Validation
 
-- Exit 0 = pass criterion met (`src/generated/` is an exact projection of `ontology/zcode-loop.ttl`; no drift).
+- Exit 0 = pass criterion met (the `src/generated/loop.ts`, `src/generated/ocel.ts`, `src/generated/receipt.ts` and `src/generated/schemas.json` projections are an exact projection of `ontology/zcode-loop.ttl`; no drift).
 - `git status --porcelain -- ontology/ src/generated/` → empty: neither the ontology nor any projection file is modified in the working tree, consistent with "ontology untouched this wave".
 - Subject: repo `/Users/sac/zcode-cli` at HEAD `dea68ed6b908be6591d8007ec92ae2cc72d0025a` (branch `fix/v26926-preview-publish-typed-skip`).
 
