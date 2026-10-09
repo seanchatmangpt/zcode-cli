@@ -9,7 +9,11 @@
 
 ## Campaign commits this wave
 
-No `v26.10.8` tag exists in this repo (tags stop at `v26.9.23`); the wave's commits:
+CORRECTION (2026-10-09, lane R13): the original text here claimed no
+`v26.10.8` tag exists and that tags stop at `v26.9.23`. That claim was
+stale/false: tag `v26.10.8` exists at commit
+`2cdc58a441fd411202ac0dd861ceb4b73b3adb18`, an ancestor of main. The
+wave's commits:
 
 | SHA | one-line |
 |---|---|
