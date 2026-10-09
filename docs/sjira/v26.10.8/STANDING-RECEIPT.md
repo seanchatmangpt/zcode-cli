@@ -71,6 +71,10 @@ stale-tag correction in `TS-WITNESS-RECEIPT.md`: figures re-derived from
 the stale observation. All post-witness `.ts`-touched work is absent; the
 `.ts` files V19 flagged are within the witnessed audit surface.
 
+## Re-certification scope
+
+Re-certification triggers on a non-empty `git diff --stat 9ceba84..HEAD -- src/ scripts/` (code/claim-surface change); docs-only commits are grandfathered.
+
 ## Replay
 
 ```sh
