@@ -151,7 +151,11 @@ sj:zocel-014
     dcterms:title "ocel-registry-bridge — wire the xaas OcelAshEmitter to the zcode-ocel-pack generated registry" ;
     dcterms:description "Successor of xaas SJ-002, standing UNSUPPORTED today (capability absent). Xaas.Telemetry.OcelAshEmitter (lib/xaas/telemetry/ocel_ash_emitter.ex) emits OCEL events without any binding to the zcode-ocel-pack generated registry (src/generated/ocel.ts event table, verifyChain, src/generated/schemas.json in seanchatmangpt/zcode-cli). Bridge the emitter to that generated registry so an xaas-emitted event validates differentially against the zcode-generated schema. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
     sj:repository "seanchatmangpt/xaas" ;
-    sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
+    # PROVENANCE 2026-10-13: baseSha hand-corrected (disclosed). The prior value
+    # e0a77911b804... is a zcode-cli commit mispinned by generator repo-label drift
+    # (see ggen_igniter 354a477); the correct xaas base is the sj:observedAt subject
+    # 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 (resolves only in seanchatmangpt/xaas).
+    sj:baseSha "2d229c272c3a02dcb8e75ff600ea0a4edc058d71" ;
     sj:subject "xaas:ocel-registry-bridge" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;
@@ -202,7 +206,11 @@ sj:zocel-015
     dcterms:title "execution-mcp-audit — apply AuditMcpToolCall (or equivalent) to /internal-api/execution/mcp tool calls" ;
     dcterms:description "Audit asymmetry in seanchatmangpt/xaas: router.ex pipes :audit_mcp_tool_call (XaasWeb.Plugs.AuditMcpToolCall) through the /mcp scope only; the execution fabric route post(\"/execution/mcp\", ExecutionFabricController, :mcp) (full path /internal-api/execution/mcp) is unaudited, so execution-plane tool calls leave no audit row while /mcp tool calls do. Apply the same audit coverage (AuditMcpToolCall or equivalent) to the execution-mcp route. xaas observed at 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 on 2026-09-22; the court binds the exact xaas subjectSha at run time. Standing stays UNKNOWN until a court receipt exists." ;
     sj:repository "seanchatmangpt/xaas" ;
-    sj:baseSha "e0a77911b804040d5bd3412a86bf94957ad5a2c6" ;
+    # PROVENANCE 2026-10-13: baseSha hand-corrected (disclosed). The prior value
+    # e0a77911b804... is a zcode-cli commit mispinned by generator repo-label drift
+    # (see ggen_igniter 354a477); the correct xaas base is the sj:observedAt subject
+    # 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 (resolves only in seanchatmangpt/xaas).
+    sj:baseSha "2d229c272c3a02dcb8e75ff600ea0a4edc058d71" ;
     sj:subject "xaas:execution-mcp-audit" ;
     sj:standing "UNKNOWN" ;
     sj:evidenceCeiling "SPECIFIED" ;

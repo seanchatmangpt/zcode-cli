@@ -41,11 +41,10 @@ const ALLOWLIST: Record<string, string> = {
   // day; corpus predates current heads by design.
   "seanchatmangpt/zcode-cli@5e20ab3c9dff97edd35deee6759c5e5961ee1a05":
     "v26.9.21 corpus predates current head, as-of 2026-10-13",
-  // v26.9.22 corpus — written 2026-09-22. The hddl pins repo label
-  // seanchatmangpt/xaas, but the sha resolves in zcode-cli (repo-label drift
-  // in the generator; see report). Classified on the sha, not the label.
-  "seanchatmangpt/xaas@e0a77911b804040d5bd3412a86bf94957ad5a2c6":
-    "v26.9.22 corpus predates current head (repo label suspect), as-of 2026-10-13",
+  // v26.9.22 corpus — written 2026-09-22. ZOCEL-014/015 previously carried a
+  // zcode-cli sha under the xaas label; corrected 2026-10-13 to the real xaas
+  // observed subject 2d229c27 (an ancestor of xaas HEAD), so no allowlist
+  // entry is needed for that pin anymore.
 };
 
 export interface Pin {

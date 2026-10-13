@@ -56,4 +56,29 @@ describe("sjira pin drift detector", () => {
     ).trim();
     expect(isAncestor(REPO_ROOT, historical)).toBeTrue();
   });
+
+  test("regression: ZOCEL-014/015 pins resolve as real xaas ancestors without allowlist", () => {
+    // The generator's repo-label drift pinned zcode-cli sha e0a77911 under the
+    // seanchatmangpt/xaas label for ZOCEL-014/015. Corrected 2026-10-13 to the
+    // xaas observed subject 2d229c272c3a02dcb8e75ff600ea0a4edc058d71. This court
+    // fails if that drift class returns (wrong-sha pin) or if anyone re-adds an
+    // allowlist entry to mask it instead of fixing the data.
+    const corrected = parsePins(REPO_ROOT).filter((p) =>
+      ["ZOCEL-014", "ZOCEL-015"].includes(p.workorder),
+    );
+    expect(corrected.length).toBe(2);
+    for (const p of corrected) {
+      expect(p.repo).toBe("seanchatmangpt/xaas");
+      expect(p.sha).toBe("2d229c272c3a02dcb8e75ff600ea0a4edc058d71");
+      // Real collaborator: the actual seanchatmangpt/xaas checkout.
+      expect(isAncestor("/Users/sac/xaas", p.sha)).toBeTrue();
+    }
+    // The stale allowlist entry must stay gone — if it is re-added, the run()
+    // verdict would pass behind EXPECTED-STALE instead of the data being right.
+    // (ZOCEL-016 legitimately carries e0a77911 under the zcode-cli label, so
+    // match the full drifted key, not the bare sha.)
+    const { report } = run(REPO_ROOT);
+    expect(report).not.toContain("seanchatmangpt/xaas@e0a77911");
+    expect(report).not.toContain("EXPECTED-STALE");
+  });
 });

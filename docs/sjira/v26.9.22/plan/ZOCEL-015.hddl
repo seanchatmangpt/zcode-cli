@@ -41,7 +41,11 @@
   (:init
     (workorder ZOCEL-015)
     (standing ZOCEL-015 UNKNOWN)
-    (base-sha ZOCEL-015 e0a77911b804040d5bd3412a86bf94957ad5a2c6)
+    ;; PROVENANCE 2026-10-13: hand-corrected (generated-file hand-edit, disclosed).
+    ;; e0a77911 is a zcode-cli commit mispinned by the generator's repo-label drift
+    ;; (ggen_igniter 354a477 fix); the correct xaas base is the sj:observedAt subject
+    ;; 2d229c272c3a02dcb8e75ff600ea0a4edc058d71 (exists only in seanchatmangpt/xaas).
+    (base-sha ZOCEL-015 2d229c272c3a02dcb8e75ff600ea0a4edc058d71)
     (authority-ceiling ZOCEL-015 CONSTRUCT)
     (exact-subject ZOCEL-015 "xaas:execution-mcp-audit")
     (repository ZOCEL-015 "seanchatmangpt/xaas")
