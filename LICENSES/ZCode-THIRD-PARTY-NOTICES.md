@@ -2867,7 +2867,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE) License © 2021 [Anthony Fu](https://github.com/antfu)
+MIT License © 2021 [Anthony Fu](https://github.com/antfu)
 
 ````
 
@@ -3484,7 +3484,7 @@ SOFTWARE.
 ````text
 ## License
 
-This package is licensed under the MIT License - see the [LICENSE](/LICENSE) file for details.
+This package is licensed under the MIT License - see the LICENSE file for details.
 
 ````
 
@@ -4928,7 +4928,7 @@ SOFTWARE.
 ````text
 ## License
 
-This project is licensed under the MIT License—see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License—see the LICENSE file for details.
 
 ````
 
@@ -6630,7 +6630,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 
 ````text
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the LICENSE file for details.
 ````
 
 ### Notice 73af3f57f2b7aa24fa9523eebe12bd4bb8d3627a2a2d15ec4f5bff5f6f028ef6
@@ -7412,7 +7412,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/jshttp/accepts/master
 [coveralls-url]: https://coveralls.io/r/jshttp/accepts?branch=master
@@ -7464,7 +7464,7 @@ THE SOFTWARE.
 ````text
 ## License
 
-This plugin is issued under the [MIT license](./LICENSE).
+This plugin is issued under the MIT license.
 
 ````
 
@@ -7641,7 +7641,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE)
+MIT
 
 ````
 
@@ -8372,7 +8372,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ````text
 ## License
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)]
 
 ````
 
@@ -8750,7 +8750,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://img.shields.io/github/actions/workflow/status/expressjs/body-parser/ci.yml?branch=master&label=ci
 [ci-url]: https://github.com/expressjs/body-parser/actions/workflows/ci.yml
@@ -8924,7 +8924,7 @@ THE SOFTWARE.
 ### License
 
 Copyright © 2019, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ---
 
@@ -9168,7 +9168,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/visionmedia/bytes.js/master?label=ci
 [ci-url]: https://github.com/visionmedia/bytes.js/actions?query=workflow%3Aci
@@ -10365,7 +10365,7 @@ THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ````text
 ## License
 
-[MIT](LICENSE.md)
+MIT
 
 ````
 
@@ -10562,7 +10562,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ````text
 # License
-Copyright &copy; 2011-2016, Heather Arthur and Josh Junon. Licensed under the [MIT License](LICENSE).
+Copyright &copy; 2011-2016, Heather Arthur and Josh Junon. Licensed under the MIT License.
 
 ````
 
@@ -11036,7 +11036,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/content-disposition
 [npm-url]: https://www.npmjs.com/package/content-disposition
@@ -11092,7 +11092,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/content-type/master?label=ci
 [ci-url]: https://github.com/jshttp/content-type/actions/workflows/ci.yml
@@ -11231,7 +11231,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/cookie/master?label=ci
 [ci-url]: https://github.com/jshttp/cookie/actions/workflows/ci.yml
@@ -11254,7 +11254,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://img.shields.io/github/actions/workflow/status/jshttp/cookie/ci.yml
 [ci-url]: https://github.com/jshttp/cookie/actions/workflows/ci.yml?query=branch%3Amaster
@@ -11659,7 +11659,7 @@ SUCH DAMAGE.
 ## License
 
 The cpu_features library is licensed under the terms of the Apache license.
-See [LICENSE](LICENSE) for more information.
+See LICENSE for more information.
 
 <a name="cmake"></a>
 ````
@@ -12738,7 +12738,7 @@ SOFTWARE.
 ````text
 ## License
 
-Day.js is licensed under a [MIT License](./LICENSE).
+Day.js is licensed under a MIT License.
 
 ````
 
@@ -13166,7 +13166,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [appveyor-image]: https://badgen.net/appveyor/ci/dougwilson/nodejs-depd/master?label=windows
 [appveyor-url]: https://ci.appveyor.com/project/dougwilson/nodejs-depd
@@ -14814,7 +14814,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 ````
 
@@ -14855,7 +14855,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](/LICENSE) file
+This project is licensed under the MIT License. See the LICENSE file
 for more information.
 
 ````
@@ -14936,7 +14936,7 @@ THE SOFTWARE.
 ````text
 ## License
 Licensed under the [MIT License](http://opensource.org/licenses/MIT).
-You can find a copy of it in [LICENSE](LICENSE).
+You can find a copy of it in LICENSE.
 
 ````
 
@@ -15015,7 +15015,7 @@ SOFTWARE.
 ````text
 ## License
 
-MIT © Viva Republica, Inc. See [LICENSE](./LICENSE) for details.
+MIT © Viva Republica, Inc. See LICENSE for details.
 
 <a title="Toss" href="https://toss.im">
   <picture>
@@ -15482,7 +15482,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/etag.svg
 [npm-url]: https://npmjs.org/package/etag
@@ -15613,7 +15613,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-MIT-licensed. See [LICENSE](LICENSE).
+MIT-licensed. See LICENSE.
 
 ````
 
@@ -15770,7 +15770,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-  [MIT](LICENSE)
+  MIT
 
 [coveralls-image]: https://img.shields.io/coverallsCoverage/github/expressjs/express?branch=master
 [coveralls-url]: https://coveralls.io/r/expressjs/express?branch=master
@@ -16033,7 +16033,7 @@ The complete list of contributors can be found at:
 ````text
 ## License
 
-Licensed under [BSD-3-Clause](./LICENSE).
+Licensed under BSD-3-Clause.
 
 ````
 
@@ -16195,7 +16195,7 @@ SOFTWARE.
 ````text
 ## License
 
-This software is [MIT Licensed](./LICENSE), with special exemptions for projects
+This software is MIT Licensed, with special exemptions for projects
 and organizations as noted below:
 
 - [SheetJS](https://github.com/SheetJS/) is exempt from MIT licensing and may
@@ -16213,7 +16213,7 @@ and organizations as noted below:
 ### License
 
 Copyright © 2019, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ***
 
@@ -16261,7 +16261,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/finalhandler.svg
 [npm-url]: https://npmjs.org/package/finalhandler
@@ -16400,7 +16400,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/forwarded/master?label=ci
 [ci-url]: https://github.com/jshttp/forwarded/actions?query=workflow%3Aci
@@ -16488,7 +16488,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://img.shields.io/github/workflow/status/jshttp/fresh/ci/master?label=ci
 [ci-url]: https://github.com/jshttp/fresh/actions/workflows/ci.yml
@@ -17075,7 +17075,7 @@ SOFTWARE.
 ````text
 ## License
 
-GraphQL.js is [MIT-licensed](./LICENSE).
+GraphQL.js is MIT-licensed.
 
 ````
 
@@ -18608,7 +18608,7 @@ SOFTWARE.
 ````text
 ## License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+Distributed under the MIT License. See LICENSE for more information.
 
 ````
 
@@ -18841,7 +18841,7 @@ THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/http-errors/master?label=ci
 [ci-url]: https://github.com/jshttp/http-errors/actions?query=workflow%3Aci
@@ -19969,7 +19969,7 @@ THE SOFTWARE.
 ### License
 
 Copyright © 2019, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ***
 
@@ -20068,7 +20068,7 @@ SOFTWARE.
 ### License
 
 Copyright © 2018, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ***
 
@@ -20449,7 +20449,7 @@ THE SOFTWARE.
 License
 =======
 
-[MIT](LICENSE).
+MIT.
 
 ````
 
@@ -20892,7 +20892,7 @@ SOFTWARE.
 
 ````text
 ## License
-MIT. See [LICENSE.md](./LICENSE.md) for details.
+MIT. See LICENSE.md for details.
 
 ````
 
@@ -21634,7 +21634,7 @@ License
 -------
 
 JSZip is dual-licensed. You may use it under the MIT license *or* the GPLv3
-license. See [LICENSE.markdown](LICENSE.markdown).
+license. See LICENSE.markdown.
 
 ````
 
@@ -22090,7 +22090,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ````text
 ## License
 
-Licensed under [MIT](./LICENSE.md)
+Licensed under MIT
 
 [Node-API support matrix]: https://nodejs.org/dist/latest/docs/api/n-api.html#node-api-version-matrix
 
@@ -22136,7 +22136,7 @@ SOFTWARE.
 ````text
 ## License
 
-Licensed under [MIT](./LICENSE.md)
+Licensed under MIT
 
 ````
 
@@ -22276,7 +22276,7 @@ SOFTWARE.
 ````text
 ### License
 
-[The MIT License](./LICENSE) © Kevin Jahns
+The MIT License © Kevin Jahns
 
 ````
 
@@ -24717,7 +24717,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/jshttp/media-typer/master
 [coveralls-url]: https://coveralls.io/r/jshttp/media-typer?branch=master
@@ -27312,7 +27312,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### License
 
 Copyright © 2024, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ***
 
@@ -27365,7 +27365,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/mime-types/master?label=ci
 [ci-url]: https://github.com/jshttp/mime-types/actions/workflows/ci.yml
@@ -27662,7 +27662,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE) - Made with 💛
+MIT - Made with 💛
 
 <!-- Badges -->
 
@@ -27983,7 +27983,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/negotiator.svg
 [npm-url]: https://npmjs.org/package/negotiator
@@ -28123,7 +28123,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE.md)
+MIT
 
 [whatwg-fetch]: https://fetch.spec.whatwg.org/
 [response-init]: https://fetch.spec.whatwg.org/#responseinit
@@ -28799,7 +28799,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/on-finished/master?label=ci
 [ci-url]: https://github.com/jshttp/on-finished/actions/workflows/ci.yml
@@ -29003,7 +29003,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE) License © 2020-PRESENT [Anthony Fu](https://github.com/antfu)
+MIT License © 2020-PRESENT [Anthony Fu](https://github.com/antfu)
 
 <!-- Badges -->
 
@@ -29336,7 +29336,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-  [MIT](LICENSE)
+  MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/pillarjs/parseurl/master
 [coveralls-url]: https://coveralls.io/r/pillarjs/parseurl?branch=master
@@ -29389,7 +29389,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE)
+MIT
 
 [path]: https://nodejs.org/docs/v10.3.0/api/path.html
 
@@ -29588,7 +29588,7 @@ DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-Made with 💛 Published under the [MIT](./LICENSE) license.
+Made with 💛 Published under the MIT license.
 
 Some code was used from the Node.js project. Glob supported is powered by [zeptomatch](https://github.com/fabiospampinato/zeptomatch).
 
@@ -30360,7 +30360,7 @@ THE SOFTWARE.
 ### License
 
 Copyright © 2017-present, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ````
 
@@ -31104,7 +31104,7 @@ SOFTWARE.
 ````text
 ### License
 
-prop-types is [MIT licensed](./LICENSE).
+prop-types is MIT licensed.
 
 ````
 
@@ -31313,7 +31313,7 @@ support library is itself covered by the above license.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/proxy-addr/master?label=ci
 [ci-url]: https://github.com/jshttp/proxy-addr/actions?query=workflow%3Aci
@@ -31570,7 +31570,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/jshttp/range-parser/master
 [coveralls-url]: https://coveralls.io/r/jshttp/range-parser?branch=master
@@ -31625,7 +31625,7 @@ THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/raw-body.svg
 [npm-url]: https://npmjs.org/package/raw-body
@@ -32184,7 +32184,7 @@ SOFTWARE.
 ````text
 ## License
 
-MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see the LICENSE file for details.
 
 ````
 
@@ -33548,7 +33548,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/pillarjs/router/master?label=ci
 [ci-url]: https://github.com/pillarjs/router/actions/workflows/ci.yml
@@ -33780,7 +33780,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/pillarjs/send/master
 [coveralls-url]: https://coveralls.io/r/pillarjs/send?branch=master
@@ -33838,7 +33838,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [coveralls-image]: https://badgen.net/coveralls/c/github/expressjs/serve-static/master
 [coveralls-url]: https://coveralls.io/r/expressjs/serve-static?branch=master
@@ -34459,7 +34459,7 @@ THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/statuses/master?label=ci
 [ci-url]: https://github.com/jshttp/statuses/actions?query=workflow%3Aci
@@ -34699,7 +34699,7 @@ SOFTWARE.
 ````text
 ## Licence
 
-This project is licensed under the [MIT License](LICENSE.txt). Feel free to use, modify, and distribute as needed.
+This project is licensed under the MIT License. Feel free to use, modify, and distribute as needed.
 
 ````
 
@@ -34833,7 +34833,7 @@ SOFTWARE.
 ````text
 ### License
 
-Stylis is [MIT licensed](./LICENSE).
+Stylis is MIT licensed.
 
 ````
 
@@ -34939,7 +34939,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](./LICENSE)
+MIT
 ````
 
 ### Notice 60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985
@@ -35220,7 +35220,7 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTH
 ````text
 # License
 
-[MIT License](LICENSE).
+MIT License.
 
 [badge-ci]: https://secure.travis-ci.org/remusao/tldts.svg?branch=master
 [badge-downloads]: https://img.shields.io/npm/dm/tldts.svg
@@ -35272,7 +35272,7 @@ THE SOFTWARE.
 ### License
 
 Copyright © 2019, [Jon Schlinkert](https://github.com/jonschlinkert).
-Released under the [MIT License](LICENSE).
+Released under the MIT License.
 
 ***
 
@@ -35319,7 +35319,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [codecov-image]: https://img.shields.io/codecov/c/github/component/toidentifier.svg
 [codecov-url]: https://codecov.io/gh/component/toidentifier
@@ -35850,7 +35850,7 @@ SPDX-License-Identifier: (MIT OR CC0-1.0)
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [ci-image]: https://badgen.net/github/checks/jshttp/type-is/master?label=ci
 [ci-url]: https://github.com/jshttp/type-is/actions/workflows/ci.yml
@@ -35942,7 +35942,7 @@ END OF TERMS AND CONDITIONS
 ````text
 ## License
 
-[MIT](./LICENSE)
+MIT
 
 Special thanks to Eduardo San Martin Morote ([posva](https://github.com/posva)) for [encoding utilities](https://github.com/vuejs/vue-router-next/blob/v4.0.1/src/encoding.ts)
 
@@ -36809,7 +36809,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/unpipe.svg
 [npm-url]: https://npmjs.org/package/unpipe
@@ -37110,7 +37110,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [npm-image]: https://img.shields.io/npm/v/vary.svg
 [npm-url]: https://npmjs.org/package/vary
@@ -37759,7 +37759,7 @@ Vis.js may be distributed under either license.
 Copyright (c) 2014-2017 Almende B.V. and contributors
 Copyright (c) 2017-2019 vis.js contributors
 
-This work is dual-licensed under [Apache-2.0](./LICENSE.Apache-2.0.txt) and [MIT](./LICENSE.MIT.txt).
+This work is dual-licensed under Apache-2.0 and MIT.
 You can choose between one of them if you use this work.
 
 `SPDX-License-Identifier: Apache-2.0 OR MIT`
@@ -37810,7 +37810,7 @@ SOFTWARE.
 Copyright (c) 2014-2017 Almende B.V. and contributors
 Copyright (c) 2017-2025 vis.js contributors
 
-This work is dual-licensed under [Apache-2.0](./LICENSE.Apache-2.0.txt) and [MIT](./LICENSE.MIT.txt).
+This work is dual-licensed under Apache-2.0 and MIT.
 You can choose between one of them if you use this work.
 
 `SPDX-License-Identifier: Apache-2.0 OR MIT`
@@ -38254,7 +38254,7 @@ SOFTWARE.
 ````text
 ## License
 
-[Apache 2.0](/LICENSE)
+Apache 2.0
 
 ````
 
@@ -38355,7 +38355,7 @@ SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [changelog]: https://github.com/websockets/ws/releases
 [client-report]: http://websockets.github.io/ws/autobahn/clients/
@@ -38415,7 +38415,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````text
 ## License
 
-[MIT](LICENSE)
+MIT
 
 [`buffer.isutf8()`]: https://nodejs.org/api/buffer.html#bufferisutf8input
 [bufferutil]: https://github.com/websockets/bufferutil
@@ -38774,7 +38774,7 @@ SOFTWARE.
 ````text
 ## License and Author
 
-Yjs and all related projects are [**MIT licensed**](./LICENSE).
+Yjs and all related projects are **MIT licensed**.
 
 Yjs is based on my research as a student at the [RWTH
 i5](http://dbis.rwth-aachen.de/). Now I am working on Yjs in my spare time.
@@ -45442,9 +45442,9 @@ DEALINGS IN THE SOFTWARE.
 
 This project is licensed under either of
 
- * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+ * Apache License, Version 2.0, (LICENSE-APACHE or
    http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or
+ * MIT license (LICENSE-MIT or
    http://opensource.org/licenses/MIT)
 
 at your option.
@@ -48279,9 +48279,9 @@ END OF TERMS AND CONDITIONS
 
 This project is licensed under either of
 
- * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+ * Apache License, Version 2.0, (LICENSE-APACHE or
    https://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or
+ * MIT license (LICENSE-MIT or
    https://opensource.org/licenses/MIT)
 
 at your option.

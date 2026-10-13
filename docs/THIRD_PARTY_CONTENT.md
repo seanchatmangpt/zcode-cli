@@ -97,8 +97,13 @@ skill license files.
 - [Upstream third-party notices](../LICENSES/ZCode-THIRD-PARTY-NOTICES.md)
 - [Notice provenance and scope](../LICENSES/README.md)
 
-These copies retain the upstream text with LF line endings. Relative links inside
-them refer to the upstream source tree, not this repository. Upstream behavioral descriptions
+These copies retain the upstream text with LF line endings. Relative LICENSE-file
+links inside them have been normalized: the NOTICE's root LICENSE link and the two
+`../../LICENSE` links in the third-party notices resolve to this repository's root
+[LICENSE](../LICENSE); other upstream LICENSE-file links (targets not redistributed
+here) had their link syntax removed, keeping the descriptive text. Other relative
+links (source paths, anchors) still refer to the upstream source tree, not this
+repository. Upstream behavioral descriptions
 apply to the distributions they describe; this CLI's behavior is documented in
 its own README and configuration guide.
 
