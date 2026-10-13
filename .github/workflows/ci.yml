@@ -38,6 +38,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # ZOCEL-016: verify the committed OCEL fixtures with the generated
+      # verifier, loop table and hash chain (needs chain-verified +
+      # deviations: 0 on every fixture with a sibling .receipt.json).
+      - name: Verify OCEL receipt fixtures
+        run: bun run ocel:verify
+
       # ZCODE_REQUIRE_TOOLCHAINS=1 turns a missing ggen into a hard failure
       # (test/ocel-reuse.test.ts fixed-point + mutation courts). The pins live
       # only in .github/actions/ggen-toolchain; test/release-workflows.test.ts

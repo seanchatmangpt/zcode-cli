@@ -82,6 +82,7 @@
     "release:build": "bun scripts/build-release.ts",
     "release:pack": "bun scripts/pack-release.ts",
     "prepack": "bun scripts/check-package.ts --prepack",
+    "ocel:verify": "bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/turn-list.jsonocel && bun scripts/ocel-verify.ts test/fixtures/zcode-ocel/app-server-list.jsonocel",
     "receipts:validate": "bun scripts/validate-receipts.ts",
     "test:live": "bun test test/live/"
   },
