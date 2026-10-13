@@ -20,7 +20,9 @@ test("loop-gap patches are registered as required", () => {
   }
 });
 
-test.skipIf(!existsSync(bundle))("anchors resolve against the synced bundle and patches are fixed points", () => {
+const requireBundle = process.env.ZCODE_REQUIRE_BUNDLE === "1";
+test.skipIf(!existsSync(bundle) && !requireBundle)("anchors resolve against the synced bundle and patches are fixed points", () => {
+  if (!existsSync(bundle)) throw new Error(`ZCODE_REQUIRE_BUNDLE=1 but bundle missing at ${bundle}; run bun run sync:locked`);
   const runtime = readFileSync(bundle, "utf8");
   const maxed = patchRuntimeMaxTurnsEnforcement(runtime);
   expect(maxed).toContain('reason:"error_max_turns"');

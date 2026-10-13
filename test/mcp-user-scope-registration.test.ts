@@ -34,7 +34,9 @@ const userConfigDefaultLoadAnchor = /[A-Za-z_$][\w$]*\.skipUserConfig\?\{config:
 const cliSettingsFileAnchor = /[A-Za-z_$][\w$]*="setting\.json",[A-Za-z_$][\w$]*="~\/\.zcode\/cli"/u;
 const runtimeConfigMcpServersAnchor = /mcp:\{enabled:[A-Za-z_$][\w$]*\.runtimeConfig\?\.mcp\?\.enabled\?\?[A-Za-z_$][\w$]*\.config\.features\.mcp,servers:[A-Za-z_$][\w$]*/u;
 
-test.skipIf(!existsSync(bundle))("user scope participates in MCP server resolution on the synced bundle", () => {
+const requireBundle = process.env.ZCODE_REQUIRE_BUNDLE === "1";
+test.skipIf(!existsSync(bundle) && !requireBundle)("user scope participates in MCP server resolution on the synced bundle", () => {
+  if (!existsSync(bundle)) throw new Error(`ZCODE_REQUIRE_BUNDLE=1 but bundle missing at ${bundle}; run bun run sync:locked`);
   const runtime = readFileSync(bundle, "utf8");
   expect(mcpSourceMergeAnchor.test(runtime)).toBe(true);
   expect(userConfigDefaultLoadAnchor.test(runtime)).toBe(true);

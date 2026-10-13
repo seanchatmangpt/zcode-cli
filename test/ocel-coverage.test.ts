@@ -1,11 +1,13 @@
 // Coverage gate: every runtime event type is mapped by a rule or explicitly pi:Unmapped with a reason,
 // and the ontology has not drifted from the runtime's own enums (vendor/zcode.cjs).
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-import { RULES, SOURCES } from "../src/generated/ocel.ts";
+import { RULES, SOURCES, hashHex } from "../src/generated/ocel.ts";
 import { APP_SERVER_SOURCE, STREAM_SOURCE } from "../src/ocel-tap.ts";
 import { readRuntimeEvents, wireOf } from "../scripts/zcode-events.ts";
-import { declaredInternal, declaredRuntimeEvents, runtimeMissing, toolchain } from "./support/ocel.ts";
+import { declaredInternal, declaredRuntimeEvents, ontologyPath, runtimeMissing, toolchain } from "./support/ocel.ts";
 
 const declared = declaredRuntimeEvents();
 
@@ -30,10 +32,15 @@ describe("ontology coverage", () => {
     });
   }
 
-  test("both zcode sources are generated with sha256 chains", () => {
+  test("both zcode sources declare sha256 and the manifest algorithm computes real digests", () => {
     for (const id of [STREAM_SOURCE, APP_SERVER_SOURCE]) expect(SOURCES.find((s) => s.id === id)?.hash).toBe("sha256");
     expect(SOURCES.find((s) => s.id === STREAM_SOURCE)?.kind).toBe("stream-json");
     expect(SOURCES.find((s) => s.id === APP_SERVER_SOURCE)?.kind).toBe("app-server-subscription");
+    // The declared algorithm must actually hash: recompute sha256 of a real
+    // source file two ways and require them to agree.
+    const raw = readFileSync(ontologyPath, "utf8");
+    expect(hashHex("sha256", raw)).toBe(createHash("sha256").update(raw, "utf8").digest("hex"));
+    expect(() => hashHex("md5", raw)).toThrow(/unsupported/);
   });
 });
 

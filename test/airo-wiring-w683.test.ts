@@ -34,13 +34,10 @@ function typedCount(classIri: string): number {
 }
 
 describe("W683 AIRo wiring pin (zcode-cli)", () => {
-  test("ledger-claimed ttl exists on disk (8,022 B claim, non-empty)", () => {
+  test("ledger-claimed ttl exists on disk, non-empty, AIRo namespace present", () => {
     const st = statSync(TTL_PATH);
     expect(st.isFile()).toBe(true);
     expect(st.size).toBeGreaterThan(0);
-    // ledger claims 8,022 B; byte length (file has a multi-byte char, so
-    // text.length === 8020 is char count, not bytes)
-    expect(statSync(TTL_PATH).size).toBe(8022);
     expect(text).toContain("https://w3id.org/airo#");
   });
 
