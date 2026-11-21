@@ -101,17 +101,13 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const defaultExecutor = async (t: Transition): Promise<ExecutionOutcome> => {
     if (opts.dryRun) {
       // Gall spine: mutating touch stays inside allowlisted ontology path when present.
-      const touchDir = join(opts.workspaceDir, "ontology");
-      mkdirSync(touchDir, { recursive: true });
-      const file = join(touchDir, `${t.activityId ?? t.id}.ttl`);
+      // Write-scope is enforced by the outer court wrapper *before* this mutates.
+      const rel = `ontology/${t.activityId ?? t.id}.ttl`;
+      mkdirSync(join(opts.workspaceDir, "ontology"), { recursive: true });
       writeFileSync(
-        file,
+        join(opts.workspaceDir, rel),
         `# UNSUPPORTED(generator-capability): handwritten\n# dry-run touch for ${t.id}\n`
       );
-      const scope = await runWriteScope(opts.courts, [file.replace(opts.workspaceDir + "/", "")]);
-      if (scope !== 0) {
-        return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
-      }
       return { ok: true, exitCode: 0, detail: "dry-run" };
     }
     return { ok: false, exitCode: 2, detail: "live executor not configured (SUBJECT_MISSING)" };
@@ -121,6 +117,20 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
 
   for (let c = 1; c <= maxCycles; c += 1) {
     const run = await executePowlWithTokenReplay(current, async (t) => {
+      // Pre: validateWriteScope before any executor mutation (EU AI Act human oversight / fail-closed).
+      const planned = plannedWriteRel(t, opts);
+      if (!planned) {
+        return {
+          ok: false,
+          exitCode: 2,
+          detail: "write-scope refused: transition missing targetFile (SUBJECT_MISSING)"
+        };
+      }
+      const scope = await runWriteScope(opts.courts, [planned]);
+      if (scope !== 0) {
+        return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
+      }
+
       const res = await executor(t);
       // Post-transition courts (marketplace / igniter / castle)
       if (res.ok) {
@@ -213,4 +223,19 @@ async function runWriteScope(courts: TransitionCourtAdapter[], files: string[]):
     codes.push(await court.validateWriteScope(files));
   }
   return worstExitCode(codes);
+}
+
+/**
+ * Resolve the relative path the transition intends to mutate *before* execution.
+ * Dry-run / default executor: ontology/<activity>.ttl. Live custom executors must
+ * declare `targetFile` — missing target fails closed (SUBJECT_MISSING).
+ */
+function plannedWriteRel(t: Transition, opts: FoundryLoopOptions): string | null {
+  if (t.targetFile) {
+    return t.targetFile.replace(/\\/g, "/").replace(/^\.\//, "");
+  }
+  if (opts.dryRun || !opts.executor) {
+    return `ontology/${t.activityId ?? t.id}.ttl`;
+  }
+  return null;
 }
