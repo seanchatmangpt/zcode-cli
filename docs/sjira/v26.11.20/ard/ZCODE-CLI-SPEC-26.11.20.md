@@ -1408,8 +1408,67 @@ bun test test/adapters.test.ts test/sjira-adapter.test.ts
 
 Appendix E is **E4.2** (optional courts). Day-1 Explore enables `sjira-io` + `marketplace-court` + `igniter-sync` + `receipt-sink`. `castle_publish` stays opt-in. Domain pipelines (LinkedIn carousels, revops airlock, RAID commissioning) are **operator workflows** that consume these adapters — they are not compiled into the clean-room core.
 
+## Appendix F — Gall's Law Autonomic Foundry Spine `[EXPLORE-SCOPE]`
+
+### F.1 Law
+
+> A complex system that works is invariably found to have evolved from a simple system that worked.  
+> — John Gall, *Systemantics* (1975)
+
+Sovereign Ecosystem planes (CASTLE publication, FFB shims, 4-cloud RAID, ontology foundry, RevOps airlock) **compose** the simple loop below. They must not replace `src/powl-ocel-orchestrator.ts` with a greenfield redesign. Explore ships the simple system; Exploit grows capability only after Chicago proof.
+
+### F.2 Simple System That Works
+
+```text
+SJIRA_CANDIDATES / ggen sjira frontier
+        │
+        ▼
+SjiraWorkOrderSource.ingestFrontier → POWL PartialOrder(V, ≺)
+        │
+        ▼
+runFoundryLoop (src/adapters/foundry-loop.ts)
+  • TransitionCourtAdapter.validateWriteScope
+  • dry-run touch | bin/zcode.js (CONSTRUCT)
+  • marketplace + igniter verifyPostTransition
+        │
+        ▼
+ReceiptSink + ledger.jsonl + loop_receipt.json + DFCM
+  • sandbox ⇒ PARTIAL_ALIVE (never fake ALIVE)
+  • authority = NONE, external_do_count = 0
+```
+
+### F.3 Implementation Surface
+
+| Path | Role |
+|---|---|
+| `src/adapters/foundry-loop.ts` | `runFoundryLoop` — Gall spine |
+| `scripts/powl-foundry-loop.ts` | Dry-run driver (`--dry-run` default) |
+| `test/adapters-chicago.test.ts` | Zero-mock Chicago court + anti-vacuity |
+
+### F.4 Chicago Exit Criteria
+
+```bash
+bun test test/adapters-chicago.test.ts
+bun scripts/powl-foundry-loop.ts --dry-run
+```
+
+Pass when:
+
+1. Real temp git workspace + real JSONL + real courts produce `loop_receipt.json`.
+2. Sandbox aggregate standing is `PARTIAL_ALIVE` with exit `2` (honest).
+3. Anti-vacuity: ASK gate → refused; `generated/` dir → refused; sink never promotes sandbox → `ALIVE`.
+4. DFCM receipt binds `subject_sha` to HEAD with `authority: "NONE"`.
+
+### F.5 What Does *Not* Belong in Core
+
+Press kits, LinkedIn carousels, RAID Terraform, HoldCo treasury rails, and OEM brand packs are **castle-publish / operator artifacts**. They may be *driven* by work orders through this spine (with `--public-anonymize` when required). They are not dependencies of `zcode-cli`'s clean-room runtime.
+
+### F.6 Milestone
+
+Appendix F is **E4.3**. Promotion toward live (non-sandbox) `ALIVE` requires Seat AS-01 / verifier-suite evidence outside this process — zcode-cli remains CONSTRUCT-ceiling.
+
 ---
 
 **End of ZCODE-CLI-SPEC-26.11.20**
 
-This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification. Optional I/O adapters (Appendices D–E) must preserve the clean-room core boundary and the CONSTRUCT authority ceiling.
+This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification. Optional I/O adapters (Appendices D–F) must preserve the clean-room core boundary, the CONSTRUCT authority ceiling, and Gall's Law (evolve from the simple working spine).

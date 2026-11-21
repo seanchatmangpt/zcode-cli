@@ -9,6 +9,7 @@ export * from "./marketplace-court.ts";
 export * from "./igniter-sync.ts";
 export * from "./receipt-sink.ts";
 export * from "./castle-publish.ts";
+export * from "./foundry-loop.ts";
 
 import type { AdapterRegistry, TransitionCourtAdapter, WorkOrderSourceAdapter } from "./types.ts";
 import { SjiraWorkOrderSource, type SjiraIoAdapterOptions } from "./sjira-io.ts";

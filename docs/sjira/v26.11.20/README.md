@@ -30,3 +30,18 @@ This wave’s normative docs mandate **zero** coupling of the **core** runtime t
 | Spec | Unified ARD/PRD **Appendix D** + **Appendix E** |
 
 Authority ceiling remains **CONSTRUCT**. Adapters map frontier JSONL → POWL, enforce marketplace/igniter courts, and emit honest `PARTIAL_ALIVE` / `UNVERIFIED` / `BLOCKED` receipts — never fake live `ALIVE`.
+
+## Gall's Law spine (Appendix F)
+
+| Artifact | Path |
+|---|---|
+| `runFoundryLoop` | [`src/adapters/foundry-loop.ts`](../../../src/adapters/foundry-loop.ts) |
+| Dry-run driver | [`scripts/powl-foundry-loop.ts`](../../../scripts/powl-foundry-loop.ts) |
+| Chicago court | [`test/adapters-chicago.test.ts`](../../../test/adapters-chicago.test.ts) |
+
+```bash
+bun test test/adapters-chicago.test.ts
+bun scripts/powl-foundry-loop.ts --dry-run
+```
+
+Complex ecosystem planes evolve **from** this simple working loop — they do not redesign the core.

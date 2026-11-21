@@ -31,6 +31,12 @@ export interface IgniterSyncOptions {
   forbidDomainWallClock?: string[];
   /** Paths (relative) to rm -rf before sync (generated trees). */
   generatedTrees?: string[];
+  /**
+   * Paths passed to `git diff --exit-code` after sync. Defaults exclude upstream
+   * ontology/query/template mutations (Gall: agents edit sources; sync must not
+   * leave generated drift).
+   */
+  gitDiffPaths?: string[];
   run?: (cmd: string[], cwd: string) => { status: number | null; stdout: string; stderr: string };
 }
 
@@ -56,6 +62,8 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
       forbidGeneratedDirs: true,
       forbidDomainWallClock: DEFAULT_FORBID_DOMAIN_WALL_CLOCK,
       generatedTrees: [],
+      // Pathspecs: ignore upstream sources; catch generated drift only.
+      gitDiffPaths: [":(exclude)ontology", ":(exclude)queries", ":(exclude)templates", "."],
       ...opts
     };
   }
@@ -105,9 +113,10 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     }
 
     if (this.opts.requireGitDiffZero) {
-      const diff = run(["git", "diff", "--exit-code"], workspaceDir);
+      const diffCmd = ["git", "diff", "--exit-code", "--", ...(this.opts.gitDiffPaths ?? ["."])];
+      const diff = run(diffCmd, workspaceDir);
       if (diff.status !== 0) {
-        diagnostics.push("igniter clean-room refused: git diff --exit-code != 0 after sync");
+        diagnostics.push("igniter clean-room refused: git diff --exit-code != 0 after sync (generated drift)");
         return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
       }
     }
