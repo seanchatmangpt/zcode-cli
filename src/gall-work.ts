@@ -534,8 +534,24 @@ export function leaseFilePaths(cwd: string): string[] {
   return leaseFilePathsKeyed(cwd, leaseIdFromEnv());
 }
 
+/**
+ * Work-order path for the construct stage. Keyed the same way as lease
+ * state files: when XAAS_LEASE_ID is set, a `-<id>` suffix lands before
+ * `.work-order.json` so two epochs sharing one cwd cannot clobber each
+ * other's goal/subject. Without the env the path is the legacy per-cwd
+ * file (byte-identical). Pure variant: `workOrderPathKeyed`.
+ */
+export function workOrderPathKeyed(cwd: string, leaseId: string | undefined): string {
+  const id = leaseId ? leaseId.replace(/[^A-Za-z0-9._-]/g, "_") : undefined;
+  const suffix = id ? `-${id}` : "";
+  return join(
+    leaseStateDir(),
+    `${createHash("sha256").update(realpathSafe(cwd)).digest("hex")}${suffix}.work-order.json`
+  );
+}
+
 export function workOrderPath(cwd: string): string {
-  return join(leaseStateDir(), `${createHash("sha256").update(realpathSafe(cwd)).digest("hex")}.work-order.json`);
+  return workOrderPathKeyed(cwd, leaseIdFromEnv());
 }
 
 function realpathSafe(path: string): string {

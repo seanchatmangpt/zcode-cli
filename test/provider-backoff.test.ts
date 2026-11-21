@@ -172,6 +172,27 @@ test("concurrency cap bounds in-flight provider calls as observed by the server"
   expect(server.maxInFlight()).toBeGreaterThan(0);
 });
 
+test("ConcurrencyCap(1) never exceeds the bound under release/wake interleaving", async () => {
+  // Reproduces the classic TOCTOU: releaser decrements + wakes a waiter, then
+  // a non-waiter acquire sneaks in before the waiter resumes and both would
+  // hold the slot. Slot-transfer keeps inFlight ≤ 1 for the whole race.
+  const cap = new ConcurrencyCap(1);
+  let observedMax = 0;
+  let active = 0;
+  const hold = async (): Promise<void> => {
+    const release = await cap.acquire();
+    active += 1;
+    observedMax = Math.max(observedMax, active);
+    // Yield so other acquires / the woken waiter can interleave.
+    await Promise.resolve();
+    active -= 1;
+    release();
+  };
+  await Promise.all(Array.from({ length: 64 }, () => hold()));
+  expect(observedMax).toBe(1);
+  expect(cap.inFlightCount).toBe(0);
+});
+
 test("fabricCall retries a 429 fabric and refuses typed without prompting", async () => {
   const server = startHttpStub({ status: () => 429 });
   const outcome = await fabricCall({ url: server.url }, "claim_next", { provider: "zcode" }, 5_000);
