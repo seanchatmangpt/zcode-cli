@@ -21,16 +21,148 @@ import { join } from "node:path";
 // 1. Recursive POWL v2 AST (Sound by Construction)
 // ---------------------------------------------------------------------------
 
+/** readonly = free concurrent fan-out; mutating = needs order or disjoint scopes (ARD §3.1.3). */
+export type ActivityKind = "readonly" | "mutating";
+
+export type PowlActivity = {
+  kind: "activity";
+  id: string;
+  label: string;
+  objectType: string;
+  targetFile?: string;
+  /** Optional; bare activities default to readonly fan-out; `targetFile` ⇒ mutating singleton scope. */
+  activityKind?: ActivityKind;
+  fileScope?: string[];
+};
+
+export type PowlPartialOrder = {
+  kind: "partial_order";
+  id: string;
+  children: PowlNode[];
+  order: ReadonlyArray<readonly [string, string]>;
+};
+
 export type PowlNode =
-  | { kind: "activity"; id: string; label: string; objectType: string; targetFile?: string }
+  | PowlActivity
   | { kind: "tau"; id: string }
   | { kind: "xor"; id: string; branches: PowlNode[] }
   | { kind: "loop"; id: string; doBranch: PowlNode; redoBranch: PowlNode; maxIterations?: number }
-  | { kind: "partial_order"; id: string; children: PowlNode[]; order: ReadonlyArray<readonly [string, string]> };
+  | PowlPartialOrder;
+
+export interface WriteScopeViolation {
+  a: string;
+  b: string;
+  overlap: string[];
+}
+
+/**
+ * Transitive closure ≺⁺ encoded as `${u}->${v}` (ARD §3.1.2).
+ * Stored edges need not be transitively closed; semantics use ≺⁺.
+ */
+export function transitiveClosure(
+  nodes: readonly string[],
+  edges: ReadonlyArray<readonly [string, string]>
+): Set<string> {
+  const adj = new Map<string, string[]>();
+  for (const id of nodes) adj.set(id, []);
+  for (const [u, v] of edges) {
+    if (!adj.has(u)) adj.set(u, []);
+    adj.get(u)!.push(v);
+  }
+  const closure = new Set<string>();
+  for (const u of nodes) {
+    const stack = [...(adj.get(u) ?? [])];
+    const seen = new Set<string>();
+    while (stack.length > 0) {
+      const v = stack.pop()!;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      closure.add(`${u}->${v}`);
+      for (const w of adj.get(v) ?? []) stack.push(w);
+    }
+  }
+  return closure;
+}
+
+/** Exact + simple trailing-`*` glob intersection approx for Explore (ARD §3.1.3). */
+export function defaultResolveOverlap(a: string[], b: string[]): string[] {
+  const overlap: string[] = [];
+  const seen = new Set<string>();
+  const push = (s: string) => {
+    if (!seen.has(s)) {
+      seen.add(s);
+      overlap.push(s);
+    }
+  };
+  for (const x of a) {
+    for (const y of b) {
+      if (x === y) {
+        push(x);
+        continue;
+      }
+      if (x.endsWith("/*") && y.startsWith(x.slice(0, -1))) push(`${x}∩${y}`);
+      else if (y.endsWith("/*") && x.startsWith(y.slice(0, -1))) push(`${x}∩${y}`);
+      else if (x.endsWith("*") && y.startsWith(x.slice(0, -1))) push(`${x}∩${y}`);
+      else if (y.endsWith("*") && x.startsWith(y.slice(0, -1))) push(`${x}∩${y}`);
+    }
+  }
+  return overlap;
+}
+
+function effectiveActivityKind(a: PowlActivity): ActivityKind {
+  if (a.activityKind) return a.activityKind;
+  if (a.targetFile || (a.fileScope && a.fileScope.length > 0)) return "mutating";
+  return "readonly";
+}
+
+function effectiveFileScope(a: PowlActivity): string[] {
+  if (a.fileScope && a.fileScope.length > 0) return a.fileScope;
+  if (a.targetFile) return [a.targetFile];
+  return [];
+}
+
+/**
+ * WIP>1 safety: unordered mutating activities must have disjoint write scopes (ARD §3.1.3).
+ * Returns violations; callers fail-closed with WRITE_SCOPE_CONFLICT.
+ */
+export function validateDisjointWriteScopes(
+  po: PowlPartialOrder,
+  resolveOverlap: (a: string[], b: string[]) => string[] = defaultResolveOverlap
+): WriteScopeViolation[] {
+  const childIds = po.children.map((c) => c.id);
+  const prec = transitiveClosure(childIds, po.order);
+  const activities = po.children.filter((c): c is PowlActivity => c.kind === "activity");
+  const violations: WriteScopeViolation[] = [];
+
+  for (let i = 0; i < activities.length; i++) {
+    for (let j = i + 1; j < activities.length; j++) {
+      const u = activities[i]!;
+      const v = activities[j]!;
+      if (effectiveActivityKind(u) !== "mutating" || effectiveActivityKind(v) !== "mutating") continue;
+      const ordered =
+        prec.has(`${u.id}->${v.id}`) || prec.has(`${v.id}->${u.id}`);
+      if (ordered) continue;
+      const su = effectiveFileScope(u);
+      const sv = effectiveFileScope(v);
+      if (su.length === 0 || sv.length === 0) {
+        violations.push({
+          a: u.id,
+          b: v.id,
+          overlap: ["∅-scope (mutating activities require fileScope/targetFile when unordered)"]
+        });
+        continue;
+      }
+      const overlap = resolveOverlap(su, sv);
+      if (overlap.length > 0) violations.push({ a: u.id, b: v.id, overlap });
+    }
+  }
+  return violations;
+}
 
 /**
  * Validates that every PartialOrder node in a POWL tree is a strict partial order
  * (irreflexive, asymmetric, acyclic) and all node IDs are unique.
+ * Also enforces disjoint write scopes for unordered mutating activities (ARD §3.1.3).
  */
 export function validatePowlTree(root: PowlNode): void {
   const seenIds = new Set<string>();
@@ -71,6 +203,13 @@ export function validatePowlTree(root: PowlNode): void {
       if (visited !== childIds.size) {
         throw new Error(`POWL PO "${node.id}": cycle detected (violates strict partial order)`);
       }
+      const scopeViolations = validateDisjointWriteScopes(node);
+      if (scopeViolations.length > 0) {
+        const v0 = scopeViolations[0]!;
+        throw new Error(
+          `WRITE_SCOPE_CONFLICT: POWL PO "${node.id}": unordered mutating activities "${v0.a}" and "${v0.b}" overlap ${JSON.stringify(v0.overlap)}`
+        );
+      }
       node.children.forEach(walk);
     }
   };
@@ -93,6 +232,8 @@ export interface Transition {
   activityId?: string;
   objectType: string;
   targetFile?: string;
+  activityKind?: ActivityKind;
+  fileScope?: string[];
 }
 
 export interface WorkflowNet {
@@ -106,6 +247,11 @@ export interface WorkflowNet {
   sinkPlace: string;
 }
 
+/**
+ * Compiler-allocated transition ids live in the reserved `__powl_t_` namespace and
+ * always include a monotonic seq, so structural τ prefixes cannot collide with
+ * user node ids (e.g. tau id `enter_L` vs loop enter for `L`).
+ */
 export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
   validatePowlTree(root);
   const places: Place[] = [];
@@ -121,15 +267,17 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     return id;
   };
 
-  /** Unique transition ids — seq suffix prevents tau_* / tau_enter_* prefix collisions. */
-  const newTransitionId = (prefix: string): string => {
+  /** Unique transition id: reserved prefix + role + optional hint + seq. */
+  const newTransitionId = (role: string, hint?: string): string => {
     seq += 1;
-    return `${prefix}_${seq}`;
+    return hint !== undefined
+      ? `__powl_t_${role}_${hint}_${seq}`
+      : `__powl_t_${role}_${seq}`;
   };
 
   const addTransition = (t: Transition, inputs: string[], outputs: string[]) => {
     if (pre.has(t.id) || post.has(t.id) || transitions.some((x) => x.id === t.id)) {
-      throw new Error(`WF-net violation: duplicate transition id "${t.id}"`);
+      throw new Error(`POWL compile: duplicate transition id "${t.id}" (fail-closed)`);
     }
     transitions.push(t);
     pre.set(t.id, inputs);
@@ -138,14 +286,18 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
   const compile = (node: PowlNode, startP: string, endP: string) => {
     if (node.kind === "activity") {
+      const kind = effectiveActivityKind(node);
+      const scope = effectiveFileScope(node);
       addTransition(
         {
-          id: newTransitionId(`t_${node.id}`),
+          id: newTransitionId("act", node.id),
           label: node.label,
           silent: false,
           activityId: node.id,
           objectType: node.objectType,
-          targetFile: node.targetFile
+          targetFile: node.targetFile,
+          activityKind: kind,
+          ...(scope.length > 0 ? { fileScope: scope } : {})
         },
         [startP],
         [endP]
@@ -154,7 +306,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     }
     if (node.kind === "tau") {
       addTransition(
-        { id: newTransitionId(`tau_${node.id}`), label: "τ", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("tau", node.id), label: "τ", silent: true, objectType: "Workflow" },
         [startP],
         [endP]
       );
@@ -170,14 +322,14 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
       const loopEntry = newPlace(`loop_in_${node.id}`);
       const loopChoice = newPlace(`loop_choice_${node.id}`);
       addTransition(
-        { id: newTransitionId(`tau_enter_${node.id}`), label: "τ_enter", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("enter", node.id), label: "τ_enter", silent: true, objectType: "Workflow" },
         [startP],
         [loopEntry]
       );
       compile(node.doBranch, loopEntry, loopChoice);
       compile(node.redoBranch, loopChoice, loopEntry);
       addTransition(
-        { id: newTransitionId(`tau_exit_${node.id}`), label: "τ_exit", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("exit", node.id), label: "τ_exit", silent: true, objectType: "Workflow" },
         [loopChoice],
         [endP]
       );
@@ -210,7 +362,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Fork from startP to all minimal elements
       addTransition(
-        { id: newTransitionId(`tau_fork_${node.id}`), label: "τ_fork", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("fork", node.id), label: "τ_fork", silent: true, objectType: "Workflow" },
         [startP],
         roots.map((r) => childStart.get(r.id)!)
       );
@@ -227,7 +379,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
         }
         addTransition(
           {
-            id: newTransitionId(`tau_join_${node.id}_${v.id}`),
+            id: newTransitionId("join", `${node.id}_${v.id}`),
             label: `τ_join(${v.id})`,
             silent: true,
             objectType: "Workflow"
@@ -243,7 +395,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
         if (outs.length === 0) continue;
         addTransition(
           {
-            id: newTransitionId(`tau_split_${node.id}_${u.id}`),
+            id: newTransitionId("split", `${node.id}_${u.id}`),
             label: `τ_split(${u.id})`,
             silent: true,
             objectType: "Workflow"
@@ -255,7 +407,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Join all maximal elements into endP
       addTransition(
-        { id: newTransitionId(`tau_end_${node.id}`), label: "τ_end", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("end", node.id), label: "τ_end", silent: true, objectType: "Workflow" },
         leaves.map((l) => childEnd.get(l.id)!),
         [endP]
       );
@@ -581,14 +733,20 @@ export async function executePowlWithTokenReplay(
   walkLoops(root);
 
   /**
-   * Map τ_exit transition → PowlLoop id. A2 suffixes unique seq
-   * (`tau_exit_<loopId>_<n>`), so strip-prefix alone yields `<loopId>_<n>`.
+   * Map τ_exit transition → PowlLoop id.
+   * A2: `tau_exit_<loopId>_<n>`; A1: `__powl_t_exit_<loopId>_<n>`.
+   * Strip-prefix alone can yield `<loopId>_<n>`, so match longest loop id.
    */
   const loopIdFromExit = (t: Transition): string | undefined => {
-    if (!t.id.startsWith("tau_exit_")) return undefined;
+    const schemas = [
+      { head: "tau_exit_", ok: (id: string) => id.startsWith("tau_exit_") },
+      { head: "__powl_t_exit_", ok: (id: string) => id.startsWith("__powl_t_exit_") }
+    ] as const;
+    const schema = schemas.find((s) => s.ok(t.id));
+    if (!schema) return undefined;
     let best: string | undefined;
     for (const lid of loopMaxIterations.keys()) {
-      const prefix = `tau_exit_${lid}`;
+      const prefix = `${schema.head}${lid}`;
       if (t.id === prefix || t.id.startsWith(`${prefix}_`)) {
         const rest = t.id.slice(prefix.length);
         if (rest === "" || /^_\d+$/.test(rest)) {
@@ -597,7 +755,7 @@ export async function executePowlWithTokenReplay(
       }
     }
     if (best) return best;
-    const body = t.id.slice("tau_exit_".length);
+    const body = t.id.slice(schema.head.length);
     const m = body.match(/^(.*)_\d+$/);
     return m?.[1] ?? body;
   };
