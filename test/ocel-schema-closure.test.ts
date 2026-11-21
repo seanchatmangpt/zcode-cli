@@ -95,3 +95,20 @@ describe("IEEE OCEL 2.0 type/attr closure", () => {
     expect(problems.some((p) => p.includes("not {name, attributes}"))).toBe(true);
   });
 });
+
+describe("POWL emitter type/attr closure", () => {
+  test("executePowlWithTokenReplay log passes ocelProblems", async () => {
+    const { executePowlWithTokenReplay } = await import("../src/powl-ocel-orchestrator.ts");
+    const powl = {
+      kind: "partial_order" as const,
+      id: "closure",
+      children: [
+        { kind: "activity" as const, id: "a", label: "A", objectType: "Artifact" },
+        { kind: "activity" as const, id: "b", label: "B", objectType: "Artifact" },
+      ],
+      order: [["a", "b"] as [string, string]],
+    };
+    const res = await executePowlWithTokenReplay(powl, async () => ({ ok: true, exitCode: 0 }));
+    expect(ocelProblems(res.ocel as unknown as OcelDoc)).toEqual([]);
+  });
+});
