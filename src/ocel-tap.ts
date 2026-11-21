@@ -43,10 +43,21 @@ export function isHeadlessPromptArg(arg: string): boolean {
   );
 }
 
+/** True when argv is a headless single-prompt invocation (native or Claude-parity form). */
+export function isHeadlessPromptArgs(args: readonly string[]): boolean {
+  for (const a of args) {
+    if (a === "--") break;
+    if (isHeadlessPromptArg(a)) return true;
+  }
+  return false;
+}
+
 /** Which source (if any) the given runtime arguments produce events for. */
 export function ocelSourceForArgs(args: readonly string[]): string | undefined {
   if (args[0] === "app-server") return APP_SERVER_SOURCE;
-  const headless = args.some(isHeadlessPromptArg);
+  // Claude-parity rewrites `--print <prompt>` → `--prompt <prompt>` before runRuntime;
+  // accept every headless prompt form so ZCODE_OCEL=1 cannot silently drop the tap.
+  const headless = isHeadlessPromptArgs(args);
   const idx = args.findIndex((a) => a === "--output-format" || a.startsWith("--output-format="));
   if (idx < 0) return undefined;
   const value = args[idx].includes("=") ? args[idx].split("=")[1] : args[idx + 1];
@@ -357,4 +368,16 @@ export function startOcelTap(args: readonly string[], env: NodeJS.ProcessEnv): O
   if (!ocelEnabled(env)) return undefined;
   const source = ocelSourceForArgs(args);
   return source ? new OcelRecorder(source, ocelDirectory(env), leaseIdentityFromEnv(env)) : undefined;
+}
+
+/**
+ * When ZCODE_OCEL=1 but the invocation is not tappable, return a one-line stderr warning.
+ * Record-keeping must not fail closed into silence (EU AI Act Art.12 analog).
+ */
+export function ocelUntappableWarning(args: readonly string[], env: NodeJS.ProcessEnv): string | undefined {
+  if (!ocelEnabled(env) || ocelSourceForArgs(args)) return undefined;
+  if (isHeadlessPromptArgs(args)) {
+    return "OCEL: ZCODE_OCEL=1 but --output-format stream-json is missing; tap disabled (no .jsonocel)\n";
+  }
+  return "OCEL: ZCODE_OCEL=1 but invocation is not tappable (need app-server or headless + --output-format stream-json); tap disabled\n";
 }

@@ -49,6 +49,62 @@ const snake = (wire: string) => wire.replace(/\./g, "_").replace(/[A-Z]/g, (c) =
 const local = (s: string) => s.replace(/[^A-Za-z0-9]+/g, "-");
 const q = (s: string) => JSON.stringify(s);
 
+/** ALOOP gall-work lifecycle verbs (hand-authored; not present in vendor wire enums). */
+const GALL_WORK_EVENTS: ReadonlyArray<{
+  wire: string;
+  typeId: string;
+  rels: string;
+}> = [
+  { wire: "provider.select", typeId: "provider_select", rels: "zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority" },
+  { wire: "provider.replace", typeId: "provider_replace", rels: "zl:Rel-Gall-provider , zl:Rel-Gall-replaces-from , zl:Rel-Gall-work_order" },
+  { wire: "worker.claim", typeId: "worker_claim", rels: "zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-authority" },
+  { wire: "execution.crash", typeId: "execution_crash", rels: "zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order" },
+  { wire: "receipt.persist", typeId: "receipt_persist", rels: "zl:Rel-Gall-receipt , zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority" },
+  { wire: "falsifier.run", typeId: "falsifier_run", rels: "zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order" },
+  { wire: "reobserve", typeId: "reobserve", rels: "zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order" }
+];
+
+function emitGallWorkHook(w: (s?: string) => void): void {
+  w("# ===== execution-provider / worker lifecycle (ALOOP vocabulary, gall-work hook) =====");
+  w("# Emitted by the gall-work orchestrator (ZCODE_OCEL=1) as one hook record per");
+  w("# lifecycle transition: {event, id, ts, epoch_id, worker_id, ...}. The dotted");
+  w("# sourceEvent names are the ALOOP canonical verbs; the OCEL event type ids are");
+  w("# their snake_case projections, matching the repo convention.");
+  w('zl:Source-GallWorkHook a pi:EventSource ; pi:sourceId "gall_work" ; pi:sourceKind "hook" ;');
+  w('  pi:nameField "event" ; pi:idField "id" ; pi:timeField "ts" ; pi:chainPolicy zl:ChainPolicy ;');
+  w('  rdfs:comment "gall-work orchestrator lifecycle: provider selection, worker claim, execution crash, receipt persistence, falsifier run, provider replacement, stale-lease reobservation (ALOOP-ZCODE-DOGFOOD-001)" .');
+  w();
+  for (const o of ["work_order", "lease", "provider", "worker", "receipt", "authority"]) {
+    w(`zl:ObjectType-${o} a pi:ObjectType ; pi:typeId ${q(o)} .`);
+  }
+  w();
+  w('zl:Qualifier-provider a pi:Qualifier ; pi:qualifierId "provider" .');
+  w('zl:Qualifier-worker a pi:Qualifier ; pi:qualifierId "worker" .');
+  w('zl:Qualifier-receipt a pi:Qualifier ; pi:qualifierId "receipt" .');
+  w('zl:Qualifier-on_lease a pi:Qualifier ; pi:qualifierId "on_lease" .');
+  w('zl:Qualifier-origin_authority a pi:Qualifier ; pi:qualifierId "originAuthority" .');
+  w('zl:Qualifier-replaces_from a pi:Qualifier ; pi:qualifierId "replaces_from" .');
+  w();
+  w('zl:Rel-Gall-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_id" .');
+  w('zl:Rel-Gall-provider a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-provider ; pi:hasQualifier zl:Qualifier-provider ; pi:objectIdPath "provider" .');
+  w('zl:Rel-Gall-worker a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-worker ; pi:hasQualifier zl:Qualifier-worker ; pi:objectIdPath "worker" .');
+  w('zl:Rel-Gall-receipt a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-receipt ; pi:hasQualifier zl:Qualifier-receipt ; pi:objectIdPath "receipt" .');
+  w('zl:Rel-Gall-lease a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-lease ; pi:hasQualifier zl:Qualifier-on_lease ; pi:objectIdPath "lease" .');
+  w('zl:Rel-Gall-authority a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-authority ; pi:hasQualifier zl:Qualifier-origin_authority ; pi:objectIdPath "origin_authority" .');
+  w('zl:Rel-Gall-replaces-from a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-provider ; pi:hasQualifier zl:Qualifier-replaces_from ; pi:objectIdPath "from_provider" .');
+  w();
+  for (const ev of GALL_WORK_EVENTS) {
+    w(`zl:EventType-${local(ev.typeId)} a pi:EventType ; pi:typeId ${q(ev.typeId)} .`);
+  }
+  w();
+  for (const ev of GALL_WORK_EVENTS) {
+    const ruleId = `gall-${ev.typeId}`;
+    w(`zl:Rule-Gall-${local(ev.typeId)} a pi:MappingRule ; pi:ruleId ${q(ruleId)} ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent ${q(ev.wire)} ;`);
+    w(`  pi:emitsEventType zl:EventType-${local(ev.typeId)} ; pi:hasRelation ${ev.rels} .`);
+    w(`zl:RuntimeEvent-Gall-${local(ev.typeId)} a pi:RuntimeEvent ; pi:runtimeEventName ${q(ev.wire)} ; pi:emittedBy zl:Source-GallWorkHook .`);
+  }
+}
+
 const events = readRuntimeEvents();
 const wires = [...events.wire, ...STREAM_ONLY];
 
@@ -114,6 +170,10 @@ for (const s of sources) {
     w(`${ev} a pi:RuntimeEvent ; pi:runtimeEventName ${q(wire)} ; pi:emittedBy ${s.iri} .`);
   }
 }
+w();
+// Gall-work hook is launcher residue (ALOOP vocabulary), not in vendor/zcode.cjs enums.
+// Emitting it here keeps `bun scripts/gen-zcode-loop.ts` from wiping Source-GallWorkHook.
+emitGallWorkHook(w);
 w();
 w("# ===== internal enum W -> wire projection (documentation of what each wire event folds) =====");
 w("zl:InternalEvent a rdfs:Class .");

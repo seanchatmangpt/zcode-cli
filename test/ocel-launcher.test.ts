@@ -6,8 +6,16 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { normalizeClaudeAgentArgs } from "../src/claude-parity.ts";
-import { APP_SERVER_SOURCE, STREAM_SOURCE, ocelDirectory, ocelEnabled, ocelSourceForArgs, startOcelTap } from "../src/ocel-tap.ts";
-import { OcelRecorder } from "../src/ocel-tap.ts";
+import {
+  APP_SERVER_SOURCE,
+  STREAM_SOURCE,
+  OcelRecorder,
+  ocelDirectory,
+  ocelEnabled,
+  ocelSourceForArgs,
+  ocelUntappableWarning,
+  startOcelTap
+} from "../src/ocel-tap.ts";
 import { declaredRuntimeEvents, fixtures, ocelProblems, repoRoot } from "./support/ocel.ts";
 
 describe("ocel tap gating", () => {
@@ -44,6 +52,12 @@ describe("ocel tap gating", () => {
     expect(args).toEqual(["--prompt", "hi", "--output-format", "stream-json"]);
     expect(ocelSourceForArgs(args)).toBe(STREAM_SOURCE);
     expect(startOcelTap(args, { ZCODE_OCEL: "1" })).toBeDefined();
+  });
+  test("ZCODE_OCEL=1 without a tappable argv warns instead of failing silently", () => {
+    expect(ocelUntappableWarning(["--print", "hi"], { ZCODE_OCEL: "1" })).toContain("tap disabled");
+    expect(ocelUntappableWarning([], { ZCODE_OCEL: "1" })).toContain("not tappable");
+    expect(ocelUntappableWarning(["-p", "hi", "--output-format", "stream-json"], { ZCODE_OCEL: "1" })).toBeUndefined();
+    expect(ocelUntappableWarning(["-p", "hi"], {})).toBeUndefined();
   });
   test("a gated recorder writes <session>.jsonocel and <session>.receipt.json into ZCODE_OCEL_DIR", () => {
     const dir = mkdtempSync(join(tmpdir(), "zcode-launch-"));

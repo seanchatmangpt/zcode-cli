@@ -31,7 +31,7 @@ import {
   type OfficialLoginPayload
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
-import { startOcelTap } from "./ocel-tap.ts";
+import { ocelUntappableWarning, startOcelTap } from "./ocel-tap.ts";
 import { extractMaxTurns, resolveSubagentMaxTurnsEnv } from "./max-turns.ts";
 import { normalizeClaudeAgentArgs } from "./claude-parity.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
@@ -398,6 +398,10 @@ async function runRuntime(
   const tuiInvocation = isTuiRuntimeInvocation(args);
   // ZCODE_OCEL=1: tee the runtime's stream-json / app-server output into the OCEL tap (src/ocel-tap.ts).
   const ocel = startOcelTap(args, process.env);
+  if (!ocel) {
+    const warn = ocelUntappableWarning(args, process.env);
+    if (warn) process.stderr.write(warn);
+  }
   const child = spawnChild(node, [runtimePath, ...args], {
     cwd: process.cwd(),
     env: runtimeEnvironment(extraEnv),
