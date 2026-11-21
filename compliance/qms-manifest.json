@@ -1,0 +1,143 @@
+{
+  "schema": "zcode.qms-manifest/1",
+  "regulation": "Regulation (EU) 2024/1689",
+  "article": "Article 17(1)(a)-(m)",
+  "clauses": [
+    {
+      "id": "Art.17(1)(a)",
+      "clause": "17(1)(a)",
+      "title": "Strategy for regulatory compliance and conformity assessment procedures",
+      "files": [
+        "ontology/eu-ai-act.ttl",
+        "src/compliance/config.ts",
+        "src/compliance-cli.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(b)",
+      "clause": "17(1)(b)",
+      "title": "Techniques, procedures and systematic actions for design, design control and verification",
+      "files": [
+        "ontology/zcode-loop.ttl",
+        "scripts/gen-ocel.ts",
+        "src/powl-ocel-orchestrator.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(c)",
+      "clause": "17(1)(c)",
+      "title": "Techniques, procedures and systematic actions for development, quality control and quality assurance",
+      "files": [
+        "src/compliance/conformance.ts",
+        "src/compliance/declare-conformance.ts",
+        "src/compliance/transactional-net.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(d)",
+      "clause": "17(1)(d)",
+      "title": "Examination, test and validation procedures before, during and after development",
+      "files": [
+        "test/compliance-cli.test.ts",
+        "test/compliance-dossiers.test.ts",
+        "test/security-adversarial.test.ts",
+        "test/powl-ocel-chicago.test.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(e)",
+      "clause": "17(1)(e)",
+      "title": "Technical specifications and harmonized standards applied",
+      "files": [
+        "ontology/airo_risk_description.ttl",
+        "src/compliance/ocel2.ts",
+        "src/compliance/ocpn.ts",
+        "src/compliance/ocel-discover.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(f)",
+      "clause": "17(1)(f)",
+      "title": "Systems and procedures for data management, redaction, pseudonymization and provenance",
+      "files": [
+        "src/compliance/redactor.ts",
+        "src/compliance/rpm-fact.ts",
+        "compliance/dataset-manifest.json",
+        "scripts/capability-snapshot.sh"
+      ]
+    },
+    {
+      "id": "Art.17(1)(g)",
+      "clause": "17(1)(g)",
+      "title": "Risk management system (Article 9)",
+      "files": [
+        "src/compliance/risk-ledger.ts",
+        "ontology/airo_risk_description.ttl",
+        "ontology/eu-ai-act.ttl"
+      ]
+    },
+    {
+      "id": "Art.17(1)(h)",
+      "clause": "17(1)(h)",
+      "title": "Post-market monitoring system (Article 72)",
+      "files": [
+        "src/compliance/concept-drift.ts",
+        "src/compliance/kingman-scheduler.ts",
+        "src/compliance/pmm-incident.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(i)",
+      "clause": "17(1)(i)",
+      "title": "Procedures related to reporting of serious incidents (Article 73)",
+      "files": [
+        "src/compliance/pmm-incident.ts",
+        "src/compliance/oversight.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(j)",
+      "clause": "17(1)(j)",
+      "title": "Handling communication with national competent authorities, notified bodies and deployers",
+      "files": [
+        "docs/INSTRUCTIONS_FOR_USE.md",
+        "src/compliance/annex-iv-report.ts",
+        "src/compliance/qms-conformity.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(k)",
+      "clause": "17(1)(k)",
+      "title": "Systems and procedures for record-keeping of all relevant documentation and logs (Article 12)",
+      "files": [
+        "src/compliance/ocel-sqlite.ts",
+        "src/ocel-tap.ts",
+        "src/generated/ocel.ts",
+        "src/generated/receipt.ts",
+        "scripts/validate-receipts.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(l)",
+      "clause": "17(1)(l)",
+      "title": "Resource management including security-of-supply measures and runtime lock provenance",
+      "files": [
+        "zcode-runtime.lock.json",
+        "package.json",
+        "scripts/check-package.ts",
+        "src/compliance/kingman-scheduler.ts"
+      ]
+    },
+    {
+      "id": "Art.17(1)(m)",
+      "clause": "17(1)(m)",
+      "title": "Accountability framework setting out responsibilities of management and human overseers",
+      "files": [
+        "src/compliance/oversight.ts",
+        "src/compliance/disclosure.ts",
+        "src/launcher.ts",
+        "HANDWRITTEN.md"
+      ]
+    }
+  ]
+}

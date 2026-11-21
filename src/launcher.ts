@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { spawn as spawnChild, type ChildProcess } from "node:child_process";
 import {
   appendFileSync,
@@ -7,10 +8,11 @@ import {
   readFileSync,
   renameSync,
   statSync,
-  unlinkSync
+  unlinkSync,
+  writeFileSync
 } from "node:fs";
 import { constants as osConstants, homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -31,7 +33,15 @@ import {
   type OfficialLoginPayload
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
-import { startOcelTap } from "./ocel-tap.ts";
+import {
+  leaseIdentityFromEnv,
+  ocelDirectory,
+  ocelEnabled,
+  OcelRecorder,
+  ocelSourceForArgs,
+  startOcelTap,
+  STREAM_SOURCE
+} from "./ocel-tap.ts";
 import { extractMaxTurns, resolveSubagentMaxTurnsEnv } from "./max-turns.ts";
 import { normalizeClaudeAgentArgs } from "./claude-parity.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
@@ -40,6 +50,35 @@ import { runGallCommand } from "./gall-cli.ts";
 import { runEvidenceCommand } from "./evidence-cli.ts";
 import { runPartsCommand } from "./parts-cli.ts";
 import { runPluginCommand } from "./plugin-cli.ts";
+import { runComplianceCommand, resolveComplianceTomlPath } from "./compliance-cli.ts";
+import { runFoundryCommand } from "./foundry-cli.ts";
+import {
+  ComplianceRefusalError,
+  isHighRiskProfile,
+  isRegulatedProfile,
+  loadComplianceConfig,
+  parseComplianceConfigToml,
+  type ComplianceProfile,
+  type ResolvedComplianceConfig
+} from "./compliance/config.ts";
+import {
+  buildArt50DisclosureEnvelope,
+  emitArt50DisclosureEvent,
+  formatGitProvenanceTrailer
+} from "./compliance/disclosure.ts";
+import {
+  complianceTapEnabled,
+  Ocel2ComplianceBuilder,
+  upgradeLegacyOcelToOcel2,
+  type Ocel2Document
+} from "./compliance/ocel2.ts";
+import { assertWritableDirectory } from "./compliance/ocel-sqlite.ts";
+import {
+  enforceOversightArgs,
+  propagateSubagentOversightContext,
+  type PolicyCeiling
+} from "./compliance/oversight.ts";
+import { redactComplianceText } from "./compliance/redactor.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
   capabilitiesFromExtractionMetadata,
@@ -390,24 +429,271 @@ function tuiRuntimeFailureMessage(code: number, state: TuiRuntimeDiagnosticState
   return `Error: ZCode runtime exited with status ${code}.${diagnostic}\n`;
 }
 
+interface RuntimeComplianceContext {
+  config: ResolvedComplianceConfig;
+  providerId: string;
+  modelId: string;
+  sessionId: string;
+}
+
+function sha256TextHex(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function atomicWriteFile(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, content, "utf8");
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // ignore cleanup error
+    }
+    throw err;
+  }
+}
+
+function augmentOcelWithArt50Disclosure(
+  written: { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string },
+  ctx: RuntimeComplianceContext,
+  channel: "stream-json" | "headless-json" | "app-server" | "tui"
+): void {
+  const rawDoc = JSON.parse(readFileSync(written.ocelPath, "utf8")) as Ocel2Document;
+  const sessionId = written.sessionId || ctx.sessionId;
+  const redactOpts = {
+    redactPii: ctx.config.compliance.redact_pii,
+    redactEnv: ctx.config.compliance.redact_env,
+    env: process.env
+  };
+  const firstTime = rawDoc.events[0]?.time ?? new Date().toISOString();
+  const baseMs = Number.isFinite(Date.parse(firstTime)) ? Date.parse(firstTime) : Date.now();
+  const preEvents = [...rawDoc.events];
+
+  if (!preEvents.some((e) => e.type === "session_created")) {
+    preEvents.unshift({
+      id: `session_created_${randomUUID()}`,
+      type: "session_created",
+      time: new Date(baseMs - 2).toISOString(),
+      attributes: [{ name: "compliance_profile", value: ctx.config.compliance.profile }],
+      relationships: [{ objectId: sessionId, qualifier: "in_session" }]
+    });
+  }
+
+  if (!preEvents.some((e) => e.type === "art50_disclosure_emitted")) {
+    const discEnvelope = buildArt50DisclosureEnvelope({
+      profile: ctx.config.compliance.profile,
+      sessionId,
+      provider: ctx.providerId,
+      model: ctx.modelId,
+      channel: channel === "tui" ? "tui" : channel,
+      workerNoticeAcknowledged: ctx.config.deployer.worker_notice_acknowledged,
+      timestamp: new Date(baseMs - 1).toISOString(),
+      redactPii: ctx.config.compliance.redact_pii,
+      redactOptions: redactOpts
+    });
+    const discEvent = {
+      id: discEnvelope.eventId,
+      type: "art50_disclosure_emitted",
+      time: discEnvelope.timestamp,
+      attributes: [
+        { name: "channel", value: discEnvelope.ai_disclosure.channel },
+        { name: "regulation", value: "EU-2024-1689-Art50" },
+        { name: "provider_id", value: discEnvelope.ai_disclosure.provider_id },
+        { name: "model_id", value: discEnvelope.ai_disclosure.model_id },
+        { name: "compliance_profile", value: ctx.config.compliance.profile }
+      ],
+      relationships: [{ objectId: sessionId, qualifier: "in_session" }]
+    };
+    const scIdx = preEvents.findIndex((e) => e.type === "session_created");
+    if (scIdx >= 0) preEvents.splice(scIdx + 1, 0, discEvent);
+    else preEvents.unshift(discEvent);
+  }
+
+  const upgraded = upgradeLegacyOcelToOcel2(
+    {
+      objectTypes: rawDoc.objectTypes,
+      eventTypes: rawDoc.eventTypes,
+      objects: rawDoc.objects,
+      events: preEvents
+    },
+    {
+      rechain: true,
+      sessionId,
+      providerId: ctx.providerId,
+      modelId: ctx.modelId,
+      overseerId: ctx.config.deployer.overseer_id,
+      profile: ctx.config.compliance.profile,
+      config: ctx.config,
+      redactOptions: redactOpts
+    }
+  );
+
+  const upgradedText = JSON.stringify(upgraded);
+  atomicWriteFile(written.ocelPath, upgradedText);
+
+  if (existsSync(written.receiptPath)) {
+    const receipt = JSON.parse(readFileSync(written.receiptPath, "utf8")) as Record<string, unknown>;
+    const lastEv = upgraded.events[upgraded.events.length - 1];
+    const headHash =
+      lastEv?.attributes.find((a) => a.name === "pi_hash")?.value ?? written.head;
+    receipt.ocel_file_sha256 = sha256TextHex(upgradedText);
+    receipt.event_count = upgraded.events.length;
+    receipt.head_hash = headHash;
+    atomicWriteFile(written.receiptPath, JSON.stringify(receipt, null, 2));
+  }
+}
+
+function emitOversightRefusalAudit(
+  args: readonly string[],
+  cfg: ResolvedComplianceConfig,
+  error: ComplianceRefusalError,
+  providerId: string,
+  modelId: string
+): void {
+  if (!isRegulatedProfile(cfg.compliance.profile)) return;
+  const sessionId = `sess_refused_${randomUUID().slice(0, 8)}`;
+  const redactOpts = {
+    redactPii: cfg.compliance.redact_pii,
+    redactEnv: cfg.compliance.redact_env,
+    env: process.env
+  };
+  const isStreamJson = ocelSourceForArgs(args) === STREAM_SOURCE;
+  const envelope =
+    process.env.ZCODE_SUPPRESS_DISCLOSURE !== "1"
+      ? buildArt50DisclosureEnvelope({
+          profile: cfg.compliance.profile,
+          sessionId,
+          provider: providerId,
+          model: modelId,
+          channel: isStreamJson ? "stream-json" : "headless-json",
+          workerNoticeAcknowledged: cfg.deployer.worker_notice_acknowledged,
+          redactPii: cfg.compliance.redact_pii,
+          redactOptions: redactOpts
+        })
+      : undefined;
+
+  if (envelope && isStreamJson) {
+    process.stdout.write(JSON.stringify(envelope) + "\n");
+  }
+
+  if (ocelEnabled(process.env) || complianceTapEnabled(process.env, cfg)) {
+    const dir = ocelDirectory(process.env);
+    try {
+      mkdirSync(dir, { recursive: true });
+      const builder = new Ocel2ComplianceBuilder({ config: cfg, redactOptions: redactOpts });
+      const t0 = new Date().toISOString();
+      builder.upsertObject(sessionId, "session", { compliance_profile: cfg.compliance.profile }, t0);
+      builder.recordEvent({
+        id: `ev_sc_${randomUUID()}`,
+        type: "session_created",
+        time: t0,
+        attributes: { compliance_profile: cfg.compliance.profile },
+        relationships: [{ objectId: sessionId, qualifier: "in_session" }]
+      });
+      if (envelope) {
+        emitArt50DisclosureEvent(builder, {
+          profile: cfg.compliance.profile,
+          sessionId,
+          provider: providerId,
+          model: modelId,
+          channel: isStreamJson ? "stream-json" : "headless-json",
+          workerNoticeAcknowledged: cfg.deployer.worker_notice_acknowledged,
+          redactPii: cfg.compliance.redact_pii,
+          redactOptions: redactOpts
+        });
+      }
+      builder.recordEvent({
+        id: `ev_ref_${randomUUID()}`,
+        type: "oversight_policy_refused",
+        time: new Date().toISOString(),
+        attributes: {
+          refusal_code: error.code,
+          reason: redactComplianceText(error.message, redactOpts)
+        },
+        relationships: [{ objectId: sessionId, qualifier: "in_session" }]
+      });
+      const doc = builder.build();
+      atomicWriteFile(join(dir, `${sessionId}.ocel.json`), JSON.stringify(doc, null, 2));
+    } catch {
+      // ignore if directory itself is unwritable; refusal still fails closed
+    }
+  }
+}
+
 async function runRuntime(
   node: string,
   args: string[],
-  extraEnv: NodeJS.ProcessEnv = {}
+  extraEnv: NodeJS.ProcessEnv = {},
+  complianceCtx?: RuntimeComplianceContext
 ): Promise<number> {
   const tuiInvocation = isTuiRuntimeInvocation(args);
+  const regulated = Boolean(complianceCtx && isRegulatedProfile(complianceCtx.config.compliance.profile));
+  const isStreamJson = ocelSourceForArgs(args) === STREAM_SOURCE;
+  const isJsonMode = (args.includes("-p") || args.includes("--print")) && args.includes("--json");
+
+  let disclosureEnvelope: ReturnType<typeof buildArt50DisclosureEnvelope> | undefined;
+  if (regulated && complianceCtx) {
+    const redactOpts = {
+      redactPii: complianceCtx.config.compliance.redact_pii,
+      redactEnv: complianceCtx.config.compliance.redact_env,
+      env: process.env
+    };
+    disclosureEnvelope = buildArt50DisclosureEnvelope({
+      profile: complianceCtx.config.compliance.profile,
+      sessionId: complianceCtx.sessionId,
+      provider: complianceCtx.providerId,
+      model: complianceCtx.modelId,
+      channel: isStreamJson ? "stream-json" : isJsonMode ? "headless-json" : "tui",
+      workerNoticeAcknowledged: complianceCtx.config.deployer.worker_notice_acknowledged,
+      redactPii: complianceCtx.config.compliance.redact_pii,
+      redactOptions: redactOpts
+    });
+    if (isStreamJson) {
+      process.stdout.write(JSON.stringify(disclosureEnvelope) + "\n");
+    }
+  }
+
   // ZCODE_OCEL=1: tee the runtime's stream-json / app-server output into the OCEL tap (src/ocel-tap.ts).
-  const ocel = startOcelTap(args, process.env);
+  const explicitOcel = startOcelTap(args, process.env);
+  const tapSource = ocelSourceForArgs(args);
+  const ocel =
+    explicitOcel ??
+    (regulated &&
+    complianceCtx &&
+    tapSource &&
+    complianceTapEnabled(process.env, complianceCtx.config)
+      ? new OcelRecorder(tapSource, ocelDirectory(process.env), leaseIdentityFromEnv(process.env))
+      : undefined);
+
+  const pipeStdoutForJson = !ocel && regulated && isJsonMode && Boolean(disclosureEnvelope);
+
   const child = spawnChild(node, [runtimePath, ...args], {
     cwd: process.cwd(),
     env: runtimeEnvironment(extraEnv),
-    stdio: ocel ? ["inherit", "pipe", "inherit"] : tuiInvocation ? ["inherit", "inherit", "pipe"] : "inherit"
+    stdio:
+      ocel || pipeStdoutForJson
+        ? ["inherit", "pipe", "inherit"]
+        : tuiInvocation
+          ? ["inherit", "inherit", "pipe"]
+          : "inherit"
   });
   const ocelDrained = ocel && child.stdout
     ? new Promise<void>((resolve) => {
       child.stdout!.on("data", (chunk: Buffer | string) => {
         process.stdout.write(chunk);
         ocel.write(chunk.toString());
+      });
+      child.stdout!.once("close", () => resolve());
+    })
+    : undefined;
+  const jsonBuffers: Buffer[] = [];
+  const jsonDrained = pipeStdoutForJson && child.stdout
+    ? new Promise<void>((resolve) => {
+      child.stdout!.on("data", (chunk: Buffer | string) => {
+        jsonBuffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       child.stdout!.once("close", () => resolve());
     })
@@ -440,10 +726,49 @@ async function runRuntime(
     if (tuiInvocation && code !== 0 && !forwardedSignal) {
       process.stderr.write(tuiRuntimeFailureMessage(code, diagnosticState));
     }
+    if (jsonDrained && disclosureEnvelope && complianceCtx) {
+      await jsonDrained;
+      const rawOut = Buffer.concat(jsonBuffers).toString("utf8");
+      const trimmed = rawOut.trim();
+      let emitted = false;
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const trailer = formatGitProvenanceTrailer({
+              config: complianceCtx.config,
+              cliVersion: readDistributionVersion() ?? "0.0.0",
+              provider: complianceCtx.providerId,
+              model: complianceCtx.modelId,
+              sessionId: complianceCtx.sessionId
+            });
+            const enriched = {
+              ...(parsed as Record<string, unknown>),
+              ai_disclosure: disclosureEnvelope.ai_disclosure,
+              ...(trailer ? { provenance_trailer: trailer } : {})
+            };
+            process.stdout.write(JSON.stringify(enriched) + "\n");
+            emitted = true;
+          }
+        } catch {
+          // fall through to raw write
+        }
+      }
+      if (!emitted) {
+        process.stdout.write(rawOut);
+      }
+    }
     if (ocel && ocelDrained) {
       await ocelDrained;
       try {
         const written = ocel.finish();
+        if (regulated && complianceCtx) {
+          augmentOcelWithArt50Disclosure(
+            written,
+            complianceCtx,
+            isStreamJson ? "stream-json" : tapSource === "zcode_app_server" ? "app-server" : "headless-json"
+          );
+        }
         process.stderr.write(`OCEL: ${written.events} events -> ${written.ocelPath}\n`);
       } catch (error) {
         process.stderr.write(`OCEL tap failed: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -510,6 +835,14 @@ export async function main(args: string[]): Promise<number> {
     return 1;
   }
 
+  // EU AI Act & process-mining compliance CLI (hermetic pre-bootstrap dispatch).
+  const complianceCommand = await runComplianceCommand(args);
+  if (complianceCommand !== undefined) return complianceCommand;
+
+  // HITL-free POWL/OCEL foundry CLI (hermetic pre-bootstrap dispatch).
+  const foundryCommand = await runFoundryCommand(args);
+  if (foundryCommand !== undefined) return foundryCommand;
+
   if (!existsSync(runtimePath)) {
     console.error(
       "ZCode runtime is missing. Reinstall the package or run `bun run sync:local` in the source checkout."
@@ -526,6 +859,263 @@ export async function main(args: string[]): Promise<number> {
     }
     console.log(formatVersionOutput(distributionVersion, runtimeVersion));
     return 0;
+  }
+
+  // `--max-turns N` is lowered to env ZCODE_MAX_TURNS for the runtime spawn;
+  // it must not reach the runtime argv (the runtime CLI rejects unknown flags).
+  const maxTurns = extractMaxTurns(args);
+  if (maxTurns.error) {
+    console.error(`Error: ${maxTurns.error}`);
+    return 1;
+  }
+  const claudeParity = normalizeClaudeAgentArgs(maxTurns.args);
+  if (claudeParity.error) {
+    console.error(`Error: ${claudeParity.error}`);
+    return 1;
+  }
+  const login = normalizeLoginArgs(claudeParity.args);
+  const zaiOAuth = classifyZaiOAuthInvocation(claudeParity.args);
+  const invocation = inspectRuntimeInvocation(login.args, readRuntimeCliOptionTypes());
+  const isManagementOrLogin =
+    invocation.command === "plugins" || Boolean(zaiOAuth) || login.checkConfiguredAccess;
+
+  let configuredAccess: Awaited<ReturnType<typeof readConfiguredModelAccess>> = null;
+  let complianceCtx: RuntimeComplianceContext | undefined;
+  let complianceExtraEnv: NodeJS.ProcessEnv = {};
+
+  // EU AI Act Art. 14 / Art. 50 / Art. 10-12 compliance preflight MUST run BEFORE
+  // ensureCliSettings() so refused invocations fail closed without mutating HOME/.zcode/cli/
+  // or getting masked by EACCES on a read-only HOME.
+  try {
+    configuredAccess = await readConfiguredModelAccess();
+    const providerId = configuredAccess?.providerId ?? "zcode";
+    const modelId = configuredAccess?.model ?? "runtime";
+    const effectiveCwd = invocation.workingDirectory
+      ? resolve(process.cwd(), invocation.workingDirectory)
+      : process.cwd();
+    const tomlPath = resolveComplianceTomlPath(undefined, effectiveCwd, process.env);
+    const complianceConfig = loadComplianceConfig({
+      cwd: effectiveCwd,
+      configPath: tomlPath,
+      env: process.env
+    });
+
+    const isSubagent = process.env.ZCODE_SUBAGENT === "1";
+    const hasParentOversightEnv =
+      isSubagent ||
+      process.env.ZCODE_ALLOW_YOLO !== undefined ||
+      process.env.ZCODE_MIN_REVIEW_MS !== undefined ||
+      process.env.ZCODE_POLICY_CEILING !== undefined ||
+      process.env.ZCODE_OVERSEER_ID !== undefined ||
+      process.env.XAAS_WORKER !== undefined;
+
+    if (
+      isRegulatedProfile(complianceConfig.compliance.profile) ||
+      complianceConfig.compliance.allow_yolo === false ||
+      hasParentOversightEnv
+    ) {
+      let propagatedEnv: Record<string, string> | undefined;
+      try {
+        if (hasParentOversightEnv) {
+          const PROFILE_RANK: Readonly<Record<ComplianceProfile, number>> = {
+            standard: 0,
+            "art50-only": 1,
+            "high-risk-annex-iii": 2,
+            "high-risk-annex-i": 2
+          };
+          let tomlProfile: ComplianceProfile | undefined;
+          if (isSubagent && complianceConfig.configPresent && existsSync(tomlPath)) {
+            tomlProfile = parseComplianceConfigToml(readFileSync(tomlPath, "utf8"), {
+              configPath: tomlPath,
+              configPresent: true,
+              env: {}
+            }).compliance.profile;
+          }
+          const parentProfile =
+            tomlProfile &&
+            PROFILE_RANK[tomlProfile] > PROFILE_RANK[complianceConfig.compliance.profile]
+              ? tomlProfile
+              : complianceConfig.compliance.profile;
+
+          let envAllowYolo: boolean | undefined;
+          if (process.env.ZCODE_ALLOW_YOLO !== undefined) {
+            const norm = process.env.ZCODE_ALLOW_YOLO.trim().toLowerCase();
+            if (norm === "0" || norm === "false" || norm === "no") {
+              envAllowYolo = false;
+            } else if (norm === "1" || norm === "true" || norm === "yes") {
+              envAllowYolo = true;
+            } else {
+              throw new ComplianceRefusalError(
+                "OVERSIGHT_POLICY_REFUSED",
+                `Invalid ZCODE_ALLOW_YOLO value '${process.env.ZCODE_ALLOW_YOLO}'.`,
+                "mu_on_O"
+              );
+            }
+          }
+
+          let envMinReviewMs: number | undefined;
+          if (process.env.ZCODE_MIN_REVIEW_MS !== undefined) {
+            const rawMin = process.env.ZCODE_MIN_REVIEW_MS.trim();
+            const parsedMin = rawMin === "" ? NaN : Number(rawMin);
+            if (!Number.isFinite(parsedMin) || parsedMin < 0) {
+              throw new ComplianceRefusalError(
+                "OVERSIGHT_POLICY_REFUSED",
+                `Invalid ZCODE_MIN_REVIEW_MS value '${process.env.ZCODE_MIN_REVIEW_MS}'.`,
+                "mu_on_O"
+              );
+            }
+            envMinReviewMs = parsedMin;
+          }
+
+          const parentAllowYolo =
+            isHighRiskProfile(parentProfile) ||
+            complianceConfig.compliance.allow_yolo === false ||
+            envAllowYolo === false
+              ? false
+              : true;
+          const parentMinReviewMs = Math.max(
+            complianceConfig.compliance.min_review_ms,
+            envMinReviewMs ?? 0
+          );
+          const parentCeiling = process.env.ZCODE_POLICY_CEILING?.trim() as
+            | PolicyCeiling
+            | undefined;
+          const parentOverseerId =
+            process.env.ZCODE_OVERSEER_ID !== undefined
+              ? process.env.ZCODE_OVERSEER_ID.trim() || undefined
+              : complianceConfig.deployer.overseer_id;
+
+          const propagated = propagateSubagentOversightContext(
+            {
+              sessionId: process.env.ZCODE_PARENT_SESSION_ID?.trim() || "parent_session",
+              profile: parentProfile,
+              allowYolo: parentAllowYolo,
+              minReviewMs: parentMinReviewMs,
+              ...(parentCeiling ? { policyCeiling: parentCeiling } : {}),
+              ...(parentOverseerId ? { overseerId: parentOverseerId } : {}),
+              xaasWorker: process.env.XAAS_WORKER === "1",
+              env: process.env
+            },
+            process.env.ZCODE_SUBAGENT_ID?.trim() || "subagent_runtime",
+            {
+              profile: complianceConfig.compliance.profile,
+              allowYolo: parentAllowYolo ? complianceConfig.compliance.allow_yolo : false,
+              minReviewMs: parentMinReviewMs,
+              ...(process.env.ZCODE_OVERSEER_ID !== undefined
+                ? { overseerId: process.env.ZCODE_OVERSEER_ID }
+                : parentOverseerId
+                  ? { overseerId: parentOverseerId }
+                  : {}),
+              args: claudeParity.args,
+              env: process.env
+            }
+          );
+
+          // Also validate raw pre-parity flags under effective constraints
+          if (!propagated.effectiveAllowYolo || isHighRiskProfile(propagated.effectiveProfile)) {
+            const effectiveCfg: ResolvedComplianceConfig = {
+              ...complianceConfig,
+              compliance: {
+                ...complianceConfig.compliance,
+                profile: propagated.effectiveProfile,
+                allow_yolo: propagated.effectiveAllowYolo,
+                min_review_ms: propagated.effectiveMinReviewMs
+              }
+            };
+            enforceOversightArgs(maxTurns.args, effectiveCfg, process.env);
+          }
+
+          propagatedEnv = { ...propagated.env };
+          if (!isSubagent) {
+            delete propagatedEnv.ZCODE_SUBAGENT;
+            delete propagatedEnv.ZCODE_PARENT_SESSION_ID;
+            delete propagatedEnv.ZCODE_SUBAGENT_ID;
+          }
+        } else {
+          enforceOversightArgs(maxTurns.args, complianceConfig, process.env);
+          enforceOversightArgs(claudeParity.args, complianceConfig, process.env);
+        }
+      } catch (err) {
+        if (err instanceof ComplianceRefusalError) {
+          emitOversightRefusalAudit(claudeParity.args, complianceConfig, err, providerId, modelId);
+          console.error(
+            redactComplianceText(err.message, {
+              redactPii: complianceConfig.compliance.redact_pii,
+              redactEnv: complianceConfig.compliance.redact_env,
+              env: process.env
+            })
+          );
+          return err.exitCode;
+        }
+        throw err;
+      }
+
+      if (!isManagementOrLogin) {
+        if (
+          isRegulatedProfile(complianceConfig.compliance.profile) &&
+          process.env.ZCODE_SUPPRESS_DISCLOSURE === "1"
+        ) {
+          const discErr = new ComplianceRefusalError(
+            "DISCLOSURE_REQUIRED",
+            `Profile '${complianceConfig.compliance.profile}' forbids ZCODE_SUPPRESS_DISCLOSURE=1 (EU AI Act Art. 50).`,
+            "admission_vacuous"
+          );
+          console.error(discErr.message);
+          return discErr.exitCode;
+        }
+
+        if (!invocation.passthrough && !invocation.invalid) {
+          if (
+            isHighRiskProfile(complianceConfig.compliance.profile) &&
+            !complianceTapEnabled(process.env, complianceConfig)
+          ) {
+            const logErr = new ComplianceRefusalError(
+              "LOGGING_UNAVAILABLE",
+              `EU AI Act Art. 12 requires OCEL/compliance logging under '${complianceConfig.compliance.profile}'.`,
+              "R_missing_consequence"
+            );
+            console.error(logErr.message);
+            return logErr.exitCode;
+          }
+          if (
+            ocelSourceForArgs(claudeParity.args) !== undefined &&
+            (ocelEnabled(process.env) || complianceTapEnabled(process.env, complianceConfig))
+          ) {
+            assertWritableDirectory(ocelDirectory(process.env));
+          }
+        }
+      }
+
+      if (
+        isRegulatedProfile(complianceConfig.compliance.profile) ||
+        complianceConfig.compliance.allow_yolo === false ||
+        propagatedEnv !== undefined
+      ) {
+        complianceCtx = {
+          config: complianceConfig,
+          providerId,
+          modelId,
+          sessionId: `sess_${randomUUID().slice(0, 12)}`
+        };
+        complianceExtraEnv = {
+          ZCODE_COMPLIANCE_PROFILE: complianceConfig.compliance.profile,
+          ZCODE_ALLOW_YOLO: complianceConfig.compliance.allow_yolo ? "1" : "0",
+          ZCODE_MIN_REVIEW_MS: String(complianceConfig.compliance.min_review_ms),
+          ZCODE_REDACT_PII: complianceConfig.compliance.redact_pii ? "1" : "0",
+          ...(complianceConfig.deployer.overseer_id
+            ? { ZCODE_OVERSEER_ID: complianceConfig.deployer.overseer_id }
+            : {}),
+          ...(propagatedEnv ?? {})
+        };
+      }
+    }
+  } catch (error) {
+    if (error instanceof ComplianceRefusalError) {
+      console.error(redactComplianceText(error.message, { redactPii: true, env: process.env }));
+      return error.exitCode;
+    }
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
   }
 
   let setupPending = false;
@@ -593,20 +1183,6 @@ export async function main(args: string[]): Promise<number> {
   }
   if (pluginCommand !== undefined) return pluginCommand;
 
-  // `--max-turns N` is lowered to env ZCODE_MAX_TURNS for the runtime spawn;
-  // it must not reach the runtime argv (the runtime CLI rejects unknown flags).
-  const maxTurns = extractMaxTurns(args);
-  if (maxTurns.error) {
-    console.error(`Error: ${maxTurns.error}`);
-    return 1;
-  }
-  const claudeParity = normalizeClaudeAgentArgs(maxTurns.args);
-  if (claudeParity.error) {
-    console.error(`Error: ${claudeParity.error}`);
-    return 1;
-  }
-  const login = normalizeLoginArgs(claudeParity.args);
-  const zaiOAuth = classifyZaiOAuthInvocation(claudeParity.args);
   if (login.checkConfiguredAccess) {
     const access = await readConfiguredModelAccess();
     if (access || await hasConfiguredProviderAccess()) {
@@ -655,17 +1231,27 @@ export async function main(args: string[]): Promise<number> {
   }
 
   try {
-    const diagnostic = await readConfiguredModelAccess() ? undefined : await promptPreflight(login.args);
+    const diagnostic = configuredAccess ? undefined : await promptPreflight(login.args);
     if (diagnostic) {
       console.error(diagnostic);
       return 1;
     }
     const runtimeArgs = withDefaultBrowserUse(login.args);
-    return await runRuntime(node, runtimeArgs, {
-      ...firstRunSetupEnv(setupPending, runtimeArgs),
-      ...(maxTurns.maxTurns !== undefined ? { ZCODE_MAX_TURNS: String(maxTurns.maxTurns) } : {})
-    });
+    return await runRuntime(
+      node,
+      runtimeArgs,
+      {
+        ...firstRunSetupEnv(setupPending, runtimeArgs),
+        ...(maxTurns.maxTurns !== undefined ? { ZCODE_MAX_TURNS: String(maxTurns.maxTurns) } : {}),
+        ...complianceExtraEnv
+      },
+      complianceCtx
+    );
   } catch (error) {
+    if (error instanceof ComplianceRefusalError) {
+      console.error(redactComplianceText(error.message, { redactPii: true, env: process.env }));
+      return error.exitCode;
+    }
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }

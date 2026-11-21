@@ -1,0 +1,96 @@
+{
+  "schema": "zcode.dataset-manifest/1",
+  "regulation": "Regulation (EU) 2024/1689 Art. 10 & Art. 15",
+  "datasets": [
+    {
+      "id": "ontology-eu-ai-act",
+      "path": "ontology/eu-ai-act.ttl",
+      "role": "ontology",
+      "article": "Arts. 9-15,17,26,27,50,72,73",
+      "description": "Canonical EU AI Act AIRO/DPV/OCEL2/Declare ontology",
+      "sha256": "1e68b0d4e4ceb6ae8625f70ec7385ce0a1a5c05564cdbc5107723b68eca6e434",
+      "bytes": 39908
+    },
+    {
+      "id": "ontology-airo-risk-description",
+      "path": "ontology/airo_risk_description.ttl",
+      "role": "ontology",
+      "article": "Arts. 9,12,14,15",
+      "description": "AIRO baseline risk description and article mappings",
+      "sha256": "f1cd605423c92183858afc86aaeca97b7a0f7c297583d08bdcf366b2064c9ddd",
+      "bytes": 10379
+    },
+    {
+      "id": "ontology-zcode-loop",
+      "path": "ontology/zcode-loop.ttl",
+      "role": "ontology",
+      "article": "Art. 12",
+      "description": "Canonical ZCode OCEL loop state machine & event sources",
+      "sha256": "f5d10c01e7951892dc159001cfceaa42d0c9ad2e83d3f40a3d95cabd2e9459b6",
+      "bytes": 46774
+    },
+    {
+      "id": "contract-gall-work",
+      "path": "test/fixtures/gall-work.contract.json",
+      "role": "contract_fixture",
+      "article": "Art. 15",
+      "description": "SHA-256 pinned gall-work lease contract",
+      "sha256": "5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4",
+      "bytes": 9028
+    },
+    {
+      "id": "contract-xaas-remote-relay",
+      "path": "test/fixtures/xaas-remote-relay.contract.json",
+      "role": "contract_fixture",
+      "article": "Art. 15",
+      "description": "SHA-256 pinned xaas remote relay admission contract",
+      "sha256": "76ff551c16cea5afb40b385ecee9ab7462ce1d73bee47655c0e0c63dc0a33f89",
+      "bytes": 2572
+    },
+    {
+      "id": "contract-runtime-turn",
+      "path": "test/fixtures/runtime-turn.contract.json",
+      "role": "contract_fixture",
+      "article": "Art. 12",
+      "description": "Recorded runtime turn OCEL stream-json contract fixture",
+      "sha256": "339a8e7f87af606c3e5faf8f6ac09360b9e363ffc0333a111d2f2ca0cae68b8b",
+      "bytes": 21142
+    },
+    {
+      "id": "fixture-ocel-turn-list",
+      "path": "test/fixtures/zcode-ocel/turn-list.jsonocel",
+      "role": "ocel_fixture",
+      "article": "Art. 12",
+      "description": "Golden stream-json OCEL 2.0 capture fixture",
+      "sha256": "2d1f4766d75a5fac4c974ed45b3eb098b720bfd232e3d332972646749dd0e187",
+      "bytes": 24429
+    },
+    {
+      "id": "fixture-ocel-app-server-list",
+      "path": "test/fixtures/zcode-ocel/app-server-list.jsonocel",
+      "role": "ocel_fixture",
+      "article": "Art. 12",
+      "description": "Verified Source-AppServer OCEL 2.0 capture fixture",
+      "sha256": "1803b5036a6b6db4b7aa76aa56d082f0daae4cd5a1d5c08211461f8f5e7114df",
+      "bytes": 18950
+    },
+    {
+      "id": "runtime-lock",
+      "path": "zcode-runtime.lock.json",
+      "role": "supply_chain_lock",
+      "article": "Art. 11/17",
+      "description": "Pinned upstream ZCode runtime installer provenance lock",
+      "sha256": "4947c2ed7155ce835098133b008cc7da9bfbdd0cfb3130dac94f5eb57f9e2dab",
+      "bytes": 303
+    },
+    {
+      "id": "qms-manifest",
+      "path": "compliance/qms-manifest.json",
+      "role": "qms_manifest",
+      "article": "Art. 17",
+      "description": "Art. 17(1)(a)-(m) Quality Management System evidence manifest",
+      "sha256": "9a7d00c8d07c18d3a417864b56cd37cd34ac95059c6697e2cd232841337b03ca",
+      "bytes": 4325
+    }
+  ]
+}

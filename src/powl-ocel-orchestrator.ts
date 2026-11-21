@@ -1,6 +1,19 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { alignTraceAStar, type AlignmentResult } from "./compliance/conformance.ts";
+import { ComplianceRefusalError } from "./compliance/config.ts";
+import {
+  KingmanScheduler,
+  type KingmanMetricsSnapshot,
+  type TransportTelemetrySample
+} from "./compliance/kingman-scheduler.ts";
+import {
+  captureWorkspaceSnapshot,
+  SignatureRetryLimiter,
+  TransactionalRollbackError,
+  type WorkspaceSnapshotHandle
+} from "./compliance/transactional-net.ts";
 
 /**
  * Formal POWL v2 (Kourani & van der Aalst) + Workflow-Net Token-Based Replay
@@ -274,39 +287,55 @@ export interface Ocel2Log {
 }
 
 /**
- * Autonomic AIMD + Little's Law WIP Controller.
- * Discovers peak API equilibrium online — zero user-configurable concurrency knobs.
+ * Autonomic Kingman-Variance-Law + AIMD WIP Controller.
+ * Separates transport-layer congestion (TTFT / RPM / TPM / 429) from
+ * heavy-tailed coding turn service times (c_s^2 >> 1) to maximize lambda_alive.
  */
 export class AimdWipController {
-  wip = 1;
-  peakEquilibriumWip = 1;
-  private serviceSamples: number[] = [];
+  private readonly scheduler = new KingmanScheduler();
 
-  private baselineMs(): number {
-    if (this.serviceSamples.length === 0) return Infinity;
-    const sorted = [...this.serviceSamples].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length * 0.5)]!;
+  get wip(): number {
+    return this.scheduler.wip;
   }
 
-  onSuccess(serviceMs: number): { changed: boolean; oldWip: number; newWip: number; reason: string } {
-    const oldWip = this.wip;
-    const base = this.baselineMs();
-    this.serviceSamples.push(serviceMs);
-    if (this.serviceSamples.length > 32) this.serviceSamples.shift();
+  set wip(value: number) {
+    this.scheduler.wip = value;
+  }
 
-    if (Number.isFinite(base) && base > 0 && serviceMs > base * 2.0) {
-      this.wip = Math.max(1, Math.floor(this.wip * 0.5));
-      return { changed: this.wip !== oldWip, oldWip, newWip: this.wip, reason: "latency_spike_md" };
-    }
-    this.wip = this.wip + 1;
-    this.peakEquilibriumWip = Math.max(this.peakEquilibriumWip, this.wip);
-    return { changed: this.wip !== oldWip, oldWip, newWip: this.wip, reason: "clean_completion_ai" };
+  get peakEquilibriumWip(): number {
+    return this.scheduler.peakEquilibriumWip;
+  }
+
+  set peakEquilibriumWip(value: number) {
+    this.scheduler.peakEquilibriumWip = value;
+  }
+
+  onSuccess(
+    serviceMs: number,
+    transport?: TransportTelemetrySample
+  ): { changed: boolean; oldWip: number; newWip: number; reason: string; ttftMdTriggered: boolean } {
+    const decision = this.scheduler.onSuccess(serviceMs, transport);
+    return {
+      changed: decision.changed,
+      oldWip: decision.oldWip,
+      newWip: decision.newWip,
+      reason: decision.reason,
+      ttftMdTriggered: decision.ttftMdTriggered
+    };
   }
 
   onTransportBackpressure(): { changed: boolean; oldWip: number; newWip: number; reason: string } {
-    const oldWip = this.wip;
-    this.wip = Math.max(1, Math.floor(this.wip * 0.5));
-    return { changed: this.wip !== oldWip, oldWip, newWip: this.wip, reason: "transport_timeout_md" };
+    const decision = this.scheduler.onTransportBackpressure();
+    return {
+      changed: decision.changed,
+      oldWip: decision.oldWip,
+      newWip: decision.newWip,
+      reason: decision.reason
+    };
+  }
+
+  getKingmanSnapshot(): KingmanMetricsSnapshot {
+    return this.scheduler.getSnapshot();
   }
 }
 
@@ -318,28 +347,53 @@ export interface ExecutionOutcome {
   redo?: boolean;
   exitCode: number;
   detail?: string;
+  /** Optional transport telemetry separated from coding turn serviceMs. */
+  ttftMs?: number;
+  rpmHeadroomRatio?: number;
+  tpmHeadroomRatio?: number;
+  /** Optional stable failure signature for bounded retry accounting. */
+  errorSignature?: string;
 }
 
 export type TransitionExecutor = (t: Transition) => Promise<ExecutionOutcome>;
 
+export interface OcelPowlRunOptions {
+  tomlPath?: string;
+  wasm4pmCompatDir?: string;
+  outputDir?: string;
+  workspaceDir?: string;
+  rollbackOnDirty?: boolean;
+  maxRetriesPerSignature?: number;
+  stepTimeoutMs?: number;
+  retryLimiter?: SignatureRetryLimiter;
+}
+
 export interface OcelPowlRunResult {
   workflowId: string;
   replay: ReplayMetrics;
+  /** Formal A* trace alignment over observed visible completions (gamma*, log_move vs model_move). */
+  alignment: AlignmentResult;
+  /** Token-replay completion heuristic retained beside A* alignment for audit comparison. */
+  completionHeuristic: ReplayMetrics;
+  kingman: KingmanMetricsSnapshot;
   ocel: Ocel2Log;
   ocelSha256: string;
   wasm4pmCompatChecked: boolean;
   equilibriumWip: number;
   bottlenecks: Array<{ transitionId: string; serviceMs: number }>;
+  refusalCode?: string;
+  rolledBackCount?: number;
 }
 
 export async function executePowlWithTokenReplay(
   root: PowlNode,
   executor: TransitionExecutor,
-  options: { tomlPath?: string; wasm4pmCompatDir?: string; outputDir?: string } = {}
+  options: OcelPowlRunOptions = {}
 ): Promise<OcelPowlRunResult> {
   const net = compilePowlToWorkflowNet(root);
   const aimd = new AimdWipController();
-  const retries = new Map<string, number>();
+  const limiter = options.retryLimiter ?? new SignatureRetryLimiter(options.maxRetriesPerSignature ?? 3);
+  const rollbackOnDirty = options.rollbackOnDirty ?? true;
 
   const marking = new Map<string, number>();
   for (const p of net.places) marking.set(p.id, 0);
@@ -391,8 +445,11 @@ export async function executePowlWithTokenReplay(
   };
 
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
+  const executedActivities: string[] = [];
   const inFlight = new Set<Promise<void>>();
   let haltedOnFailure = false;
+  let refusalCode: string | undefined;
+  let rolledBackCount = 0;
 
   const drainSilent = () => {
     let fired = true;
@@ -407,6 +464,26 @@ export async function executePowlWithTokenReplay(
     }
   };
 
+  const runExecutorWithStepTimeout = async (t: Transition): Promise<ExecutionOutcome> => {
+    const ms = options.stepTimeoutMs;
+    if (ms === undefined || !Number.isFinite(ms) || ms <= 0) {
+      return await executor(t);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        executor(t),
+        new Promise<ExecutionOutcome>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new TransactionalRollbackError("STEP_TIMEOUT", `Step "${t.id}" timed out after ${ms}ms`, 1));
+          }, ms);
+        })
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+
   while (!haltedOnFailure) {
     drainSilent();
     if ((marking.get(net.sinkPlace) ?? 0) >= 1 && inFlight.size === 0) break;
@@ -414,8 +491,32 @@ export async function executePowlWithTokenReplay(
     const enabledVisible = net.transitions.filter((t) => !t.silent && isEnabled(t));
     if (enabledVisible.length === 0 && inFlight.size === 0) break;
 
+    const effectiveWip = options.workspaceDir ? 1 : aimd.wip;
+
     for (const t of enabledVisible) {
-      if (inFlight.size >= aimd.wip) break;
+      if (inFlight.size >= effectiveWip) break;
+
+      let snap: WorkspaceSnapshotHandle | null = null;
+      if (options.workspaceDir) {
+        try {
+          snap = captureWorkspaceSnapshot(options.workspaceDir);
+        } catch (snapErr) {
+          haltedOnFailure = true;
+          refusalCode = snapErr instanceof TransactionalRollbackError ? snapErr.code : "ROLLBACK_FAILED";
+          emitEvent(
+            "transition_refused",
+            [
+              { name: "transition", value: t.id },
+              { name: "reason", value: refusalCode },
+              { name: "signature", value: refusalCode },
+              { name: "detail", value: snapErr instanceof Error ? snapErr.message : String(snapErr) }
+            ],
+            [{ objectId: wfObj.id, qualifier: "workflow" }]
+          );
+          break;
+        }
+      }
+
       // Reserve input tokens atomically (strict Petri net firing semantics)
       for (const p of net.pre.get(t.id) ?? []) {
         marking.set(p, (marking.get(p) ?? 1) - 1);
@@ -437,16 +538,29 @@ export async function executePowlWithTokenReplay(
 
       const started = Date.now();
       const job = (async () => {
-        const res = await executor(t);
+        let res: ExecutionOutcome | undefined;
+        let stepError: unknown;
+        try {
+          res = await runExecutorWithStepTimeout(t);
+        } catch (err) {
+          stepError = err;
+        }
         const serviceMs = Date.now() - started;
         bottlenecks.push({ transitionId: t.id, serviceMs });
 
-        if (res.ok) {
+        if (res?.ok) {
+          snap?.dispose();
           for (const p of net.post.get(t.id) ?? []) {
             marking.set(p, (marking.get(p) ?? 0) + 1);
             produced += 1;
           }
-          const adj = aimd.onSuccess(serviceMs);
+          executedActivities.push(t.activityId ?? t.label);
+          const adj = aimd.onSuccess(serviceMs, {
+            ttftMs: res.ttftMs,
+            rpmHeadroomRatio: res.rpmHeadroomRatio,
+            tpmHeadroomRatio: res.tpmHeadroomRatio
+          });
+          const kingmanSnap = aimd.getKingmanSnapshot();
           artObj.attributes.push({ name: "standing", value: "ALIVE", time: new Date().toISOString() });
           emitEvent(
             "transition_completed",
@@ -454,16 +568,104 @@ export async function executePowlWithTokenReplay(
               { name: "transition", value: t.id },
               { name: "service_ms", value: String(serviceMs) },
               { name: "wip", value: String(adj.newWip) },
-              { name: "aimd_reason", value: adj.reason }
+              { name: "aimd_reason", value: adj.reason },
+              { name: "cs2", value: kingmanSnap.cs2.toFixed(4) },
+              { name: "rho", value: kingmanSnap.rho.toFixed(4) },
+              { name: "lambda_alive", value: kingmanSnap.estimate.lambdaAlivePerSec.toFixed(4) },
+              ...(res.ttftMs !== undefined ? [{ name: "ttft_ms", value: String(res.ttftMs) }] : [])
             ],
             [
               { objectId: wfObj.id, qualifier: "workflow" },
               { objectId: artObj.id, qualifier: "verifies" }
             ]
           );
-        } else if (res.transportBackpressure && (retries.get(t.id) ?? 0) < 3) {
-          // Return tokens to input places (soundness preserved) and multiplicatively back off
-          retries.set(t.id, (retries.get(t.id) ?? 0) + 1);
+          return;
+        }
+
+        const isTimeout =
+          stepError instanceof TransactionalRollbackError && stepError.code === "STEP_TIMEOUT";
+        const failureReason = isTimeout
+          ? "step_timeout"
+          : stepError
+            ? "step_exception"
+            : res?.detail ?? "failed";
+        const failureSig =
+          res?.errorSignature ??
+          (stepError instanceof Error
+            ? `${t.id}:${stepError.message}`
+            : `${t.id}:${res?.detail ?? "transport_or_step_failure"}`);
+
+        if (snap) {
+          try {
+            const rb = snap.rollback(failureReason, t.id, rollbackOnDirty);
+            rolledBackCount += 1;
+            emitEvent(
+              rb.event.type,
+              rb.event.attributes,
+              [{ objectId: wfObj.id, qualifier: "workflow" }, ...rb.event.relationships]
+            );
+          } catch (rbErr) {
+            snap.dispose();
+            haltedOnFailure = true;
+            refusalCode = rbErr instanceof TransactionalRollbackError ? rbErr.code : "ROLLBACK_FAILED";
+            artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
+            emitEvent(
+              "transition_refused",
+              [
+                { name: "transition", value: t.id },
+                { name: "reason", value: refusalCode },
+                { name: "signature", value: refusalCode },
+                { name: "detail", value: rbErr instanceof Error ? rbErr.message : String(rbErr) }
+              ],
+              [
+                { objectId: wfObj.id, qualifier: "workflow" },
+                { objectId: artObj.id, qualifier: "blocks" }
+              ]
+            );
+            return;
+          } finally {
+            snap.dispose();
+          }
+        }
+
+        const retryable = Boolean(res?.transportBackpressure) || (Boolean(options.workspaceDir) && isTimeout);
+        if (retryable) {
+          try {
+            limiter.recordFailure(failureSig, t.id);
+          } catch (limitErr) {
+            haltedOnFailure = true;
+            refusalCode =
+              limitErr instanceof ComplianceRefusalError ? limitErr.code : "RETRY_BUDGET_EXHAUSTED";
+            artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
+            emitEvent(
+              "retry_budget_exhausted",
+              [
+                { name: "transition", value: t.id },
+                { name: "signature", value: limiter.normalizeSignature(failureSig) },
+                { name: "detail", value: limitErr instanceof Error ? limitErr.message : String(limitErr) }
+              ],
+              [
+                { objectId: wfObj.id, qualifier: "workflow" },
+                { objectId: artObj.id, qualifier: "blocks" }
+              ]
+            );
+            emitEvent(
+              "transition_refused",
+              [
+                { name: "transition", value: t.id },
+                { name: "reason", value: refusalCode },
+                { name: "signature", value: limiter.normalizeSignature(failureSig) },
+                { name: "detail", value: limitErr instanceof Error ? limitErr.message : String(limitErr) }
+              ],
+              [
+                { objectId: wfObj.id, qualifier: "workflow" },
+                { objectId: artObj.id, qualifier: "blocks" }
+              ]
+            );
+            return;
+          }
+
+          // Return tokens to input places cleanly (after atomic rollback & retry budget check)
           for (const p of net.pre.get(t.id) ?? []) {
             marking.set(p, (marking.get(p) ?? 0) + 1);
             produced += 1;
@@ -475,16 +677,27 @@ export async function executePowlWithTokenReplay(
               { name: "transition", value: t.id },
               { name: "old_wip", value: String(adj.oldWip) },
               { name: "new_wip", value: String(adj.newWip) },
-              { name: "reason", value: adj.reason }
+              { name: "reason", value: adj.reason },
+              { name: "signature", value: limiter.normalizeSignature(failureSig) }
             ],
             [{ objectId: wfObj.id, qualifier: "workflow" }]
           );
         } else {
           haltedOnFailure = true;
           artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
+          const refusedSignature =
+            res?.errorSignature && res.errorSignature.trim().length > 0
+              ? res.errorSignature
+              : stepError !== undefined && !isTimeout
+                ? (stepError instanceof Error ? stepError.message : String(stepError)) || failureReason
+                : failureReason;
           emitEvent(
             "transition_refused",
-            [{ name: "transition", value: t.id }, { name: "detail", value: res.detail ?? "failed" }],
+            [
+              { name: "transition", value: t.id },
+              { name: "signature", value: refusedSignature },
+              { name: "detail", value: failureReason }
+            ],
             [
               { objectId: wfObj.id, qualifier: "workflow" },
               { objectId: artObj.id, qualifier: "blocks" }
@@ -497,6 +710,11 @@ export async function executePowlWithTokenReplay(
     }
 
     if (inFlight.size > 0) await Promise.race(inFlight);
+  }
+
+  // Drain any remaining in-flight transition promises before finalizing marking / OCEL SHA-256
+  if (inFlight.size > 0) {
+    await Promise.allSettled(inFlight);
   }
 
   // Consume final token in sinkPlace if present
@@ -516,6 +734,10 @@ export async function executePowlWithTokenReplay(
     0.5 * (1 - (produced > 0 ? remaining / produced : 0));
   const soundTermination = missing === 0 && remaining === 0 && !haltedOnFailure;
 
+  const replay: ReplayMetrics = { produced, consumed, missing, remaining, fitness, soundTermination };
+  const alignment = alignTraceAStar(net, executedActivities);
+  const kingman = aimd.getKingmanSnapshot();
+
   wfObj.attributes.push({
     name: "standing",
     value: soundTermination ? "ALIVE" : "REFUSED",
@@ -530,7 +752,16 @@ export async function executePowlWithTokenReplay(
     eventTypes: [
       { name: "transition_fired", attributes: [{ name: "transition", type: "string" }, { name: "label", type: "string" }] },
       { name: "transition_completed", attributes: [{ name: "transition", type: "string" }, { name: "service_ms", type: "string" }] },
-      { name: "transition_refused", attributes: [{ name: "transition", type: "string" }, { name: "detail", type: "string" }] }
+      {
+        name: "transition_refused",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "signature", type: "string" },
+          { name: "detail", type: "string" }
+        ]
+      },
+      { name: "workspace_rolled_back", attributes: [{ name: "reason", type: "string" }, { name: "step_id", type: "string" }] },
+      { name: "retry_budget_exhausted", attributes: [{ name: "signature", type: "string" }, { name: "detail", type: "string" }] }
     ],
     objects: [...objects.values()],
     events
@@ -561,18 +792,38 @@ export async function executePowlWithTokenReplay(
     writeFileSync(join(options.outputDir, "workflow.ocel.json"), ocelJson);
     writeFileSync(
       join(options.outputDir, "replay-conformance.json"),
-      JSON.stringify({ workflowId: root.id, replay: { produced, consumed, missing, remaining, fitness, soundTermination }, ocelSha256, wasm4pmCompatChecked, bottlenecks }, null, 2)
+      JSON.stringify(
+        {
+          workflowId: root.id,
+          replay,
+          completionHeuristic: replay,
+          alignment,
+          kingman,
+          ocelSha256,
+          wasm4pmCompatChecked,
+          bottlenecks,
+          ...(refusalCode ? { refusalCode } : {}),
+          ...(rolledBackCount > 0 ? { rolledBackCount } : {})
+        },
+        null,
+        2
+      )
     );
   }
 
   return {
     workflowId: root.id,
-    replay: { produced, consumed, missing, remaining, fitness, soundTermination },
+    replay,
+    alignment,
+    completionHeuristic: replay,
+    kingman,
     ocel,
     ocelSha256,
     wasm4pmCompatChecked,
     equilibriumWip: aimd.peakEquilibriumWip,
-    bottlenecks
+    bottlenecks,
+    ...(refusalCode ? { refusalCode } : {}),
+    ...(rolledBackCount > 0 ? { rolledBackCount } : {})
   };
 }
 
@@ -642,21 +893,97 @@ export function deriveFollowUpPowl(prev: OcelPowlRunResult, cycle: number): Powl
 }
 
 /**
- * Continuous autonomic POWL v2 + OCEL 2.0 loop: never idles with an empty queue.
- * Omit `maxCycles` to run indefinitely; pass `maxCycles` for bounded runs/tests.
+ * Continuous autonomic POWL v2 + OCEL 2.0 loop: never idles with an empty queue,
+ * while bounding repeated remediation cycles per failure signature (F12).
+ * Omit `maxCycles` to run until convergence/budget cap; pass `maxCycles` for bounded runs/tests.
  */
 export async function runAutonomicLoop(
   initialPowl: PowlNode,
   executor: TransitionExecutor,
-  options: { maxCycles?: number; tomlPath?: string; wasm4pmCompatDir?: string; outputDir?: string } = {}
+  options: OcelPowlRunOptions & { maxCycles?: number; throwOnRetryExhausted?: boolean } = {}
 ): Promise<OcelPowlRunResult[]> {
   const results: OcelPowlRunResult[] = [];
+  const sharedLimiter =
+    options.retryLimiter ?? new SignatureRetryLimiter(options.maxRetriesPerSignature ?? 3);
   let current: PowlNode = initialPowl;
   let cycle = 1;
 
   while (options.maxCycles === undefined || cycle <= options.maxCycles) {
-    const res = await executePowlWithTokenReplay(current, executor, options);
+    const res = await executePowlWithTokenReplay(current, executor, {
+      ...options,
+      retryLimiter: sharedLimiter
+    });
     results.push(res);
+
+    if (
+      res.refusalCode === "RETRY_BUDGET_EXHAUSTED" ||
+      res.refusalCode === "DIRTY_TIMEOUT_REFUSED" ||
+      res.refusalCode === "ROLLBACK_FAILED"
+    ) {
+      if (options.throwOnRetryExhausted && res.refusalCode === "RETRY_BUDGET_EXHAUSTED") {
+        throw new ComplianceRefusalError(
+          "RETRY_BUDGET_EXHAUSTED",
+          `Autonomic loop halted at cycle ${cycle}: ${res.refusalCode}`,
+          "mu_on_O"
+        );
+      }
+      break;
+    }
+
+    if (!res.replay.soundTermination) {
+      const refusedEv = res.ocel.events.find((e) => e.type === "transition_refused");
+      const sigAttr = refusedEv?.attributes.find((a) => a.name === "signature")?.value;
+      const detailAttr = refusedEv?.attributes.find((a) => a.name === "detail")?.value;
+      const reasonAttr = refusedEv?.attributes.find((a) => a.name === "reason")?.value;
+      const detail =
+        (sigAttr && sigAttr.trim().length > 0 ? sigAttr : undefined) ??
+        (detailAttr && detailAttr.trim().length > 0 ? detailAttr : undefined) ??
+        (reasonAttr && reasonAttr.trim().length > 0 ? reasonAttr : undefined) ??
+        "cycle_refused";
+      try {
+        sharedLimiter.recordFailure(`cycle_refusal:${detail}`);
+      } catch (err) {
+        res.refusalCode = "RETRY_BUDGET_EXHAUSTED";
+        res.ocel.events.push({
+          id: `e_${String(res.ocel.events.length + 1).padStart(5, "0")}`,
+          type: "retry_budget_exhausted",
+          time: new Date().toISOString(),
+          attributes: [
+            { name: "signature", value: sharedLimiter.normalizeSignature(`cycle_refusal:${detail}`) },
+            { name: "detail", value: err instanceof Error ? err.message : String(err) }
+          ],
+          relationships: []
+        });
+        const updatedOcelJson = JSON.stringify(res.ocel, null, 2);
+        res.ocelSha256 = createHash("sha256").update(updatedOcelJson).digest("hex");
+        if (options.outputDir) {
+          mkdirSync(options.outputDir, { recursive: true });
+          writeFileSync(join(options.outputDir, "workflow.ocel.json"), updatedOcelJson);
+          writeFileSync(
+            join(options.outputDir, "replay-conformance.json"),
+            JSON.stringify(
+              {
+                workflowId: res.workflowId,
+                replay: res.replay,
+                completionHeuristic: res.completionHeuristic,
+                alignment: res.alignment,
+                kingman: res.kingman,
+                ocelSha256: res.ocelSha256,
+                wasm4pmCompatChecked: res.wasm4pmCompatChecked,
+                bottlenecks: res.bottlenecks,
+                ...(res.refusalCode ? { refusalCode: res.refusalCode } : {}),
+                ...(res.rolledBackCount && res.rolledBackCount > 0 ? { rolledBackCount: res.rolledBackCount } : {})
+              },
+              null,
+              2
+            )
+          );
+        }
+        if (options.throwOnRetryExhausted) throw err;
+        break;
+      }
+    }
+
     cycle += 1;
     current = deriveFollowUpPowl(res, cycle);
   }

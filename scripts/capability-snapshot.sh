@@ -33,6 +33,15 @@ APP_GLM="$APP/Contents/Resources/glm"
 APP_PLIST="$APP/Contents/Info.plist"
 staging=""
 dest=""
+SNAPSHOT_COMPLETE=0
+
+cleanup_incomplete_dest() {
+  [ -n "${staging:-}" ] && rm -rf "$staging"
+  if [ -n "${dest:-}" ] && [ "${SNAPSHOT_COMPLETE:-0}" -ne 1 ]; then
+    rm -rf "$dest"
+  fi
+  true
+}
 
 # Paths snapshotted, relative to $HOME unless absolute.
 USER_PATHS=(
@@ -58,18 +67,44 @@ REDACT_EXTS=(-name '*.json' -o -name '*.jsonl' -o -name '*.jsonc' -o -name '*.md
 redact_tree() {
   local root="$1"
   find "$root" -type f -size -2M \( "${REDACT_EXTS[@]}" \) -print0 |
-    xargs -0 perl -pi -e 's/("apiKey"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g;
-                          s/("api_key"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g;
-                          s/("(?:token|secret|password)"\s*:\s*")[^"]{8,}(")/${1}REDACTED${2}/g' 2>/dev/null || true
+    xargs -0 perl -0777 -pi -e '
+      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|token|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
+      s{((?<!\\)\\\\\\"$k\\\\\\"\s*:\s*\\\\\\")(?!REDACTED\\\\\\")(?:[^"\\]|\\(?!(?:\\{0,2})"))+(\\\\\\")}{${1}REDACTED${2}}gi;
+      s{((?<!\\)\\"$k\\"\s*:\s*\\")(?!REDACTED\\")(?:[^"\\]|\\(?!"))+(\\")}{${1}REDACTED${2}}gi;
+      s{((?<!\\)"$k(?<!\\)"\s*:\s*(?<!\\)")(?!REDACTED")(?:[^"\\]|\\.)+(")}{${1}REDACTED${2}}gi;
+      s{^(\s*$k\s*=\s*")(?!REDACTED")(?:[^"\\]|\\.)+(")}{${1}REDACTED${2}}gim;
+      s{^(\s*$k\s*=\s*'\'')(?!REDACTED'\'')[^'\''\r\n]+('\'')}{${1}REDACTED${2}}gim;
+      s{-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----}{REDACTED}g;
+      s{\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b}{REDACTED}g;
+      s{(authorization\s*[:=]\s*(?:bearer|basic|token|digest|apikey)\s+)(?!REDACTED\b)[^\s"'\''\\]+}{${1}REDACTED}gi;
+      s{(Bearer\s+)(?!REDACTED\b)(?:(?=[^\s"'\''\\]{8,})[^\s"'\''\\]+|(?=[^\s"'\''\\]*[0-9_.\-+/=])[^\s"'\''\\]{3,})}{${1}REDACTED}gi;
+      s{(authorization\s*[:=]\s*)(?!basic\s|token\s|digest\s|bearer\s|apikey\s|REDACTED\b)[^\s"'\''\\]+}{${1}REDACTED}gi;
+    ' 2>/dev/null || true
 }
 
-# Asserts the same value shapes REDACTION covers (minus "token", too generic to
-# assert on) and scans files of ANY size: a >2MB text file is skipped by
-# redaction for cost, so this is the tripwire that fails the save instead.
+# Asserts the same value shapes REDACTION covers (minus bare generic "token" to
+# avoid false positives on large tokenizer/grammar bundles) and scans files of
+# ANY size: a >2MB text file is skipped by redaction for cost, so this is the
+# tripwire that fails the save instead.
 assert_no_secrets() {
   local root="$1" hits
   hits=$(find "$root" -type f \( "${REDACT_EXTS[@]}" \) -print0 |
-    xargs -0 perl -ne 'if (/"(?:apiKey|api_key|secret|password)"\s*:\s*"(?!REDACTED)[^"]{8,}/) { print "  $ARGV\n"; $bad = 1; close ARGV } END { exit($bad ? 1 : 0) }' 2>/dev/null || true)
+    xargs -0 perl -ne '
+      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
+      if (m{(?<!\\)\\\\\\"$k\\\\\\"\s*:\s*\\\\\\"(?!REDACTED\\\\\\")(?:[^"\\]|\\(?!(?:\\{0,2})"))+\\\\\\"}i
+       || m{(?<!\\)\\"$k\\"\s*:\s*\\"(?!REDACTED\\")(?:[^"\\]|\\(?!"))+\\"}i
+       || m{(?<!\\)"$k(?<!\\)"\s*:\s*(?<!\\)"(?!REDACTED")(?:[^"\\]|\\.)+"}i
+       || m{^\s*$k\s*=\s*"(?!REDACTED")(?:[^"\\]|\\.)+"}i
+       || m{^\s*$k\s*=\s*'\''(?!REDACTED'\'')[^'\''\r\n]+'\''}i
+       || m{-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----}
+       || m{\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b}
+       || m{authorization\s*[:=]\s*(?:bearer|basic|token|digest|apikey)\s+(?!REDACTED\b)[^\s"'\''\\]+}i
+       || m{Bearer\s+(?!REDACTED\b)(?:(?=[^\s"'\''\\]{8,})[^\s"'\''\\]+|(?=[^\s"'\''\\]*[0-9_.\-+/=])[^\s"'\''\\]{3,})}i
+       || m{authorization\s*[:=]\s*(?!basic\s|token\s|digest\s|bearer\s|apikey\s|REDACTED\b)[^\s"'\''\\]+}i) {
+        print "  $ARGV\n"; $bad = 1; close ARGV;
+      }
+      END { exit($bad ? 1 : 0) }
+    ' 2>/dev/null || true)
   if [ -n "$hits" ]; then
     printf 'secret-shaped values survived redaction:\n%s\n' "$hits" >&2
     die "refusing to snapshot: credential-shaped values remain in staging ($root)"
@@ -118,16 +153,14 @@ snapshot_repo_state() {
 }
 
 cmd_save() {
-  local ts dest
+  local ts
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   dest="$BACKUP_ROOT/caps-$ts"
+  SNAPSHOT_COMPLETE=0
   staging="$(mktemp -d "${TMPDIR:-/tmp}/caps-staging.XXXXXX")"
   # A refused save must not leave a lookalike snapshot dir: the trap drops
-  # staging always, and dest unless a tarball was actually produced
-  # (falsified 2026-09-26: the tripwire refusal left a file-list-only husk).
-  trap '{ [ -n "${staging:-}" ] && rm -rf "$staging"
-          [ -n "${dest:-}" ] && [ ! -f "$dest/user-state.tar.gz" ] && rm -rf "$dest"
-          true; }' EXIT
+  # staging always, and dest unless SNAPSHOT_COMPLETE=1 after all steps succeed.
+  trap cleanup_incomplete_dest EXIT
   mkdir -p -m 700 "$dest"
 
   file_list >"$dest/file-list.txt"
@@ -176,16 +209,20 @@ Contents: user-state.tar.gz (paths in file-list.txt), hashes in
 manifest.sha256, repo unpushed commits (bundle + patch list) and untracked
 files under repo/.
 
-Credential values under the exact keys apiKey/api_key/token/secret/password
-with ≥8 characters are REDACTED in the snapshot; shorter values and
-compound/authorization-shaped keys pass (see docs/CAPABILITY_SNAPSHOT.md).
-After a restore, re-enter them from the live registry / failover copy, which
-snapshots exclude by design.
+Non-empty credential values (including <8-character secrets, case-insensitive and
+compound keys such as refresh_token/access_token/authorization/private_key,
+escaped JSON payloads, TOML quoted keys, JWTs, PEM private keys, and
+Bearer/Authorization schemes) are REDACTED in the snapshot while empty values
+and ordinary prose survive (see docs/CAPABILITY_SNAPSHOT.md). After a restore,
+re-enter credentials from the live registry / failover copy, which snapshots
+exclude by design.
 
 Restore:  $0 restore $dest --apply
 Verify:   $0 verify $dest
 Diff:     $0 diff $dest
 EOF
+
+  SNAPSHOT_COMPLETE=1
 
   local n; n="$(wc -l <"$dest/file-list.txt" | tr -d ' ')"
   echo "snapshot: $dest"

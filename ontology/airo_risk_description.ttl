@@ -9,6 +9,7 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix zc: <https://zcode-cli.example/ontology/airo#> .
+@prefix euai: <https://zcode-cli.example/ontology/eu-ai-act#> .
 
 <https://zcode-cli.example/airo/cli-agent-runtime> rdf:type airo:AISystem ;
     rdfs:label "zcode-cli CLI agent runtime"@en ;
@@ -146,3 +147,41 @@ zc:Likelihood_Rare rdf:type airo:Likelihood ;
 
 zc:Modality_Assessed rdf:type airo:Modality ;
     rdfs:label "as-is assessment, qualitative, self-assessed on this checkout"@en .
+
+# ------------------------------------------------- EU AI Act (8/1/26) Mappings
+# Preserves RiskSource === 3 and RiskControl === 2 invariants while wiring
+# OCEL 2.0 logs, POWL soundness proofs, and permission/HITL gates to EU AI Act
+# Articles 9, 12, 14, and 15.
+
+<https://zcode-cli.example/airo/cli-agent-runtime>
+    dcterms:conformsTo <https://zcode-cli.example/ontology/eu-ai-act> ;
+    rdfs:seeAlso <file:ontology/eu-ai-act.ttl> ;
+    zc:hasEuAiActMapping zc:Mapping_Art9_RiskManagement ,
+        zc:Mapping_Art12_OcelRecordKeeping ,
+        zc:Mapping_Art14_HumanOversight ,
+        zc:Mapping_Art15_PowlSoundnessAndSecurity .
+
+zc:Mapping_Art9_RiskManagement rdf:type zc:EuAiActArticleMapping ;
+    rdfs:label "EU AI Act Art. 9 (Risk Management) mapping over AIRO controls and eu-ai-act.ttl risk register"@en ;
+    zc:articleNumber "9" ;
+    zc:mapsTarget euai:Art9_RiskManagement ;
+    zc:mapsRiskControl zc:Control_BunTestGate , zc:Control_ContractShaPins ;
+    rdfs:seeAlso <file:ontology/eu-ai-act.ttl> , <file:src/powl-ocel-orchestrator.ts> .
+
+zc:Mapping_Art12_OcelRecordKeeping rdf:type zc:EuAiActArticleMapping ;
+    rdfs:label "EU AI Act Art. 12 (Record-Keeping) mapping over SHA-256 hash-chained OCEL 2.0 logs"@en ;
+    zc:articleNumber "12" ;
+    zc:mapsTarget euai:Art12_RecordKeeping ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:src/generated/ocel.ts> , <file:src/generated/receipt.ts> , <file:ontology/zcode-loop.ttl> .
+
+zc:Mapping_Art14_HumanOversight rdf:type zc:EuAiActArticleMapping ;
+    rdfs:label "EU AI Act Art. 14 (Human Oversight) mapping over permission/userInput gates & fail-closed admission"@en ;
+    zc:articleNumber "14" ;
+    zc:mapsTarget euai:Art14_HumanOversight ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> , <file:src/relay-admission.ts> , <file:src/powl-ocel-orchestrator.ts> .
+
+zc:Mapping_Art15_PowlSoundnessAndSecurity rdf:type zc:EuAiActArticleMapping ;
+    rdfs:label "EU AI Act Art. 15 (Accuracy, Robustness & Cybersecurity) mapping over POWL soundness proofs & secret redaction"@en ;
+    zc:articleNumber "15" ;
+    zc:mapsTarget euai:Art15_AccuracyRobustnessCybersecurity ;
+    rdfs:seeAlso <file:src/powl-ocel-orchestrator.ts> , <file:test/powl-ocel-chicago.test.ts> , <file:src/ocel-tap.ts> , <file:test/ocel-redaction.test.ts> .

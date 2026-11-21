@@ -1,0 +1,657 @@
+# EU AI Act (Regulation (EU) 2024/1689) + W3C AIRO + DPV + IEEE OCEL 2.0 + Declare Ontology
+# Target system: zcode-cli (https://zcode-cli.example/airo/cli-agent-runtime)
+# Scope: EU AI Act Arts. 9, 10, 11, 12, 13, 14, 15, 17, 26, 27, 50, 72, 73;
+#        8 operational AI risks with quantitative residual thresholds;
+#        OCEL 2.0 compliance object/event/O2O extensions;
+#        7 Declare/LTLf safety constraints with anti-vacuity semantics.
+#
+# File-link discipline (M1): file: URIs reference ONLY files that exist on disk
+# at the end of M1 F03. Planned F02/F04 and M2-M4 implementation/falsifier targets use
+# euai:targetModule and euai:targetMilestone string literals so M1 file-citation courts
+# pass without dangling file: links.
+
+@prefix airo: <https://w3id.org/airo#> .
+@prefix dpv: <https://w3id.org/dpv#> .
+@prefix dpv-ai: <https://w3id.org/dpv/ai#> .
+@prefix eu-aiact: <https://w3id.org/dpv/legal/eu/aiact#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix pi: <https://ggen.dev/ontology/process-intelligence#> .
+@prefix zc: <https://zcode-cli.example/ontology/airo#> .
+@prefix zl: <https://zcode.dev/ontology/zcode-loop#> .
+@prefix euai: <https://zcode-cli.example/ontology/eu-ai-act#> .
+
+<https://zcode-cli.example/ontology/eu-ai-act> rdf:type owl:Ontology ;
+    rdfs:label "zcode-cli EU AI Act Risk, Compliance OCEL 2.0 & Declare Ontology"@en ;
+    dcterms:conformsTo <https://w3id.org/airo#> , <https://w3id.org/dpv/legal/eu/aiact#> ;
+    rdfs:seeAlso <file:ontology/airo_risk_description.ttl> , <file:ontology/zcode-loop.ttl> .
+
+# =====================================================================
+# 1. Vocabulary Classes & Properties
+# =====================================================================
+
+euai:EuAiActArticle rdf:type rdfs:Class ;
+    rdfs:label "EU AI Act Article requirement node"@en .
+
+euai:ComplianceEventType rdf:type rdfs:Class ;
+    rdfs:subClassOf pi:EventType ;
+    rdfs:label "EU AI Act compliance OCEL 2.0 event type"@en .
+
+euai:ComplianceObjectType rdf:type rdfs:Class ;
+    rdfs:subClassOf pi:ObjectType ;
+    rdfs:label "EU AI Act compliance OCEL 2.0 object type"@en .
+
+euai:ComplianceO2ORelation rdf:type rdfs:Class ;
+    rdfs:label "EU AI Act compliance OCEL 2.0 object-to-object relation"@en .
+
+euai:DeclareConstraint rdf:type rdfs:Class ;
+    rdfs:label "Declare / LTLf temporal safety constraint with anti-vacuity"@en .
+
+euai:articleNumber rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:legalBasis rdf:type rdf:Property .
+euai:inherentRiskScore rdf:type rdf:Property ; rdfs:range xsd:decimal .
+euai:residualRiskScore rdf:type rdf:Property ; rdfs:range xsd:decimal .
+euai:residualRiskThreshold rdf:type rdf:Property ; rdfs:range xsd:decimal .
+euai:riskUnit rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:addressesArticle rdf:type rdf:Property ; rdfs:range euai:EuAiActArticle .
+euai:targetModule rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:targetMilestone rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:ocelTypeId rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:o2oQualifier rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:declareTemplate rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:declareActivator rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:declareTarget rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:antiVacuityRequired rdf:type rdf:Property ; rdfs:range xsd:boolean .
+euai:satisfactionSemantics rdf:type rdf:Property ; rdfs:range xsd:string .
+euai:falsifierTest rdf:type rdf:Property .
+
+# =====================================================================
+# 2. System Classification Bridge (extends zc: cli-agent-runtime)
+# =====================================================================
+
+<https://zcode-cli.example/airo/cli-agent-runtime>
+    rdf:type airo:AISystem , dpv-ai:AISystem ;
+    airo:hasCapability dpv-ai:CodeGeneration , eu-aiact:GenerativeAI ;
+    euai:addressesArticle
+        euai:Art9_RiskManagement ,
+        euai:Art10_DataGovernance ,
+        euai:Art11_TechnicalDocumentation ,
+        euai:Art12_RecordKeeping ,
+        euai:Art13_Transparency ,
+        euai:Art14_HumanOversight ,
+        euai:Art15_AccuracyRobustnessCybersecurity ,
+        euai:Art17_QualityManagement ,
+        euai:Art26_DeployerObligations ,
+        euai:Art27_FundamentalRightsImpact ,
+        euai:Art50_TransparencyDisclosure ,
+        euai:Art72_PostMarketMonitoring ,
+        euai:Art73_SeriousIncidentReporting ;
+    airo:hasRisk
+        euai:Risk_PromptInjection ,
+        euai:Risk_UnsafeActuation ,
+        euai:Risk_AutomationBias ,
+        euai:Risk_SecretAndPiiLeakage ,
+        euai:Risk_ModelAndProviderDrift ,
+        euai:Risk_SubagentOversightBypass ,
+        euai:Risk_LogTamperingOrLoss ,
+        euai:Risk_UndisclosedAiInteraction ;
+    airo:hasRiskControl
+        euai:Control_RelayAdmissionAndPreToolGate ,
+        euai:Control_TransactionalNetAndAllowDoFence ,
+        euai:Control_HumanOversightMinReviewAndYoloRefusal ,
+        euai:Control_IngestTimeSecretAndPiiRedaction ,
+        euai:Control_ProviderRegistryAndConceptDriftSpc ,
+        euai:Control_SubagentOcelPropagationAndGate ,
+        euai:Control_Sha256HashChainAndRetentionPolicy ,
+        euai:Control_Art50DisclosureAndProvenanceMark .
+
+# =====================================================================
+# 3. EU AI Act Articles (Arts. 9, 10, 11, 12, 13, 14, 15, 17, 26, 27, 50, 72, 73)
+# =====================================================================
+
+euai:Art9_RiskManagement rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "9" ;
+    euai:legalBasis eu-aiact:Art9 ;
+    rdfs:label "Article 9: Risk Management System"@en ;
+    dcterms:description "Continuous iterative risk identification, estimation, evaluation, residual risk control, and A* / token-replay conformance verification."@en ;
+    rdfs:seeAlso <file:ontology/airo_risk_description.ttl> , <file:src/powl-ocel-orchestrator.ts> ;
+    euai:targetModule "src/compliance/risk-ledger.ts" ;
+    euai:targetMilestone "M4" .
+
+euai:Art10_DataGovernance rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "10" ;
+    euai:legalBasis eu-aiact:Art10 ;
+    rdfs:label "Article 10: Data and Data Governance"@en ;
+    dcterms:description "Credential/PII/GDPR redaction at ingest, RPM pseudonymization, k-anonymity, and dataset provenance manifests."@en ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:test/ocel-redaction.test.ts> ;
+    euai:targetModule "src/compliance/redactor.ts" ;
+    euai:targetMilestone "M1" .
+
+euai:Art11_TechnicalDocumentation rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "11" ;
+    euai:legalBasis eu-aiact:Art11 ;
+    rdfs:label "Article 11: Technical Documentation (Annex IV)"@en ;
+    dcterms:description "Deterministic Annex IV sections 1-8 dossier compiler with concept-drift gate."@en ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> , <file:test/eu-ai-act-ontology.test.ts> ;
+    euai:targetModule "src/compliance/annex-iv-report.ts" ;
+    euai:targetMilestone "M4" .
+
+euai:Art12_RecordKeeping rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "12" ;
+    euai:legalBasis eu-aiact:Art12 ;
+    rdfs:label "Article 12: Record-Keeping and Automatic Event Logging"@en ;
+    dcterms:description "Tamper-evident SHA-256 hash-chained IEEE OCEL 2.0 event logging across stream-json, app-server, and gall-work with >=180d retention."@en ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:src/generated/ocel.ts> , <file:src/generated/receipt.ts> , <file:test/ocel-appserver-capture.test.ts> ;
+    euai:targetModule "src/compliance/ocel-sqlite.ts" ;
+    euai:targetMilestone "M2" .
+
+euai:Art13_Transparency rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "13" ;
+    euai:legalBasis eu-aiact:Art13 ;
+    rdfs:label "Article 13: Transparency and Provision of Information to Deployers"@en ;
+    dcterms:description "Deterministic deployer metadata, instructions for use, and uncertainty surfacing via zcode compliance info."@en ;
+    rdfs:seeAlso <file:src/launcher.ts> ;
+    euai:targetModule "docs/INSTRUCTIONS_FOR_USE.md" ;
+    euai:targetMilestone "M4" .
+
+euai:Art14_HumanOversight rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "14" ;
+    euai:legalBasis eu-aiact:Art14 ;
+    rdfs:label "Article 14: Human Oversight"@en ;
+    dcterms:description "Fail-closed permission/HITL gates, refusal of yolo bypass in regulated profiles, minimum review dwell time against automation bias, emergency stop audit, and subagent oversight propagation."@en ;
+    rdfs:seeAlso <file:src/relay-admission.ts> , <file:src/powl-ocel-orchestrator.ts> , <file:ontology/zcode-loop.ttl> ;
+    euai:targetModule "src/compliance/oversight.ts" ;
+    euai:targetMilestone "M2" .
+
+euai:Art15_AccuracyRobustnessCybersecurity rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "15" ;
+    euai:legalBasis eu-aiact:Art15 ;
+    rdfs:label "Article 15: Accuracy, Robustness and Cybersecurity"@en ;
+    dcterms:description "POWL v2 soundness-by-construction, optimal A* trace alignment, bounded transactional lifecycle rollback, per-signature retry caps, and adversarial security falsifiers."@en ;
+    rdfs:seeAlso <file:src/powl-ocel-orchestrator.ts> , <file:src/relay-admission.ts> , <file:test/powl-ocel-chicago.test.ts> , <file:test/ocel-conformance.test.ts> ;
+    euai:targetModule "src/compliance/conformance.ts" ;
+    euai:targetMilestone "M3" .
+
+euai:Art17_QualityManagement rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "17" ;
+    euai:legalBasis eu-aiact:Art17 ;
+    rdfs:label "Article 17: Quality Management System"@en ;
+    dcterms:description "QMS manifest, Annex VI internal-control conformity assessment, and Annex V EU Declaration of Conformity."@en ;
+    rdfs:seeAlso <file:scripts/validate-receipts.ts> , <file:scripts/ocel-verify.ts> ;
+    euai:targetModule "src/compliance/qms-conformity.ts" ;
+    euai:targetMilestone "M4" .
+
+euai:Art26_DeployerObligations rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "26" ;
+    euai:legalBasis eu-aiact:Art26 ;
+    rdfs:label "Article 26: Obligations of Deployers of High-Risk AI Systems"@en ;
+    dcterms:description "Deployer preflight enforcing >=180-day log retention, named human overseer_id, monitoring_enabled, and worker notice acknowledgement."@en ;
+    rdfs:seeAlso <file:src/gall-work.ts> ;
+    euai:targetModule "src/compliance/config.ts" ;
+    euai:targetMilestone "M1" .
+
+euai:Art27_FundamentalRightsImpact rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "27" ;
+    euai:legalBasis eu-aiact:Art27 ;
+    rdfs:label "Article 27: Fundamental Rights Impact Assessment (FRIA)"@en ;
+    dcterms:description "Structured FRIA export covering affected stakeholders, oversight controls, and risk mitigations."@en ;
+    rdfs:seeAlso <file:test/eu-ai-act-ontology.test.ts> ;
+    euai:targetModule "src/compliance/risk-ledger.ts" ;
+    euai:targetMilestone "M4" .
+
+euai:Art50_TransparencyDisclosure rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "50" ;
+    euai:legalBasis eu-aiact:Art50 ;
+    rdfs:label "Article 50: Transparency Obligations for AI Interaction & Synthetic Content"@en ;
+    dcterms:description "Direct AI-interaction disclosure in interactive/headless modes and machine-readable provenance marking (sidecar + git trailer)."@en ;
+    rdfs:seeAlso <file:src/launcher.ts> ;
+    euai:targetModule "src/compliance/disclosure.ts" ;
+    euai:targetMilestone "M2" .
+
+euai:Art72_PostMarketMonitoring rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "72" ;
+    euai:legalBasis eu-aiact:Art72 ;
+    rdfs:label "Article 72: Post-Market Monitoring (PMM)"@en ;
+    dcterms:description "Bose/van der Aalst concept-drift detection (Page-Hinkley, ADWIN, EWMA, KS/Mann-Whitney U) and SPC over OCEL 2.0 logs."@en ;
+    rdfs:seeAlso <file:src/execution-providers.ts> , <file:src/session-model-recovery.ts> ;
+    euai:targetModule "src/compliance/concept-drift.ts" ;
+    euai:targetMilestone "M3" .
+
+euai:Art73_SeriousIncidentReporting rdf:type euai:EuAiActArticle ;
+    euai:articleNumber "73" ;
+    euai:legalBasis eu-aiact:Art73 ;
+    rdfs:label "Article 73: Reporting of Serious Incidents"@en ;
+    dcterms:description "Deterministic serious incident packet with 2d/10d/15d statutory deadline classification and OC-DFG root-cause attribution."@en ;
+    rdfs:seeAlso <file:src/generated/receipt.ts> , <file:scripts/ocel-verify.ts> ;
+    euai:targetModule "src/compliance/pmm-incident.ts" ;
+    euai:targetMilestone "M4" .
+
+# =====================================================================
+# 4. Stakeholders, Severities, Likelihoods & Modalities
+# =====================================================================
+
+euai:Stakeholder_DeployerOperator rdf:type airo:Stakeholder ;
+    rdfs:label "AI system deployer / engineering operator"@en .
+
+euai:Stakeholder_HumanOverseer rdf:type airo:Stakeholder ;
+    rdfs:label "Designated human overseer (Art. 14 / Art. 26 overseer_id)"@en .
+
+euai:Stakeholder_AffectedEndUser rdf:type airo:Stakeholder ;
+    rdfs:label "End users and workspace owners affected by agent actions"@en .
+
+euai:Stakeholder_DataSubject rdf:type airo:Stakeholder ;
+    rdfs:label "Data subjects whose PII or credentials may traverse agent context"@en .
+
+euai:Stakeholder_RepoMaintainer rdf:type airo:Stakeholder ;
+    rdfs:label "Repository maintainers and downstream contract consumers"@en .
+
+euai:Stakeholder_MarketSurveillanceAuthority rdf:type airo:Stakeholder ;
+    rdfs:label "EU AI Act national competent / market surveillance authority"@en .
+
+euai:Severity_Critical rdf:type airo:Severity ;
+    rdfs:label "critical (irreversible workspace, security, or audit-integrity harm)"@en .
+
+euai:Severity_High rdf:type airo:Severity ;
+    rdfs:label "high (governance bypass or systemic accuracy degradation)"@en .
+
+euai:Severity_Medium rdf:type airo:Severity ;
+    rdfs:label "medium (transparency or provenance non-conformity)"@en .
+
+euai:Likelihood_Likely rdf:type airo:Likelihood ; rdfs:label "likely prior to controls"@en .
+euai:Likelihood_Possible rdf:type airo:Likelihood ; rdfs:label "possible under adversarial or drifted conditions"@en .
+euai:Likelihood_Rare rdf:type airo:Likelihood ; rdfs:label "rare after technical and oversight controls"@en .
+
+# =====================================================================
+# 5. Operational AI Risks (8 Risks >= 7 Required), Sources, Consequences, Controls & Quantitative Thresholds
+# =====================================================================
+
+# --- Risk 1: PromptInjection ---
+euai:Risk_PromptInjection rdf:type airo:Risk ;
+    rdfs:label "PromptInjection: untrusted tool/repo content hijacks agent control flow"@en ;
+    euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity , euai:Art9_RiskManagement ;
+    airo:hasConsequence euai:Consequence_UnauthorizedInstructionExecution ;
+    airo:hasLikelihood euai:Likelihood_Possible ;
+    airo:hasRiskControl euai:Control_RelayAdmissionAndPreToolGate ;
+    euai:inherentRiskScore "0.85"^^xsd:decimal ;
+    euai:residualRiskScore "0.15"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.20"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/relay-admission.ts> , <file:test/relay-admission.test.ts> .
+
+euai:Source_UntrustedPromptAndToolOutput rdf:type airo:RiskSource ;
+    rdfs:label "Adversarial instructions embedded in workspace files, MCP responses, or user prompts"@en ;
+    airo:isRiskSourceFor euai:Risk_PromptInjection .
+
+euai:Consequence_UnauthorizedInstructionExecution rdf:type airo:Consequence ;
+    rdfs:label "Unauthorized tool invocation or privilege escalation outside leased boundary"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpact euai:Impact_CybersecurityIntegrity .
+
+euai:Impact_CybersecurityIntegrity rdf:type airo:Impact ;
+    rdfs:label "Compromise of cybersecurity, command integrity, and workspace isolation"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_DeployerOperator , euai:Stakeholder_AffectedEndUser .
+
+euai:Control_RelayAdmissionAndPreToolGate rdf:type airo:RiskControl ;
+    rdfs:label "Fail-closed relay admission order + PreToolUse gate + adversarial security falsifiers"@en ;
+    airo:mitigatesRiskConcept euai:Risk_PromptInjection ;
+    euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity ;
+    rdfs:seeAlso <file:src/relay-admission.ts> , <file:test/relay-admission.test.ts> ;
+    euai:targetModule "test/security-adversarial.test.ts" ;
+    euai:targetMilestone "M4" .
+
+# --- Risk 2: UnsafeActuation ---
+euai:Risk_UnsafeActuation rdf:type airo:Risk ;
+    rdfs:label "UnsafeActuation: unadmitted, dirty-state, or livelocked execution mutates workspace"@en ;
+    euai:addressesArticle euai:Art9_RiskManagement , euai:Art14_HumanOversight , euai:Art15_AccuracyRobustnessCybersecurity ;
+    airo:hasConsequence euai:Consequence_DestructiveWorkspaceMutation ;
+    airo:hasLikelihood euai:Likelihood_Rare ;
+    airo:hasRiskControl euai:Control_TransactionalNetAndAllowDoFence ;
+    euai:inherentRiskScore "0.90"^^xsd:decimal ;
+    euai:residualRiskScore "0.10"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.15"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/powl-ocel-orchestrator.ts> , <file:test/powl-ocel-chicago.test.ts> .
+
+euai:Source_UnadmittedOrDirtyStateActuation rdf:type airo:RiskSource ;
+    rdfs:label "Actuation without authority lease or naked timeout token-return leaving dirty workspace state"@en ;
+    airo:isRiskSourceFor euai:Risk_UnsafeActuation .
+
+euai:Consequence_DestructiveWorkspaceMutation rdf:type airo:Consequence ;
+    rdfs:label "Irreversible repository corruption or unreceipted side effects"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpact euai:Impact_WorkspaceSafety .
+
+euai:Impact_WorkspaceSafety rdf:type airo:Impact ;
+    rdfs:label "Loss of workspace integrity and bounded execution guarantees"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_DeployerOperator , euai:Stakeholder_RepoMaintainer .
+
+euai:Control_TransactionalNetAndAllowDoFence rdf:type airo:RiskControl ;
+    rdfs:label "POWL v2 soundness, bounded transactional rollback, retry cap, and explicit allowDo fence"@en ;
+    airo:mitigatesRiskConcept euai:Risk_UnsafeActuation ;
+    euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity ;
+    rdfs:seeAlso <file:src/powl-ocel-orchestrator.ts> , <file:src/relay-admission.ts> , <file:test/powl-ocel-chicago.test.ts> ;
+    euai:targetModule "src/compliance/transactional-net.ts" ;
+    euai:targetMilestone "M3" .
+
+# --- Risk 3: AutomationBias ---
+euai:Risk_AutomationBias rdf:type airo:Risk ;
+    rdfs:label "AutomationBias: human overseer rubber-stamps or bypasses permission reviews"@en ;
+    euai:addressesArticle euai:Art14_HumanOversight , euai:Art13_Transparency ;
+    airo:hasConsequence euai:Consequence_UnreviewedHighRiskAction ;
+    airo:hasLikelihood euai:Likelihood_Possible ;
+    airo:hasRiskControl euai:Control_HumanOversightMinReviewAndYoloRefusal ;
+    euai:inherentRiskScore "0.75"^^xsd:decimal ;
+    euai:residualRiskScore "0.18"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.25"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> , <file:src/powl-ocel-orchestrator.ts> .
+
+euai:Source_RubberStampOrBypassPermissions rdf:type airo:RiskSource ;
+    rdfs:label "Instant approval (< min_review_ms) or --mode yolo / bypassPermissions under regulated profile"@en ;
+    airo:isRiskSourceFor euai:Risk_AutomationBias .
+
+euai:Consequence_UnreviewedHighRiskAction rdf:type airo:Consequence ;
+    rdfs:label "High-risk tool execution proceeds without effective human comprehension or intervention"@en ;
+    airo:hasSeverity euai:Severity_High ;
+    airo:hasImpact euai:Impact_HumanAgencyAndOversight .
+
+euai:Impact_HumanAgencyAndOversight rdf:type airo:Impact ;
+    rdfs:label "Erosion of meaningful Art. 14 human oversight and stop capability"@en ;
+    airo:hasSeverity euai:Severity_High ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_HumanOverseer , euai:Stakeholder_DeployerOperator .
+
+euai:Control_HumanOversightMinReviewAndYoloRefusal rdf:type airo:RiskControl ;
+    rdfs:label "OVERSIGHT_POLICY_REFUSED on yolo in regulated profiles + min_review_ms + AB_RISK_FLAG"@en ;
+    airo:mitigatesRiskConcept euai:Risk_AutomationBias ;
+    euai:addressesArticle euai:Art14_HumanOversight ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> ;
+    euai:targetModule "src/compliance/oversight.ts" ;
+    euai:targetMilestone "M2" .
+
+# --- Risk 4: SecretAndPiiLeakage ---
+euai:Risk_SecretAndPiiLeakage rdf:type airo:Risk ;
+    rdfs:label "SecretAndPiiLeakage: credentials, JWT/PEM tokens, or GDPR PII enter telemetry or snapshots"@en ;
+    euai:addressesArticle euai:Art10_DataGovernance , euai:Art12_RecordKeeping , euai:Art15_AccuracyRobustnessCybersecurity ;
+    airo:hasConsequence euai:Consequence_CredentialAndPiiExposure ;
+    airo:hasLikelihood euai:Likelihood_Rare ;
+    airo:hasRiskControl euai:Control_IngestTimeSecretAndPiiRedaction ;
+    euai:inherentRiskScore "0.80"^^xsd:decimal ;
+    euai:residualRiskScore "0.08"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.10"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:test/ocel-redaction.test.ts> .
+
+euai:Source_UnredactedTelemetryOrEnvExport rdf:type airo:RiskSource ;
+    rdfs:label "Unredacted env vars, Authorization headers, emails, IPs, or home paths in OCEL logs or snapshots"@en ;
+    airo:isRiskSourceFor euai:Risk_SecretAndPiiLeakage .
+
+euai:Consequence_CredentialAndPiiExposure rdf:type airo:Consequence ;
+    rdfs:label "Secret compromise or GDPR personal data exposure in persistent logs"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpact euai:Impact_ConfidentialityAndPrivacy .
+
+euai:Impact_ConfidentialityAndPrivacy rdf:type airo:Impact ;
+    rdfs:label "Violation of Art. 10 data governance and RPM confidentiality"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_DataSubject , euai:Stakeholder_AffectedEndUser .
+
+euai:Control_IngestTimeSecretAndPiiRedaction rdf:type airo:RiskControl ;
+    rdfs:label "Pre-hash ingest secret redaction + Art. 10 PII/HMAC pseudonymization + capability snapshot gate"@en ;
+    airo:mitigatesRiskConcept euai:Risk_SecretAndPiiLeakage ;
+    euai:addressesArticle euai:Art10_DataGovernance ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:test/ocel-redaction.test.ts> ;
+    euai:targetModule "src/compliance/redactor.ts" ;
+    euai:targetMilestone "M1" .
+
+# --- Risk 5: ModelAndProviderDrift ---
+euai:Risk_ModelAndProviderDrift rdf:type airo:Risk ;
+    rdfs:label "ModelAndProviderDrift: silent provider substitution or behavioral concept drift over time"@en ;
+    euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity , euai:Art72_PostMarketMonitoring ;
+    airo:hasConsequence euai:Consequence_ComplianceAndAccuracyDegradation ;
+    airo:hasLikelihood euai:Likelihood_Possible ;
+    airo:hasRiskControl euai:Control_ProviderRegistryAndConceptDriftSpc ;
+    euai:inherentRiskScore "0.70"^^xsd:decimal ;
+    euai:residualRiskScore "0.16"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.25"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/execution-providers.ts> , <file:src/session-model-recovery.ts> .
+
+euai:Source_SilentModelSwapOrBehaviorShift rdf:type airo:RiskSource ;
+    rdfs:label "Upstream model/provider changes or latency/error distribution shift undetected by static tests"@en ;
+    airo:isRiskSourceFor euai:Risk_ModelAndProviderDrift .
+
+euai:Consequence_ComplianceAndAccuracyDegradation rdf:type airo:Consequence ;
+    rdfs:label "Degraded conformance fitness, elevated error rate, or fairness disparity across runs"@en ;
+    airo:hasSeverity euai:Severity_High ;
+    airo:hasImpact euai:Impact_RobustnessAndAccuracy .
+
+euai:Impact_RobustnessAndAccuracy rdf:type airo:Impact ;
+    rdfs:label "Loss of Art. 15 accuracy/robustness and Art. 72 post-market stability"@en ;
+    airo:hasSeverity euai:Severity_High ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_DeployerOperator , euai:Stakeholder_AffectedEndUser .
+
+euai:Control_ProviderRegistryAndConceptDriftSpc rdf:type airo:RiskControl ;
+    rdfs:label "Fail-closed execution provider registry + Page-Hinkley/ADWIN/EWMA/KS concept-drift SPC"@en ;
+    airo:mitigatesRiskConcept euai:Risk_ModelAndProviderDrift ;
+    euai:addressesArticle euai:Art72_PostMarketMonitoring ;
+    rdfs:seeAlso <file:src/execution-providers.ts> , <file:src/session-model-recovery.ts> ;
+    euai:targetModule "src/compliance/concept-drift.ts" ;
+    euai:targetMilestone "M3" .
+
+# --- Risk 6: SubagentOversightBypass ---
+euai:Risk_SubagentOversightBypass rdf:type airo:Risk ;
+    rdfs:label "SubagentOversightBypass: spawned subagents escape PreToolUse gates or OCEL attribution"@en ;
+    euai:addressesArticle euai:Art14_HumanOversight , euai:Art26_DeployerObligations ;
+    airo:hasConsequence euai:Consequence_UngovernedDelegatedExecution ;
+    airo:hasLikelihood euai:Likelihood_Possible ;
+    airo:hasRiskControl euai:Control_SubagentOcelPropagationAndGate ;
+    euai:inherentRiskScore "0.78"^^xsd:decimal ;
+    euai:residualRiskScore "0.14"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.20"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> , <file:src/generated/ocel.ts> , <file:docs/c4-zcode-cli-xaas.md> .
+
+euai:Source_UnmonitoredSubagentSpawnOrEscalation rdf:type airo:RiskSource ;
+    rdfs:label "Child subagent invocations omitting parent session/oversight bindings or spawned_by O2O links"@en ;
+    airo:isRiskSourceFor euai:Risk_SubagentOversightBypass .
+
+euai:Consequence_UngovernedDelegatedExecution rdf:type airo:Consequence ;
+    rdfs:label "Delegated agent performs unapproved mutations without parent oversight visibility"@en ;
+    airo:hasSeverity euai:Severity_High ;
+    airo:hasImpact euai:Impact_HumanAgencyAndOversight .
+
+euai:Control_SubagentOcelPropagationAndGate rdf:type airo:RiskControl ;
+    rdfs:label "Subagent spawned_by O2O lineage + inherited regulated oversight policy propagation"@en ;
+    airo:mitigatesRiskConcept euai:Risk_SubagentOversightBypass ;
+    euai:addressesArticle euai:Art14_HumanOversight ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> , <file:src/generated/ocel.ts> ;
+    euai:targetModule "src/compliance/oversight.ts" ;
+    euai:targetMilestone "M2" .
+
+# --- Risk 7: LogTamperingOrLoss ---
+euai:Risk_LogTamperingOrLoss rdf:type airo:Risk ;
+    rdfs:label "LogTamperingOrLoss: unchained, truncated, or prematurely purged compliance logs"@en ;
+    euai:addressesArticle euai:Art12_RecordKeeping , euai:Art15_AccuracyRobustnessCybersecurity , euai:Art26_DeployerObligations , euai:Art73_SeriousIncidentReporting ;
+    airo:hasConsequence euai:Consequence_AuditTrailInvalidation ;
+    airo:hasLikelihood euai:Likelihood_Rare ;
+    airo:hasRiskControl euai:Control_Sha256HashChainAndRetentionPolicy ;
+    euai:inherentRiskScore "0.85"^^xsd:decimal ;
+    euai:residualRiskScore "0.05"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.10"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/generated/ocel.ts> , <file:src/generated/receipt.ts> , <file:test/ocel-generated.test.ts> , <file:scripts/ocel-verify.ts> .
+
+euai:Source_MutableUnchainedOrShortRetentionLogs rdf:type airo:RiskSource ;
+    rdfs:label "Missing pi_hash/pi_parent chain, unverified app-server capture, or retention < 180 days"@en ;
+    airo:isRiskSourceFor euai:Risk_LogTamperingOrLoss .
+
+euai:Consequence_AuditTrailInvalidation rdf:type airo:Consequence ;
+    rdfs:label "Inability to reconstruct serious incident root cause or prove regulatory conformance"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpact euai:Impact_RegulatoryTraceability .
+
+euai:Impact_RegulatoryTraceability rdf:type airo:Impact ;
+    rdfs:label "Loss of Art. 12 traceability and Art. 73 incident forensic evidence"@en ;
+    airo:hasSeverity euai:Severity_Critical ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_MarketSurveillanceAuthority , euai:Stakeholder_DeployerOperator .
+
+euai:Control_Sha256HashChainAndRetentionPolicy rdf:type airo:RiskControl ;
+    rdfs:label "SHA-256 pi_hash chain + seal-once receipt + verified Source-AppServer + SQLite WAL >=180d retention"@en ;
+    airo:mitigatesRiskConcept euai:Risk_LogTamperingOrLoss ;
+    euai:addressesArticle euai:Art12_RecordKeeping ;
+    rdfs:seeAlso <file:src/generated/ocel.ts> , <file:src/generated/receipt.ts> , <file:test/ocel-generated.test.ts> , <file:test/ocel-appserver-capture.test.ts> ;
+    euai:targetModule "src/compliance/ocel-sqlite.ts" ;
+    euai:targetMilestone "M2" .
+
+# --- Risk 8: UndisclosedAiInteraction ---
+euai:Risk_UndisclosedAiInteraction rdf:type airo:Risk ;
+    rdfs:label "UndisclosedAiInteraction: user or downstream consumer lacks Art. 50 disclosure or provenance mark"@en ;
+    euai:addressesArticle euai:Art50_TransparencyDisclosure , euai:Art13_Transparency ;
+    airo:hasConsequence euai:Consequence_DeceptiveAiAttribution ;
+    airo:hasLikelihood euai:Likelihood_Rare ;
+    airo:hasRiskControl euai:Control_Art50DisclosureAndProvenanceMark ;
+    euai:inherentRiskScore "0.65"^^xsd:decimal ;
+    euai:residualRiskScore "0.10"^^xsd:decimal ;
+    euai:residualRiskThreshold "0.15"^^xsd:decimal ;
+    euai:riskUnit "probability_weighted_severity_0_to_1" ;
+    rdfs:seeAlso <file:src/launcher.ts> .
+
+euai:Source_MissingDisclosureOrProvenanceMarker rdf:type airo:RiskSource ;
+    rdfs:label "Headless/interactive output emitted without Art. 50(1) notice or Art. 50(2) provenance sidecar/trailer"@en ;
+    airo:isRiskSourceFor euai:Risk_UndisclosedAiInteraction .
+
+euai:Consequence_DeceptiveAiAttribution rdf:type airo:Consequence ;
+    rdfs:label "Downstream recipients cannot distinguish AI-generated artifacts or direct AI interaction"@en ;
+    airo:hasSeverity euai:Severity_Medium ;
+    airo:hasImpact euai:Impact_TransparencyCompliance .
+
+euai:Impact_TransparencyCompliance rdf:type airo:Impact ;
+    rdfs:label "Non-compliance with EU AI Act Art. 50 immediate August 2026 transparency rules"@en ;
+    airo:hasSeverity euai:Severity_Medium ;
+    airo:hasImpactOnStakeholder euai:Stakeholder_AffectedEndUser , euai:Stakeholder_DeployerOperator .
+
+euai:Control_Art50DisclosureAndProvenanceMark rdf:type airo:RiskControl ;
+    rdfs:label "Art. 50(1) interactive/stream disclosure + Art. 50(2) machine-readable provenance sidecar & git trailer"@en ;
+    airo:mitigatesRiskConcept euai:Risk_UndisclosedAiInteraction ;
+    euai:addressesArticle euai:Art50_TransparencyDisclosure ;
+    rdfs:seeAlso <file:src/launcher.ts> ;
+    euai:targetModule "src/compliance/disclosure.ts" ;
+    euai:targetMilestone "M2" .
+
+# =====================================================================
+# 6. IEEE OCEL 2.0 Compliance Objects, O2O Relations & Compliance Events
+#    (Extension namespace euai: — preserves src/generated/ocel.ts 35/14 closed set)
+# =====================================================================
+
+euai:OcelObj_Session rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "session" ; owl:sameAs zl:ObjectType-session .
+euai:OcelObj_Turn rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "turn" ; owl:sameAs zl:ObjectType-turn .
+euai:OcelObj_ToolCall rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "tool_call" ; owl:sameAs zl:ObjectType-tool_call .
+euai:OcelObj_ModelRequest rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "model_request" ; owl:sameAs zl:ObjectType-model_request .
+euai:OcelObj_Subagent rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "subagent" ; owl:sameAs zl:ObjectType-subagent .
+euai:OcelObj_Permission rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "permission" ; owl:sameAs zl:ObjectType-permission .
+
+euai:OcelObj_ComplianceProfile rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "compliance_profile" ; euai:addressesArticle euai:Art9_RiskManagement .
+euai:OcelObj_OversightDecision rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "oversight_decision" ; euai:addressesArticle euai:Art14_HumanOversight .
+euai:OcelObj_DisclosureNotice rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "disclosure_notice" ; euai:addressesArticle euai:Art50_TransparencyDisclosure .
+euai:OcelObj_ProvenanceArtifact rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "provenance_artifact" ; euai:addressesArticle euai:Art50_TransparencyDisclosure .
+euai:OcelObj_WorkspaceSnapshot rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "workspace_snapshot" ; euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity .
+euai:OcelObj_RiskAssessment rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "risk_assessment" ; euai:addressesArticle euai:Art9_RiskManagement .
+euai:OcelObj_IncidentPacket rdf:type euai:ComplianceObjectType ; euai:ocelTypeId "incident_packet" ; euai:addressesArticle euai:Art73_SeriousIncidentReporting .
+
+# O2O Relations (7 canonical compliance O2O links)
+euai:O2O_InSession rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "in_session" .
+euai:O2O_InTurn rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "in_turn" .
+euai:O2O_UsesProvider rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "uses_provider" .
+euai:O2O_SpawnedBy rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "spawned_by" .
+euai:O2O_Governs rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "governs" .
+euai:O2O_MutatedIn rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "mutated_in" .
+euai:O2O_Seals rdf:type euai:ComplianceO2ORelation ; euai:o2oQualifier "seals" .
+
+# Compliance Event Types
+euai:OcelEvt_Art50DisclosureEmitted rdf:type euai:ComplianceEventType ; euai:ocelTypeId "art50_disclosure_emitted" ; euai:addressesArticle euai:Art50_TransparencyDisclosure .
+euai:OcelEvt_ProvenanceMarked rdf:type euai:ComplianceEventType ; euai:ocelTypeId "provenance_marked" ; euai:addressesArticle euai:Art50_TransparencyDisclosure .
+euai:OcelEvt_OversightIntervened rdf:type euai:ComplianceEventType ; euai:ocelTypeId "oversight_intervened" ; euai:addressesArticle euai:Art14_HumanOversight .
+euai:OcelEvt_OversightPolicyRefused rdf:type euai:ComplianceEventType ; euai:ocelTypeId "oversight_policy_refused" ; euai:addressesArticle euai:Art14_HumanOversight .
+euai:OcelEvt_WorkspaceRolledBack rdf:type euai:ComplianceEventType ; euai:ocelTypeId "workspace_rolled_back" ; euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity .
+euai:OcelEvt_RetryBudgetExhausted rdf:type euai:ComplianceEventType ; euai:ocelTypeId "retry_budget_exhausted" ; euai:addressesArticle euai:Art15_AccuracyRobustnessCybersecurity .
+euai:OcelEvt_DriftDetected rdf:type euai:ComplianceEventType ; euai:ocelTypeId "drift_detected" ; euai:addressesArticle euai:Art72_PostMarketMonitoring .
+euai:OcelEvt_IncidentClassified rdf:type euai:ComplianceEventType ; euai:ocelTypeId "incident_classified" ; euai:addressesArticle euai:Art73_SeriousIncidentReporting .
+euai:OcelEvt_ComplianceAssessed rdf:type euai:ComplianceEventType ; euai:ocelTypeId "compliance_assessed" ; euai:addressesArticle euai:Art17_QualityManagement .
+
+# =====================================================================
+# 7. Declare / LTLf Safety Constraints (7 Templates + Anti-Vacuity)
+# =====================================================================
+
+euai:Declare_Init_DisclosureOrSession rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "Init" ;
+    euai:declareActivator "art50_disclosure_emitted" ;
+    euai:addressesArticle euai:Art50_TransparencyDisclosure ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "Init(art50_disclosure_emitted) for compliant AI-interaction runs"@en ;
+    euai:targetModule "src/compliance/declare-conformance.ts" ;
+    euai:targetMilestone "M3" .
+
+euai:Declare_Existence_ReceiptPersist rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "Existence" ;
+    euai:declareActivator "receipt_persist" ;
+    euai:addressesArticle euai:Art12_RecordKeeping ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "Existence(receipt_persist): every closed session persists a sealed cryptographic receipt"@en ;
+    rdfs:seeAlso <file:src/generated/receipt.ts> .
+
+euai:Declare_Absence_UnredactedSecretInLog rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "Absence" ;
+    euai:declareActivator "unredacted_secret_detected" ;
+    euai:addressesArticle euai:Art10_DataGovernance , euai:Art15_AccuracyRobustnessCybersecurity ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "Absence(unredacted_secret_detected): zero raw credentials or PII may enter OCEL logs"@en ;
+    rdfs:seeAlso <file:src/ocel-tap.ts> , <file:test/ocel-redaction.test.ts> .
+
+euai:Declare_Response_PermissionReqToResolved rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "Response" ;
+    euai:declareActivator "permission_requested" ;
+    euai:declareTarget "permission_resolved" ;
+    euai:addressesArticle euai:Art14_HumanOversight ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "Response(permission_requested, permission_resolved): every permission prompt reaches human resolution"@en ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> .
+
+euai:Declare_Precedence_PermissionBeforeTool rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "Precedence" ;
+    euai:declareActivator "permission_resolved" ;
+    euai:declareTarget "tool_updated" ;
+    euai:addressesArticle euai:Art14_HumanOversight ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "Precedence(permission_resolved, tool_updated): gated tool actuation requires prior permission resolution"@en ;
+    rdfs:seeAlso <file:ontology/zcode-loop.ttl> .
+
+euai:Declare_ChainResponse_TurnStartToOutcome rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "ChainResponse" ;
+    euai:declareActivator "turn_started" ;
+    euai:declareTarget "turn_completed|turn_failed" ;
+    euai:addressesArticle euai:Art12_RecordKeeping , euai:Art15_AccuracyRobustnessCybersecurity ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "ChainResponse(turn_started, turn_completed|turn_failed): bounded turn lifecycle closes cleanly"@en ;
+    rdfs:seeAlso <file:src/generated/loop.ts> , <file:test/ocel-conformance.test.ts> .
+
+euai:Declare_NotCoExistence_RegulatedAndYolo rdf:type euai:DeclareConstraint ;
+    euai:declareTemplate "NotCoExistence" ;
+    euai:declareActivator "high_risk_profile_active" ;
+    euai:declareTarget "yolo_bypass_enabled" ;
+    euai:addressesArticle euai:Art14_HumanOversight ;
+    euai:antiVacuityRequired "true"^^xsd:boolean ;
+    euai:satisfactionSemantics "SATISFIED_WITNESSED | SATISFIED_VACUOUS | VIOLATED" ;
+    rdfs:label "NotCoExistence(high_risk_profile_active, yolo_bypass_enabled): regulated profiles refuse permission bypass"@en ;
+    euai:targetModule "src/compliance/oversight.ts" ;
+    euai:targetMilestone "M2" .

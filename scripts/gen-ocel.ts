@@ -47,11 +47,17 @@ dir = "templates"
 `;
 }
 
+function supportsSkipEaAdmission(): boolean {
+  const help = spawnSync("ggen", ["sync", "run", "--help"], { encoding: "utf8", env: process.env });
+  return `${help.stdout ?? ""}\n${help.stderr ?? ""}`.includes("--skip-ea-admission");
+}
+
 export function generateInto(work: string, ontologyPath = join(root, "ontology", "zcode-loop.ttl")): void {
   mkdirSync(join(work, "templates"), { recursive: true });
   cpSync(ontologyPath, join(work, "zcode-loop.ttl"));
   writeFileSync(join(work, "ggen.toml"), ggenToml("zcode-loop.ttl"));
-  const run = spawnSync("ggen", ["sync", "run"], { cwd: work, encoding: "utf8", env: process.env });
+  const args = supportsSkipEaAdmission() ? ["sync", "run", "--skip-ea-admission"] : ["sync", "run"];
+  const run = spawnSync("ggen", args, { cwd: work, encoding: "utf8", env: process.env });
   if (run.status !== 0) throw new Error(`ggen sync run failed (${run.status}): ${(run.stderr || run.stdout).slice(-2000)}`);
 }
 

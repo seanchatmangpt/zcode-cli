@@ -10,12 +10,15 @@ export * from "./igniter-sync.ts";
 export * from "./receipt-sink.ts";
 export * from "./castle-publish.ts";
 export * from "./foundry-loop.ts";
+export * from "./repo-verifier-court.ts";
+export * from "./zcode-executor.ts";
 
 import type { AdapterRegistry, TransitionCourtAdapter, WorkOrderSourceAdapter } from "./types.ts";
 import { SjiraWorkOrderSource, type SjiraIoAdapterOptions } from "./sjira-io.ts";
 import { MarketplaceCourtAdapter, type MarketplaceCourtOptions } from "./marketplace-court.ts";
 import { IgniterSyncCourtAdapter, type IgniterSyncOptions } from "./igniter-sync.ts";
 import { CastlePublishCourtAdapter, type CastlePublishOptions } from "./castle-publish.ts";
+import { RepoVerifierCourtAdapter, type RepoVerifierCourtOptions } from "./repo-verifier-court.ts";
 
 export interface BuildAdapterRegistryOptions {
   cwd: string;
@@ -23,6 +26,7 @@ export interface BuildAdapterRegistryOptions {
   marketplace?: MarketplaceCourtOptions & { enabled?: boolean };
   igniter?: IgniterSyncOptions & { enabled?: boolean };
   castle?: CastlePublishOptions & { enabled?: boolean };
+  repoVerifier?: RepoVerifierCourtOptions & { enabled?: boolean };
 }
 
 export function buildAdapterRegistry(opts: BuildAdapterRegistryOptions): AdapterRegistry {
@@ -40,6 +44,9 @@ export function buildAdapterRegistry(opts: BuildAdapterRegistryOptions): Adapter
   }
   if (opts.castle?.enabled !== false && opts.castle) {
     courts.push(new CastlePublishCourtAdapter(opts.castle));
+  }
+  if (opts.repoVerifier?.enabled !== false && opts.repoVerifier) {
+    courts.push(new RepoVerifierCourtAdapter(opts.repoVerifier));
   }
 
   return { sources, courts };

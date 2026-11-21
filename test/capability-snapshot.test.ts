@@ -28,7 +28,7 @@ beforeAll(() => {
   home = mkdtempSync(join(realpathSync(tmpdir()), "capsnap-"));
   const glm = "Applications/ZCode.app/Contents/Resources/glm";
   put(".zcode/AGENTS.md", "agents-v1");
-  put(".zcode/cli/config.json", '{"token":"t1"}');
+  put(".zcode/cli/config.json", '{"model":"m1"}');
   put(".zcode/cli/plugins/p/a.txt", "plugin-a");
   put(`${glm}/runtime.js`, "runtime-v1");
   put("Applications/ZCode.app/Contents/Info.plist", "plist-v1");
@@ -70,7 +70,7 @@ describe("capability-snapshot.sh", () => {
     expect(glmOnly.code).toBe(0);
     expect(glmOnly.out).toContain("expected: runtime update");
 
-    put(".zcode/cli/config.json", '{"token":"MUTATED"}');
+    put(".zcode/cli/config.json", '{"model":"MUTATED"}');
     const r = run("diff", snap);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("CHANGED");
@@ -88,7 +88,7 @@ describe("capability-snapshot.sh", () => {
     put("Applications/ZCode.app/Contents/Resources/glm/stray-new-file.js", "stray");
     const r = run("restore", snap, "--apply");
     expect(r.code).toBe(0);
-    expect(readFileSync(join(home, ".zcode/cli/config.json"), "utf8")).toBe('{"token":"t1"}');
+    expect(readFileSync(join(home, ".zcode/cli/config.json"), "utf8")).toBe('{"model":"m1"}');
     expect(readFileSync(join(home, ".zcode/cli/plugins/p/a.txt"), "utf8")).toBe("plugin-a");
     const glm = join(home, "Applications/ZCode.app/Contents/Resources/glm");
     expect(readFileSync(join(glm, "runtime.js"), "utf8")).toBe("runtime-v1");

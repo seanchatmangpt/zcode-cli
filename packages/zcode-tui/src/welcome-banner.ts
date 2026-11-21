@@ -4,7 +4,7 @@ import {
   type Component
 } from "@earendil-works/pi-tui";
 
-import { sanitizeTerminalText } from "./terminal-text.ts";
+import { sanitizeTerminalText, wrapTerminalText } from "./terminal-text.ts";
 import type { ZCodeTheme } from "./theme.ts";
 
 /** A terminal interpretation of the split, diagonal Z in the Desktop app icon. */
@@ -20,12 +20,19 @@ export const WIDE_BANNER_MIN_WIDTH = 48;
 
 const maxInformationWidth = 52;
 const boxTitle = "── SYSTEM INITIATED ";
+const DEFAULT_ART50_NOTICE =
+  "AI System (EU AI Act Art. 50): Interacting with an AI coding agent";
 
 export interface WelcomeBannerOptions {
   branch?: string;
   distributionVersion?: string;
   runtimeVersion: string;
   workspace: string;
+  complianceProfile?: string;
+  provider?: string;
+  model?: string;
+  aiDisclosure?: boolean;
+  disclosureText?: string;
 }
 
 function bannerText(value: string): string {
@@ -60,6 +67,11 @@ export class WelcomeBanner implements Component {
   private readonly distributionVersion?: string;
   private readonly runtimeVersion: string;
   private readonly workspace: string;
+  private readonly complianceProfile?: string;
+  private readonly provider?: string;
+  private readonly model?: string;
+  private readonly disclosureText?: string;
+  private readonly showDisclosure: boolean;
 
   constructor(
     private readonly theme: ZCodeTheme,
@@ -73,6 +85,29 @@ export class WelcomeBanner implements Component {
       : undefined;
     this.runtimeVersion = bannerText(options.runtimeVersion);
     this.workspace = bannerText(options.workspace);
+    this.complianceProfile = options.complianceProfile
+      ? bannerText(options.complianceProfile)
+      : undefined;
+    this.provider = options.provider
+      ? bannerText(options.provider)
+      : undefined;
+    this.model = options.model
+      ? bannerText(options.model)
+      : undefined;
+    this.disclosureText = options.disclosureText
+      ? bannerText(options.disclosureText)
+      : undefined;
+
+    const hasComplianceInput =
+      options.aiDisclosure !== undefined ||
+      options.complianceProfile !== undefined ||
+      options.provider !== undefined ||
+      options.model !== undefined ||
+      options.disclosureText !== undefined;
+    const regulated =
+      this.complianceProfile !== undefined && this.complianceProfile !== "standard";
+    this.showDisclosure =
+      hasComplianceInput && (regulated || options.aiDisclosure !== false);
   }
 
   render(width: number): string[] {
@@ -83,6 +118,22 @@ export class WelcomeBanner implements Component {
   }
 
   invalidate(): void {}
+
+  private disclosureLines(width: number): string[] {
+    if (!this.showDisclosure) return [];
+    const base = this.disclosureText || DEFAULT_ART50_NOTICE;
+    const modelTag = [this.provider, this.model].filter(Boolean).join("/");
+    const profileTag = this.complianceProfile
+      ? `profile ${this.complianceProfile}`
+      : undefined;
+    const rawNotice = [base, modelTag, profileTag].filter(Boolean).join(" · ");
+    const contentWidth = Math.max(1, width - 1);
+    const wrapped = wrapTerminalText(rawNotice, contentWidth);
+    return wrapped.map((line, index) => {
+      const styled = index === 0 ? this.theme.warning(line) : this.theme.muted(line);
+      return truncateToWidth(` ${styled}`, width, "…");
+    });
+  }
 
   private renderWide(width: number): string[] {
     const contentWidth = Math.max(1, width - 1);
@@ -109,9 +160,10 @@ export class WelcomeBanner implements Component {
       this.theme.muted(boxRule("└", panelWidth))
     ];
 
-    return BRAND_MARK.map((line, index) => (
+    const brandLines = BRAND_MARK.map((line, index) => (
       ` ${this.theme.accent(line)}${gap}${information[index] ?? ""}`
     ));
+    return [...brandLines, ...this.disclosureLines(width)];
   }
 
   private locationLine(width: number): string {
@@ -134,10 +186,11 @@ export class WelcomeBanner implements Component {
     const location = [this.workspace, this.branch ? `branch ${this.branch}` : undefined]
       .filter((value): value is string => Boolean(value))
       .join(" · ");
-    return [
+    const baseLines = [
       ` ${truncateToWidth(identity, contentWidth)}`,
       ` ${this.theme.muted(truncateFromStart(location, contentWidth))}`
     ];
+    return [...baseLines, ...this.disclosureLines(width)];
   }
 }
 

@@ -36,35 +36,37 @@ Excluded by design (state, not capability; too large to snapshot):
 
 Snapshots must never carry credential values:
 
-- `save` stages user state via APFS clonefile, then replaces
-  credential-shaped values (`apiKey`, `api_key`, `token`, `secret`,
-  `password`) with `REDACTED` in text files under 2 MB (json/jsonl/jsonc/md/
-  txt/toml/yaml/yml).
-- A fail-closed scan (`assert_no_secrets`) then walks ALL file sizes; if any
-  credential-shaped value survives outside the redaction window, the save is
-  killed with `refusing to snapshot: credential-shaped values remain in
-  staging` — no snapshot is written.
-- Redaction and the fail-closed scan only see values of ≥8 characters;
-  shorter credential values are neither redacted nor flagged.
-- The shell redactor matches the exact keys `apiKey`, `api_key`, `token`,
-  `secret`, `password` only — compound keys (`authToken`, `refresh_token`,
-  `accessToken`) and `authorization` are NOT covered on the shell side.
-- `assert_no_secrets` deliberately excludes `token` (too generic), so a long
-  `token` value survives unscanned.
-- The OCEL ingest redactor (`src/ocel-tap.ts`) redacts ANY non-empty
-  credential-shaped value regardless of length — there is no ≥8-character
-  floor, so 1–7 character secrets are REDACTED too. Its token key set is
-  case-insensitive and includes `refresh_token` and `access_token` (alongside
-  the legacy `refreshtoken` spelling); secrets escaped or JSON-embedded
-  inside string payloads are redacted; and `Authorization` coverage extends
-  beyond `Bearer` to `Basic`/`Token`/digest credentials and raw keys behind
-  an explicit `Authorization` header context (`Bearer` stays redacted
-  anywhere; ordinary prose like "the token bucket refills" survives).
-- The asymmetry is therefore deliberate: the OCEL side (event chain, hashes
-  commit to the log) is the stricter contract; the shell side (snapshot
-  tarballs, restored by hand) is the looser one — a short or compound-keyed
-  credential that OCEL ingest redacts can pass through a snapshot, and the
-  fail-closed scan will not flag it.
+- `save` stages user state via APFS clonefile, then replaces **any non-empty**
+  credential-shaped value (no `>= 8`-character floor; empty `""` preserved)
+  with `REDACTED` in text files under 2 MB
+  (`json`/`jsonl`/`jsonc`/`md`/`txt`/`toml`/`yaml`/`yml`).
+- Covered credential shapes align with `src/ocel-tap.ts` and
+  `src/compliance/redactor.ts` (secret-only mode):
+  - Case-insensitive credential keys (`apiKey`, `api_key`, `*_api_key`,
+    `token`, `refresh_token`, `access_token`, `refreshtoken`, `authToken`,
+    `secret`, `*_secret`, `password`, `passwd`, `private_key`,
+    `authorization`, `cookie`/`set-cookie`) in plain JSON, 1- and 2-level
+    escaped JSON (`\"key\":\"val\"`, `\\\"key\\\":\\\"val\\\"`), and TOML
+    `"..."` / `'...'` assignments.
+  - Compact JWTs (`eyJ...`), multi-line and single-line PEM private key blocks
+    (`-----BEGIN ... PRIVATE KEY----- ... -----END ... PRIVATE KEY-----`),
+    `Bearer` tokens, and `Authorization` header schemes (`Basic`, `Token`,
+    `Digest`, `ApiKey`, and raw keys), while preserving ordinary prose such as
+    `"the token bucket refills"`.
+- A fail-closed scan (`assert_no_secrets`) then walks ALL file sizes
+  (including `>= 2 MB`) for all credential shapes above (excluding bare generic
+  `"token"` in `assert_no_secrets` to avoid false positives on large
+  tokenizer/grammar bundles); if any credential-shaped value survives outside
+  the redaction window, `save` is killed with `refusing to snapshot:
+  credential-shaped values remain in staging` and no snapshot husk is left
+  behind.
+- Intentional boundary with `src/compliance/redactor.ts`:
+  `capability-snapshot.sh` preserves OS home paths (`/Users/<user>`) and user
+  config emails because snapshots restore local user capability trees, whereas
+  `src/compliance/redactor.ts` (`redactPii: true`) additionally scrubs GDPR
+  PII (emails, IPv4/IPv6, `/Users/<user>`, `/home/<user>`) and
+  `[ocel].redact_env` / `[compliance].redact_env` values for EU AI Act Art. 10
+  and Responsible Process Mining (RPM) telemetry.
 - Consequence for `restore`: restored snapshots have `REDACTED` credential
   fields. Re-enter credentials from the live registry / failover copy (both
   excluded from snapshots) after a restore.

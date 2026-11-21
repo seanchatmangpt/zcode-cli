@@ -8,15 +8,19 @@
  *
  * Loop (CONSTRUCT only):
  *   1. WorkOrderSource.ingestFrontier() → POWL PartialOrder
- *   2. For each activity: courts.validateWriteScope → executor → courts.verify
+ *   2. For each activity: snapshot → executor → courts.verify
+ *      - On court refusal: transactional rollback + SignatureRetryLimiter + remediation diagnostics
+ *      - On ALIVE: optional atomic git commit on canonical branch (no worktrees, no force-push)
  *   3. ReceiptSink / source.recordOutcome (honest standing)
- *   4. Optional deriveFollowUpPowl when remediation needed
+ *   4. Stop-court: converge early when fitness === 1.0 && soundTermination && all ALIVE;
+ *      otherwise deriveFollowUpPowl up to maxCycles / retry-limiter bound.
  *
  * See ARD Appendix F.
  */
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -29,6 +33,11 @@ import {
   type PowlNode,
   type Transition
 } from "../powl-ocel-orchestrator.ts";
+import {
+  captureWorkspaceSnapshot,
+  SignatureRetryLimiter,
+  type WorkspaceSnapshotHandle
+} from "../compliance/transactional-net.ts";
 import type {
   ExitCode,
   Standing,
@@ -51,11 +60,21 @@ export interface FoundryLoopOptions {
   blocked?: boolean;
   unverified?: boolean;
   maxCycles?: number;
+  /** Stop early once a cycle reaches fitness === 1.0 && soundTermination && all ALIVE (default true). */
+  untilDrained?: boolean;
+  /** Enable transactional snapshot + rollback on court refusal (default false in dry-run, true in live). */
+  transactionalRollback?: boolean;
+  /** Max retries for the same normalized failure signature before halting (default 2). */
+  maxSameSignatureRetries?: number;
+  /** Auto-commit verified ALIVE transitions on the canonical branch (default false). */
+  autoCommitAlive?: boolean;
+  /** Shared diagnostics map fed into live agent remediation prompts. */
+  priorDiagnostics?: Map<string, string>;
   /** Dry-run: skip agent subprocess; still run courts + receipts. */
   dryRun?: boolean;
   /**
    * Transition executor. Dry-run default writes a tiny ontology touch file and
-   * returns ok. Live callers inject bin/zcode.js runners.
+   * returns ok. Live callers inject createZcodeAgentExecutor(...).
    */
   executor?: (t: Transition) => Promise<ExecutionOutcome>;
   outputDir?: string;
@@ -67,10 +86,13 @@ export interface FoundryLoopResult {
   aggregateStanding: Standing;
   exitCode: ExitCode;
   powlRootId: string;
+  converged: boolean;
+  retryBudgetExhausted: boolean;
+  commitsCreated: string[];
 }
 
 /**
- * Run one autonomic foundry cycle (or bounded multi-cycle) over adapter courts.
+ * Run one autonomic foundry cycle (or bounded convergence multi-cycle) over adapter courts.
  * This is the Gall spine: keep it small, tested, and honest.
  */
 export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryLoopResult> {
@@ -88,7 +110,10 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       close: null,
       aggregateStanding: standing,
       exitCode: pre.exitCode,
-      powlRootId: "preflight-refused"
+      powlRootId: "preflight-refused",
+      converged: false,
+      retryBudgetExhausted: false,
+      commitsCreated: []
     };
   }
 
@@ -96,7 +121,14 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   validatePowlTree(current);
   const cycles: OcelPowlRunResult[] = [];
   const receipts: TransitionReceipt[] = [];
+  const commitsCreated: string[] = [];
   const maxCycles = opts.maxCycles ?? 1;
+  const untilDrained = opts.untilDrained ?? true;
+  const useRollback = opts.transactionalRollback ?? !opts.dryRun;
+  const retryLimiter = new SignatureRetryLimiter(opts.maxSameSignatureRetries ?? 2);
+  const priorDiagnostics = opts.priorDiagnostics ?? new Map<string, string>();
+  let converged = false;
+  let retryBudgetExhausted = false;
 
   const defaultExecutor = async (t: Transition): Promise<ExecutionOutcome> => {
     if (opts.dryRun) {
@@ -120,26 +152,82 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const executor = opts.executor ?? defaultExecutor;
 
   for (let c = 1; c <= maxCycles; c += 1) {
-    const run = await executePowlWithTokenReplay(current, async (t) => {
-      const res = await executor(t);
-      // Post-transition courts (marketplace / igniter / castle)
-      if (res.ok) {
-        const verdicts = [];
-        for (const court of opts.courts) {
-          verdicts.push(await court.verifyPostTransition(opts.workspaceDir));
+    const run = await executePowlWithTokenReplay(
+      current,
+      async (t) => {
+        let snapshot: WorkspaceSnapshotHandle | null = null;
+        if (useRollback && existsSync(opts.workspaceDir)) {
+          try {
+            snapshot = captureWorkspaceSnapshot(opts.workspaceDir);
+          } catch {
+            snapshot = null;
+          }
         }
-        const exit = composeCourtExits(verdicts.map((v) => v.exitCode));
-        if (exit !== 0) {
-          const detail = verdicts.flatMap((v) => v.diagnostics).join("; ");
-          return { ok: false, exitCode: exit, detail: detail || `court exit ${exit}` };
+
+        try {
+          const res = await executor(t);
+          if (!res.ok) {
+            if (snapshot && !res.transportBackpressure) {
+              try {
+                snapshot.rollback(res.detail ?? "executor_failed", t.id, true);
+              } catch {
+                // Best-effort rollback; refusal still propagates.
+              }
+            }
+            if (!res.transportBackpressure) {
+              const sig = res.detail ?? `exit_${res.exitCode ?? 1}`;
+              priorDiagnostics.set(t.activityId ?? t.id, res.detail ?? "executor failed");
+              try {
+                retryLimiter.recordFailure(sig, t.id);
+              } catch {
+                retryBudgetExhausted = true;
+              }
+            }
+            return res;
+          }
+
+          // Post-transition courts (marketplace / igniter / castle / repo-verifier)
+          const verdicts = [];
+          for (const court of opts.courts) {
+            verdicts.push(await court.verifyPostTransition(opts.workspaceDir));
+          }
+          const exit = composeCourtExits(verdicts.map((v) => v.exitCode));
+          if (exit !== 0) {
+            const detail = verdicts.flatMap((v) => v.diagnostics).join("; ") || `court exit ${exit}`;
+            if (snapshot) {
+              try {
+                snapshot.rollback(detail, t.id, true);
+              } catch {
+                // Best-effort rollback; refusal still propagates.
+              }
+            }
+            priorDiagnostics.set(t.activityId ?? t.id, detail);
+            try {
+              retryLimiter.recordFailure(detail, t.id);
+            } catch {
+              retryBudgetExhausted = true;
+            }
+            return { ok: false, exitCode: exit, detail };
+          }
+
+          // Verified ALIVE transition: optionally commit atomically on canonical branch.
+          priorDiagnostics.delete(t.activityId ?? t.id);
+          if (opts.autoCommitAlive && !opts.dryRun && existsSync(join(opts.workspaceDir, ".git"))) {
+            const sha = commitAliveTransition(opts.workspaceDir, t);
+            if (sha) commitsCreated.push(sha);
+          }
+          return res;
+        } finally {
+          snapshot?.dispose();
         }
-      }
-      return res;
-    }, { outputDir: opts.outputDir ? join(opts.outputDir, `cycle-${c}`) : undefined });
+      },
+      { outputDir: opts.outputDir ? join(opts.outputDir, `cycle-${c}`) : undefined }
+    );
 
     cycles.push(run);
 
     // Emit per-artifact receipts from OCEL standing
+    const cycleReceipts: TransitionReceipt[] = [];
     for (const obj of run.ocel.objects.filter((o) => o.type !== "Workflow")) {
       const last = obj.attributes.at(-1)?.value ?? "UNKNOWN";
       let standing: Standing =
@@ -158,7 +246,23 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
         detail: last
       };
       receipts.push(receipt);
+      cycleReceipts.push(receipt);
       await opts.source.recordOutcome(receipt);
+    }
+
+    const cycleAllPassed =
+      run.replay.soundTermination &&
+      run.replay.fitness === 1.0 &&
+      cycleReceipts.length > 0 &&
+      cycleReceipts.every((r) => r.standing === "ALIVE" || (opts.sandbox && r.standing === "PARTIAL_ALIVE"));
+
+    if (untilDrained && cycleAllPassed) {
+      converged = true;
+      break;
+    }
+
+    if (retryBudgetExhausted) {
+      break;
     }
 
     if (c < maxCycles) {
@@ -171,11 +275,17 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   let aggregateStanding: Standing = "UNKNOWN";
   let exitCode: ExitCode = 2;
 
+  // Use the final cycle's receipts when converged so remediated failures don't taint final standing.
+  const finalCycleId = `${cycleId}-c${cycles.length}`;
+  const effectiveReceipts = converged
+    ? receipts.filter((r) => r.cycleId === finalCycleId)
+    : receipts;
+
   if (opts.sink) {
     close = opts.sink.closeCycle({
       cycleId,
       startedAt,
-      receipts,
+      receipts: effectiveReceipts,
       sandbox: opts.sandbox,
       blocked: opts.blocked,
       unverified: opts.unverified,
@@ -183,12 +293,12 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     });
     aggregateStanding = close.aggregateStanding;
     exitCode = close.exitCode;
-  } else if (receipts.length > 0) {
-    aggregateStanding = receipts.every((r) => r.standing === "ALIVE")
+  } else if (effectiveReceipts.length > 0) {
+    aggregateStanding = effectiveReceipts.every((r) => r.standing === "ALIVE")
       ? "ALIVE"
-      : receipts.some((r) => r.standing === "REFUSED")
+      : effectiveReceipts.some((r) => r.standing === "REFUSED")
         ? "REFUSED"
-        : receipts.some((r) => r.standing === "PARTIAL_ALIVE")
+        : effectiveReceipts.some((r) => r.standing === "PARTIAL_ALIVE")
           ? "PARTIAL_ALIVE"
           : "UNVERIFIED";
     exitCode =
@@ -203,8 +313,34 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     close,
     aggregateStanding,
     exitCode,
-    powlRootId: cycles[0]?.workflowId ?? current.id
+    powlRootId: cycles[0]?.workflowId ?? current.id,
+    converged,
+    retryBudgetExhausted,
+    commitsCreated
   };
+}
+
+function commitAliveTransition(workspaceDir: string, t: Transition): string | null {
+  const status = spawnSync("git", ["status", "--porcelain"], {
+    cwd: workspaceDir,
+    encoding: "utf8"
+  });
+  if (status.status !== 0 || !status.stdout.trim()) {
+    return null;
+  }
+  const add = spawnSync("git", ["add", "-A"], { cwd: workspaceDir, encoding: "utf8" });
+  if (add.status !== 0) return null;
+  const msg = `foundry(${t.activityId ?? t.id}): ${t.label}`;
+  const commit = spawnSync("git", ["commit", "-m", msg], {
+    cwd: workspaceDir,
+    encoding: "utf8"
+  });
+  if (commit.status !== 0) return null;
+  const rev = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspaceDir,
+    encoding: "utf8"
+  });
+  return rev.status === 0 ? rev.stdout.trim() : null;
 }
 
 async function runWriteScope(courts: TransitionCourtAdapter[], files: string[]): Promise<ExitCode> {
