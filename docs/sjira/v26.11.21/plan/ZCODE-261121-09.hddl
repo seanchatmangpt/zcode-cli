@@ -1,0 +1,32 @@
+; GENERATED hand-projection of canonical RDF WorkOrder https://ggen-igniter.dev/ontology/semantic-jira#zcode-261121-09. DO NOT EDIT.
+;; Zero-authority projection: ferroplan-hddl (define (problem ...) (:htn ...)) grammar.
+
+(define (problem promote-ZCODE-261121-09) (:domain semantic-jira-workorder)
+  (:objects
+    ZCODE-261121-09 - workorder
+    court-zcode-261121-09 - court
+    local-execution-evidence receipt-evidence source-evidence - evidence
+    fal-zcode-261121-09-1 - falsifier
+    cp-zcode-261121-09 - checkpoint
+  )
+  (:init
+    (workorder ZCODE-261121-09)
+    (standing ZCODE-261121-09 UNKNOWN)
+    (base-sha ZCODE-261121-09 2580032e6933d2c850918ccdf3d132d506a34726)
+    (authority-ceiling ZCODE-261121-09 CONSTRUCT)
+    (exact-subject ZCODE-261121-09 "zcode-cli:order-hook-mxloop-leakage")
+    (repository ZCODE-261121-09 "seanchatmangpt/zcode-cli")
+    (replay-identity ZCODE-261121-09 "semantic-jira:v26.11.21:ZCODE-261121-09")
+    (projection-authority NONE)
+  )
+  (:goal (and (standing ZCODE-261121-09 ALIVE) (has-receipt ZCODE-261121-09)))
+  (:htn
+    :ordered-subtasks (and
+      (close-court ZCODE-261121-09 court-zcode-261121-09)
+      (produce-evidence ZCODE-261121-09 local-execution-evidence)
+      (produce-evidence ZCODE-261121-09 receipt-evidence)
+      (produce-evidence ZCODE-261121-09 source-evidence)
+      (record-receipt-class ZCODE-261121-09 verification)
+      (discharge-falsifier ZCODE-261121-09 fal-zcode-261121-09-1)
+      (reach-checkpoint ZCODE-261121-09 cp-zcode-261121-09)
+    )))

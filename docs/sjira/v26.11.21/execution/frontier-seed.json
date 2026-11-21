@@ -1,0 +1,107 @@
+{
+  "milestone": "v26.11.21",
+  "baseSha": "2580032e6933d2c850918ccdf3d132d506a34726",
+  "orders": [
+    {
+      "id": "ZCODE-261121-01",
+      "lane": "EXPLORE",
+      "title": "Dogfood loop \u2014 pin GGEN_BIN and run sJira \u2192 POWL \u2192 ledger with honest exits",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-02",
+      "lane": "EXPLORE",
+      "title": "Calver / lock / AGENTS honesty \u2014 close provenance drift",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-03",
+      "lane": "EXPLORE",
+      "title": "STANDING-RECEIPT re-cert after integrity wave",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-04",
+      "lane": "EXPLORE",
+      "title": "HDDL ferroplan 16/16 + pyshacl work-order corpus refresh",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-05",
+      "lane": "EXPLORE",
+      "title": "Vendor-free CI truthfulness \u2014 Chicago timeout first-class",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-06",
+      "lane": "EXPLORE",
+      "title": "Interactive TUI OCEL coverage gap \u2014 measure or close",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-07",
+      "lane": "EXPLORE",
+      "title": "XAAS PreToolUse live gate verification",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-08",
+      "lane": "EXPLORE",
+      "title": "EU AI Act Annex IV / Art.11 technical documentation pack",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-09",
+      "lane": "EXPLORE",
+      "title": "order_hook / MxLoop pack leakage \u2014 pack-owned fix",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-10",
+      "lane": "EXPLORE",
+      "title": "WorkspaceFingerprint / rollback \u2014 Explore stub only",
+      "depends": []
+    },
+    {
+      "id": "ZCODE-261121-11",
+      "lane": "EXPLOIT",
+      "title": "[EXPLOIT] A* trace alignment over enforced-net heuristics",
+      "depends": [
+        "01"
+      ]
+    },
+    {
+      "id": "ZCODE-261121-12",
+      "lane": "EXPLOIT",
+      "title": "[EXPLOIT] Bounded transactional lifecycle nets + workspace rollback",
+      "depends": [
+        "01",
+        "10"
+      ]
+    },
+    {
+      "id": "ZCODE-261121-13",
+      "lane": "EXPLOIT",
+      "title": "[EXPLOIT] OCPN / OC-DFG process discovery",
+      "depends": [
+        "01"
+      ]
+    },
+    {
+      "id": "ZCODE-261121-14",
+      "lane": "EXPLOIT",
+      "title": "[EXPLOIT] Kingman / TTFT AIMD split from heavy-tailed turns",
+      "depends": [
+        "01"
+      ]
+    },
+    {
+      "id": "ZCODE-261121-15",
+      "lane": "EXPLOIT",
+      "title": "[EXPLOIT] Cap per-signature remediation retries",
+      "depends": [
+        "01"
+      ]
+    }
+  ]
+}
