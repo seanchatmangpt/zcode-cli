@@ -62,8 +62,8 @@
       "role": "ocel_fixture",
       "article": "Art. 12",
       "description": "Golden stream-json OCEL 2.0 capture fixture",
-      "sha256": "2d1f4766d75a5fac4c974ed45b3eb098b720bfd232e3d332972646749dd0e187",
-      "bytes": 24429
+      "sha256": "0ec3f9e09d8c88928e015039734f61fd15dcce8be96746a6039d94a8523cb600",
+      "bytes": 25199
     },
     {
       "id": "fixture-ocel-app-server-list",
@@ -71,8 +71,8 @@
       "role": "ocel_fixture",
       "article": "Art. 12",
       "description": "Verified Source-AppServer OCEL 2.0 capture fixture",
-      "sha256": "1803b5036a6b6db4b7aa76aa56d082f0daae4cd5a1d5c08211461f8f5e7114df",
-      "bytes": 18950
+      "sha256": "72e0c6b01e89dd9999d07085b04807c306e591870b03bd62cc0aea1c07bae348",
+      "bytes": 19720
     },
     {
       "id": "runtime-lock",

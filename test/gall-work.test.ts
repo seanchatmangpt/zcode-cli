@@ -18,6 +18,8 @@ import {
   parseGallWorkLease,
   resolveFabricTarget,
   standingForOutcome,
+  workOrderPath,
+  workOrderPathKeyed,
   type FabricTarget,
   type FetchLike,
   type GallWorkLease
@@ -452,5 +454,29 @@ describe("lease state file keying (XAAS_LEASE_ID)", () => {
       expect(segment).not.toContain("/");
       expect(segment).toMatch(/\.json$/);
     }
+  });
+
+  test("workOrderPath is keyed per XAAS_LEASE_ID the same way as lease files", () => {
+    withEnv(undefined, () => {
+      const legacy = workOrderPath(cwd);
+      expect(legacy.endsWith(".work-order.json")).toBe(true);
+      expect(legacy).not.toContain(`-${epochId}`);
+      expect(legacy).toBe(workOrderPathKeyed(cwd, undefined));
+    });
+    withEnv(epochId, () => {
+      const keyed = workOrderPath(cwd);
+      expect(keyed.endsWith(`-${epochId}.work-order.json`)).toBe(true);
+      expect(keyed).toBe(workOrderPathKeyed(cwd, epochId));
+      // Same hash stem as the legacy path; only the suffix differs.
+      const legacy = workOrderPathKeyed(cwd, undefined);
+      expect(keyed.startsWith(legacy.slice(0, -".work-order.json".length) + "-")).toBe(true);
+    });
+  });
+
+  test("two epochs sharing one cwd get distinct work-order paths under XAAS_LEASE_ID", () => {
+    const a = workOrderPathKeyed(cwd, "epoch-aaa");
+    const b = workOrderPathKeyed(cwd, "epoch-bbb");
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(workOrderPathKeyed(cwd, undefined));
   });
 });

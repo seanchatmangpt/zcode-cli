@@ -80,13 +80,11 @@ export class MarketplaceCourtAdapter implements TransitionCourtAdapter {
   }
 
   async validateWriteScope(files: string[]): Promise<ExitCode> {
+    // Fail-closed: never short-circuit the batch. Consumer ggen.toml [packs.*]
+    // (FM-CONFIG-101) is enforced post-transition via content scan; a lone
+    // ggen.toml path is otherwise allowlisted like any non-generated path.
     for (const f of files) {
       const norm = f.replace(/\\/g, "/");
-      if (/(^|\/)ggen\.toml$/i.test(norm)) {
-        // Consumer ggen.toml edits that introduce [packs.*] are refused post-hoc;
-        // pre-condition blocks writing packs tables into consumer configs.
-        return 0;
-      }
       if (/generated\//i.test(norm) || /_generated\./i.test(norm)) {
         return 1;
       }

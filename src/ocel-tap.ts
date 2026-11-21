@@ -1,6 +1,7 @@
 // Launcher-level OCEL 2.0 tap for the zcode runtime (residue: UNSUPPORTED generator-capability, see
-// HANDWRITTEN.md). It consumes the runtime's own output -- `-p --output-format stream-json` lines or
-// `app-server` notifications -- and feeds them to the ontology-generated tap in ./generated/ocel.ts.
+// HANDWRITTEN.md). It consumes the runtime's own output -- `-p`/`--prompt`/`--print`
+// `--output-format stream-json` lines or `app-server` notifications -- and feeds them to the
+// ontology-generated tap in ./generated/ocel.ts.
 // Nothing here knows an event type: mapping, hashing and receipts come from the generated modules.
 // Gated by ZCODE_OCEL=1; output directory ZCODE_OCEL_DIR (default ~/.zcode/ocel).
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -25,14 +26,42 @@ export function ocelDirectory(env: NodeJS.ProcessEnv): string {
   return env.ZCODE_OCEL_DIR?.trim() || join(homedir(), ".zcode", "ocel");
 }
 
+/**
+ * Headless prompt flags that can emit a tappable stream-json wire.
+ * Includes Claude Code `--print` and the native `--prompt`/`-p` forms:
+ * `normalizeClaudeAgentArgs` rewrites `--print <prompt>` → `--prompt <prompt>`
+ * before `startOcelTap` runs, so recognizing only `--print`/`-p` silently
+ * disabled Art.12 logging for the common agent headless path.
+ */
+export function isHeadlessPromptArg(arg: string): boolean {
+  return (
+    arg === "-p"
+    || arg === "--print"
+    || arg === "--prompt"
+    || arg.startsWith("--prompt=")
+    || (arg.startsWith("-p") && arg.length > 2)
+  );
+}
+
+/** True when argv is a headless single-prompt invocation (native or Claude-parity form). */
+export function isHeadlessPromptArgs(args: readonly string[]): boolean {
+  for (const a of args) {
+    if (a === "--") break;
+    if (isHeadlessPromptArg(a)) return true;
+  }
+  return false;
+}
+
 /** Which source (if any) the given runtime arguments produce events for. */
 export function ocelSourceForArgs(args: readonly string[]): string | undefined {
   if (args[0] === "app-server") return APP_SERVER_SOURCE;
-  const print = args.includes("-p") || args.includes("--print");
+  // Claude-parity rewrites `--print <prompt>` → `--prompt <prompt>` before runRuntime;
+  // accept every headless prompt form so ZCODE_OCEL=1 cannot silently drop the tap.
+  const headless = isHeadlessPromptArgs(args);
   const idx = args.findIndex((a) => a === "--output-format" || a.startsWith("--output-format="));
   if (idx < 0) return undefined;
   const value = args[idx].includes("=") ? args[idx].split("=")[1] : args[idx + 1];
-  return print && value === "stream-json" ? STREAM_SOURCE : undefined;
+  return headless && value === "stream-json" ? STREAM_SOURCE : undefined;
 }
 
 // gall-work binds its construct turn to the leased subject and work order:
@@ -116,6 +145,18 @@ export function sessionOf(record: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** Path-safe session file id: redacted session strings may still carry URL
+ * punctuation (`/`, `?`, `#`) that would escape the OCEL output directory.
+ * B4 pre-fix: a secret-bearing URL sessionId was used verbatim as the
+ * `<session>.jsonocel` basename before redaction ran. */
+export function sanitizeSessionFileId(sessionId: string): string {
+  const cleaned = sessionId
+    .replace(/[/\\?%*:|"<>#&=]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  return (cleaned.slice(0, 180) || `unknown-${Date.now()}`);
+}
+
 const secretKeyRe = /^(apiKey|api_key|token|secret|password|authorization|access_token|refresh_token|refreshtoken)$/i;
 // Matches secret keys inside STRING payloads that embed JSON, including the
 // escaped forms (\", \\\") produced when a tool result quotes a config file.
@@ -130,6 +171,13 @@ const escapedSecretRe = /((?:\\{0,2}")(?:apiKey|api_key|refresh_token|access_tok
 const bearerRe = /(Bearer\s+)\S{8,}/gi;
 const authSchemeRe = /(authorization\s*[:=]\s*(?:basic|token|digest)\s+)\S{3,}/gi;
 const authRawRe = /(authorization\s*[:=]\s*)(?!basic\s|token\s|digest\s|bearer\s)\S{8,}/gi;
+// URL query/fragment credential params (B4 pre-fix, 2026-11-21): secrets in
+// `?api_key=` / `#access_token=` / `?token=` never matched a JSON key shape.
+// Same key family as secretKeyRe; longer underscored forms precede `token`.
+const urlSecretParamRe =
+  /([?&#](?:apiKey|api_key|access_token|refresh_token|token|secret|password|authorization)=)([^&#\s"']+)/gi;
+// URL userinfo password: scheme://user:password@host
+const urlUserinfoRe = /(\/\/[^:/?#\s"']+:)([^@/?#\s"']+)(@)/g;
 
 function redactNode(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactNode);
@@ -149,13 +197,16 @@ function redactNode(value: unknown): unknown {
   return value;
 }
 
-/** Scheme-shaped credentials in free text: Bearer anywhere, other schemes
- * and raw keys only behind an explicit Authorization header. */
+/** Scheme-shaped credentials and URL-embedded secrets in free text: Bearer
+ * anywhere; other Authorization schemes only behind an explicit header;
+ * credential query/fragment params and userinfo passwords in URLs. */
 function redactSchemes(text: string): string {
   return text
     .replace(bearerRe, "$1REDACTED")
     .replace(authSchemeRe, "$1REDACTED")
-    .replace(authRawRe, "$1REDACTED");
+    .replace(authRawRe, "$1REDACTED")
+    .replace(urlSecretParamRe, "$1REDACTED")
+    .replace(urlUserinfoRe, "$1REDACTED$3");
 }
 
 function redactEmbeddedSecrets(text: string): string {
@@ -186,6 +237,51 @@ export function redactSecrets(text: string): string {
   }
   let out = text.replace(escapedSecretRe, "$1REDACTED$3");
   return redactSchemes(out);
+}
+
+
+/**
+ * IEEE OCEL 2.0 attribute closure for sealed logs: every attribute name that appears
+ * on an event must be declared on that event's eventType. The generated Tap.toOcel()
+ * emits empty eventType.attributes[]; this post-step closes the gap without editing
+ * src/generated/.
+ */
+export function closeEventTypeAttributes(doc: OcelDoc): OcelDoc {
+  const observed = new Map<string, Set<string>>();
+  for (const e of doc.events) {
+    let set = observed.get(e.type);
+    if (!set) {
+      set = new Set();
+      observed.set(e.type, set);
+    }
+    for (const a of e.attributes) set.add(a.name);
+  }
+  return {
+    ...doc,
+    eventTypes: doc.eventTypes.map((t) => {
+      const names = observed.get(t.name);
+      if (!names || names.size === 0) return t;
+      const prior = Array.isArray(t.attributes) ? t.attributes : [];
+      const existing = new Set<string>();
+      const merged: { name: string; type: string }[] = [];
+      for (const a of prior) {
+        if (a && typeof a === "object" && typeof (a as { name?: unknown }).name === "string") {
+          const name = (a as { name: string }).name;
+          if (existing.has(name)) continue;
+          existing.add(name);
+          merged.push({
+            name,
+            type: typeof (a as { type?: unknown }).type === "string" ? (a as { type: string }).type : "string",
+          });
+        }
+      }
+      for (const name of [...names].sort()) {
+        if (existing.has(name)) continue;
+        merged.push({ name, type: "string" });
+      }
+      return { name: t.name, attributes: merged };
+    }),
+  };
 }
 
 export class OcelRecorder {
@@ -222,8 +318,11 @@ export class OcelRecorder {
 
   feed(record: unknown): void {
     if (this.closed) return;
-    this.sessionId ??= sessionOf(record);
+    // Redact BEFORE binding sessionId: a pre-redaction capture let secret-
+    // bearing URL sessionIds reach receipt.session and the output basename
+    // (B4 pre-fix, 2026-11-21).
     const redacted = redactNode(normalizeRecord(record));
+    this.sessionId ??= sessionOf(redacted);
     if (this.tap.spec.kind === "stream-json") this.tap.ingest(JSON.stringify(redacted));
     else this.tap.ingest(redacted as object);
   }
@@ -234,8 +333,8 @@ export class OcelRecorder {
     if (this.carry.trim() !== "") this.feedLine(this.carry);
     this.carry = "";
     this.closed = true;
-    const sessionId = this.sessionId ?? `unknown-${Date.now()}`;
-    const doc = this.tap.toOcel();
+    const sessionId = sanitizeSessionFileId(this.sessionId ?? `unknown-${Date.now()}`);
+    const doc = closeEventTypeAttributes(this.tap.toOcel());
     const head = this.tap.seal();
     const ocelText = JSON.stringify(doc);
     mkdirSync(this.dir, { recursive: true });
@@ -294,4 +393,16 @@ export function startOcelTap(args: readonly string[], env: NodeJS.ProcessEnv): O
   if (!ocelEnabled(env)) return undefined;
   const source = ocelSourceForArgs(args);
   return source ? new OcelRecorder(source, ocelDirectory(env), leaseIdentityFromEnv(env)) : undefined;
+}
+
+/**
+ * When ZCODE_OCEL=1 but the invocation is not tappable, return a one-line stderr warning.
+ * Record-keeping must not fail closed into silence (EU AI Act Art.12 analog).
+ */
+export function ocelUntappableWarning(args: readonly string[], env: NodeJS.ProcessEnv): string | undefined {
+  if (!ocelEnabled(env) || ocelSourceForArgs(args)) return undefined;
+  if (isHeadlessPromptArgs(args)) {
+    return "OCEL: ZCODE_OCEL=1 but --output-format stream-json is missing; tap disabled (no .jsonocel)\n";
+  }
+  return "OCEL: ZCODE_OCEL=1 but invocation is not tappable (need app-server or headless + --output-format stream-json); tap disabled\n";
 }

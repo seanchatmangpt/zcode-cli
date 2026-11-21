@@ -253,14 +253,27 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
     }
   });
 
-  test("receipts:validate script admits all repository receipts", () => {
-    const res = spawnSync(process.execPath, ["run", "receipts:validate"], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      timeout: 15_000
-    });
-    expect(res.status).toBe(0);
-    expect(res.stdout).toContain("ADMITTED");
+  test("receipts:validate fails closed on defective ZCODE-26923-01 while integrity floor admits clean receipts", async () => {
+    const { checkReceiptIntegrity } = await import("../scripts/validate-receipts.ts");
+    // Clean historical v26.9.22 receipt passes in-repo SHA + ALIVE integrity floor
+    expect(checkReceiptIntegrity("receipts/v26.9.22/g0.json")).toEqual([]);
+    // Defective ZCODE-26923-01 is caught fail-closed (PR #28 integrity floor)
+    const defectiveFindings = checkReceiptIntegrity("receipts/v26.9.23/ZCODE-26923-01.json");
+    expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+
+    // Running scripts/validate-receipts.ts on the defective receipt refuses fail-closed (exit 1)
+    const res = spawnSync(
+      process.execPath,
+      ["scripts/validate-receipts.ts", "receipts/v26.9.23/ZCODE-26923-01.json"],
+      {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        timeout: 15_000
+      }
+    );
+    expect(res.status).toBe(1);
+    expect(`${res.stdout}\n${res.stderr}`).toContain("REFUSED");
   });
 
   test("launcher enforces subagent oversight inheritance, --cwd config resolution, and pre-settings refusal without mutating HOME", () => {

@@ -33,7 +33,8 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
         id: "WO-FIX-STATE",
         label: "Fix state.txt to ok",
         objectType: "WorkOrder",
-        standing: "UNKNOWN"
+        standing: "UNKNOWN",
+        targetFile: "state.txt"
       })}\n`
     );
 
@@ -103,7 +104,8 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
         id: "WO-STUCK",
         label: "Always failing transition",
         objectType: "WorkOrder",
-        standing: "UNKNOWN"
+        standing: "UNKNOWN",
+        targetFile: "state.txt"
       })}\n`
     );
 

@@ -5,11 +5,12 @@ Orientation for agents working in this repo. Every claim below was checked again
 ## What this repo is
 
 `zcode-app-cli` is a thin CLI/TUI wrapper around the official ZCode agent runtime
-(unofficial terminal client; see README "Architecture"). Releases use calendar
-versioning (`v<year>.<month>.<day>`; current wave: `v26.9.23`), replacing the
-`<appVersion>-<build>` scheme that ended at `3.14.1-27`. The vendored runtime is
-Desktop `3.14.3` (official CLI `0.16.9`), as recorded by the last sync in
-`vendor/extraction.json`:
+(unofficial terminal client; see README "Architecture"). Release *docs* use calendar
+versioning (`v<year>.<month>.<day>`; sjira waves through `v26.11.20`, receipts under
+`v26.9.22` / `v26.9.23`). `package.json` may still carry a legacy `<appVersion>-<build>`
+id (currently `3.14.4-1`) until the next calver cut. The locked vendored runtime is
+Desktop `3.14.4` per `zcode-runtime.lock.json` (re-check `vendor/extraction.json` after
+`sync:locked` / `sync:local`):
 
 ```
 Node.js npm launcher (config / login / version metadata)
@@ -30,7 +31,7 @@ or a local ZCode.app (`bun run sync:local`; provenance in `vendor/extraction.jso
 
 See `docs/RELEASING.md` and `scripts/sync-runtime.ts`.
 
-Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, built with tsdown.
+Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0, TypeScript ESM, built with tsdown.
 
 ## Commands
 
@@ -58,10 +59,10 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
 - `docs/` — `CONFIGURATION.md` (+ `.zh-CN.md`), `PROVIDER_CONFIG.md` (+ `.zh-CN.md`),
   `HOST_INTEGRATION.md`, `RELEASING.md`, `DEVELOPMENT.md`, `TUI_SCENARIO_TESTING.md`,
   `SQLITE_CONCURRENCY.md`, `THIRD_PARTY_CONTENT.md`, `c4-zcode-cli-xaas.md`, `sjira/`, `jira/`
-- `receipts/<milestone>/` — session receipts (JSON), validated by `scripts/validate-receipts.ts`; current: `receipts/v26.9.22/`
-- `docs/sjira/<milestone>/` — work orders (current: `v26.9.22`): `work-orders.ttl` is the canonical
-  graph; `jira/` holds ticket projections (current wave: `GALL-CHECKPOINT-*`, archive: `v26.9.18/`);
-  `plan/` HDDL plans; plus `receipts/`, `execution/`, `ard/`
+- `receipts/<milestone>/` — session receipts (JSON), validated by `scripts/validate-receipts.ts`; present waves: `receipts/v26.9.22/`, `receipts/v26.9.23/` (Explore Exp-4 reports under `receipts/v26.11.20/` are SPEC-gated, not yet filed)
+- `docs/sjira/<milestone>/` — work orders; normative Explore/Exploit ARD at `docs/sjira/v26.11.20/`
+  (older ZOCEL waves: `v26.9.21`–`v26.9.23`). `work-orders.ttl` is the canonical graph where present;
+  `jira/` holds ticket projections; `plan/` HDDL plans; plus `receipts/`, `execution/`, `ard/`
 - `HANDWRITTEN.md` (repo root) — the handwritten-residue ledger
 - Root: `bin/zcode.ts` (bin entry is `bin/zcode.js`, built), `ontology/zcode-loop.ttl`,
   `packages/zcode-tui`, `provider.example.json`, `setting.example.json`
@@ -75,8 +76,8 @@ Toolchain: bun (`packageManager: bun@1.3.12`), Node >= 22.19.0, TypeScript ESM, 
   `scripts/gen-ocel.ts`, `scripts/gen-zcode-loop.ts` + `zcode-events.ts`, the `test/ocel-*.test.ts` falsifiers).
   No row, no hand-written file.
 - Do not edit `vendor/zcode.cjs` by hand. The bundle is patched by `runtimePatchPlan` in
-  `scripts/sync-runtime.ts` (25 patches registered; the recorded 3.14.3 sync shows 21 applied,
-  2 already present upstream, 2 skipped as incompatible — see `vendor/extraction.json`).
+  `scripts/sync-runtime.ts` (patch plan is authoritative; applied/skipped counts are recorded per
+  sync in `vendor/extraction.json` after `sync:locked` / `sync:local`).
 - `zcode-runtime.lock.json` pins the upstream runtime; change it only through the release flow in `docs/RELEASING.md`.
 
 ## Coupling to xaas

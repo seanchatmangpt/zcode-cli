@@ -420,8 +420,8 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
 
     const refusedEv = last.ocel.events.find((e) => e.type === "transition_refused")!;
     expect(refusedEv.attributes.find((a) => a.name === "signature")?.value).toBe("CANONICAL_TS_ERROR_2322");
-    expect(refusedEv.attributes.find((a) => a.name === "detail")?.value).toBe(
-      "failed on t_remediate-3-0 at cycle 3"
+    expect(refusedEv.attributes.find((a) => a.name === "detail")?.value).toMatch(
+      /^failed on __powl_t_act_remediate-3-0_\d+ at cycle 3$/
     );
 
     const exhaustedEv = last.ocel.events.find((e) => e.type === "retry_budget_exhausted")!;

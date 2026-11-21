@@ -282,6 +282,10 @@ export class KingmanScheduler {
     };
   }
 
+  medianServiceMs(): number {
+    return medianOf(this.serviceSamples);
+  }
+
   getSnapshot(): KingmanMetricsSnapshot {
     const svcStats = computeSummaryStats(this.serviceSamples);
     const arrStats = computeSummaryStats(this.interArrivalSamples);

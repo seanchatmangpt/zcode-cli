@@ -26,6 +26,7 @@ import {
   commandIdDigest,
   dispatchRelayCommand,
   localAllowDoFromEnv,
+  reclaimStaleLockIfUnchanged,
   relayIdentityEnv,
   relayStatePath,
   type AdmissionResult,
@@ -484,6 +485,21 @@ describe("two workers on one lease/epoch serialize through the durable file", ()
     writeFileSync(`${w.statePath}.lock`, `${child}\n`);
     expect(w.admit(envelope()).outcome).toBe("admitted");
     expect(existsSync(`${w.statePath}.lock`)).toBe(false);
+  });
+
+  test("stale reclaim is compare-and-unlink: unchanged dead pid is removed, replaced live lock is not", async () => {
+    const dir = stateDir();
+    const lockPath = join(dir, "epoch.relay-ack.json.lock");
+    const deadPayload = "424242\n";
+    writeFileSync(lockPath, deadPayload);
+    expect(reclaimStaleLockIfUnchanged(lockPath, deadPayload)).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+
+    writeFileSync(lockPath, deadPayload);
+    // TOCTOU: observed dead pid, but a live holder replaced the file first.
+    writeFileSync(lockPath, `${process.pid}\n`);
+    expect(reclaimStaleLockIfUnchanged(lockPath, deadPayload)).toBe(false);
+    expect(readFileSync(lockPath, "utf8")).toBe(`${process.pid}\n`);
   });
 });
 

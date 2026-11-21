@@ -1,35 +1,66 @@
 {
   "objectTypes": [
-    "repo",
-    "commit",
-    "branch",
-    "task"
+    {
+      "name": "branch",
+      "attributes": []
+    },
+    {
+      "name": "commit",
+      "attributes": []
+    },
+    {
+      "name": "repo",
+      "attributes": []
+    },
+    {
+      "name": "task",
+      "attributes": []
+    }
   ],
   "eventTypes": [
-    "bind",
-    "construct",
-    "publish"
+    {
+      "name": "bind",
+      "attributes": []
+    },
+    {
+      "name": "construct",
+      "attributes": []
+    },
+    {
+      "name": "publish",
+      "attributes": []
+    }
   ],
   "objects": [
     {
       "id": "seanchatmangpt/zcode-cli",
-      "type": "repo"
+      "type": "repo",
+      "attributes": [],
+      "relationships": []
     },
     {
       "id": "e561c4c0f2cdb6202f3cbcabfcabd82f8c2b619c",
-      "type": "commit"
+      "type": "commit",
+      "attributes": [],
+      "relationships": []
     },
     {
       "id": "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
-      "type": "commit"
+      "type": "commit",
+      "attributes": [],
+      "relationships": []
     },
     {
       "id": "runtime/v26.9.28-polyevidence-portable-execution-r16-published",
-      "type": "branch"
+      "type": "branch",
+      "attributes": [],
+      "relationships": []
     },
     {
       "id": "research-runtime-r16",
-      "type": "task"
+      "type": "task",
+      "attributes": [],
+      "relationships": []
     }
   ],
   "events": [
@@ -37,28 +68,52 @@
       "id": "bind-r16",
       "type": "bind",
       "time": "2026-09-28T16:24:08Z",
-      "objects": [
-        "seanchatmangpt/zcode-cli",
-        "e561c4c0f2cdb6202f3cbcabfcabd82f8c2b619c",
-        "research-runtime-r16"
+      "attributes": [],
+      "relationships": [
+        {
+          "objectId": "seanchatmangpt/zcode-cli",
+          "qualifier": "involves"
+        },
+        {
+          "objectId": "e561c4c0f2cdb6202f3cbcabfcabd82f8c2b619c",
+          "qualifier": "involves"
+        },
+        {
+          "objectId": "research-runtime-r16",
+          "qualifier": "involves"
+        }
       ]
     },
     {
       "id": "construct-r16",
       "type": "construct",
       "time": "2026-09-28T16:24:08Z",
-      "objects": [
-        "research-runtime-r16",
-        "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09"
+      "attributes": [],
+      "relationships": [
+        {
+          "objectId": "research-runtime-r16",
+          "qualifier": "involves"
+        },
+        {
+          "objectId": "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
+          "qualifier": "involves"
+        }
       ]
     },
     {
       "id": "publish-r16",
       "type": "publish",
       "time": "2026-09-28T16:24:08Z",
-      "objects": [
-        "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
-        "runtime/v26.9.28-polyevidence-portable-execution-r16-published"
+      "attributes": [],
+      "relationships": [
+        {
+          "objectId": "e4c27e89d7fa8df65bb76e64ee89b6d9578a6b09",
+          "qualifier": "involves"
+        },
+        {
+          "objectId": "runtime/v26.9.28-polyevidence-portable-execution-r16-published",
+          "qualifier": "involves"
+        }
       ]
     }
   ]

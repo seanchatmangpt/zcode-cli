@@ -127,23 +127,20 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const useRollback = opts.transactionalRollback ?? !opts.dryRun;
   const retryLimiter = new SignatureRetryLimiter(opts.maxSameSignatureRetries ?? 2);
   const priorDiagnostics = opts.priorDiagnostics ?? new Map<string, string>();
+  const knownTargetFiles = collectTargetFiles(current);
   let converged = false;
   let retryBudgetExhausted = false;
 
   const defaultExecutor = async (t: Transition): Promise<ExecutionOutcome> => {
     if (opts.dryRun) {
       // Gall spine: mutating touch stays inside allowlisted ontology path when present.
-      const touchDir = join(opts.workspaceDir, "ontology");
-      mkdirSync(touchDir, { recursive: true });
-      const file = join(touchDir, `${t.activityId ?? t.id}.ttl`);
+      // Write-scope is enforced by the outer court wrapper *before* this mutates.
+      const rel = `ontology/${t.activityId ?? t.id}.ttl`;
+      mkdirSync(join(opts.workspaceDir, "ontology"), { recursive: true });
       writeFileSync(
-        file,
+        join(opts.workspaceDir, rel),
         `# UNSUPPORTED(generator-capability): handwritten\n# dry-run touch for ${t.id}\n`
       );
-      const scope = await runWriteScope(opts.courts, [file.replace(opts.workspaceDir + "/", "")]);
-      if (scope !== 0) {
-        return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
-      }
       return { ok: true, exitCode: 0, detail: "dry-run" };
     }
     return { ok: false, exitCode: 2, detail: "live executor not configured (SUBJECT_MISSING)" };
@@ -152,9 +149,26 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const executor = opts.executor ?? defaultExecutor;
 
   for (let c = 1; c <= maxCycles; c += 1) {
+    for (const [k, v] of collectTargetFiles(current)) {
+      knownTargetFiles.set(k, v);
+    }
     const run = await executePowlWithTokenReplay(
       current,
       async (t) => {
+        // Pre: validateWriteScope before any executor mutation (EU AI Act human oversight / fail-closed).
+        const planned = plannedWriteRel(t, opts, knownTargetFiles);
+        if (!planned) {
+          return {
+            ok: false,
+            exitCode: 2,
+            detail: "write-scope refused: transition missing targetFile (SUBJECT_MISSING)"
+          };
+        }
+        const scope = await runWriteScope(opts.courts, [planned]);
+        if (scope !== 0) {
+          return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
+        }
+
         let snapshot: WorkspaceSnapshotHandle | null = null;
         if (useRollback && existsSync(opts.workspaceDir)) {
           try {
@@ -228,7 +242,9 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
 
     // Emit per-artifact receipts from OCEL standing
     const cycleReceipts: TransitionReceipt[] = [];
-    for (const obj of run.ocel.objects.filter((o) => o.type !== "Workflow")) {
+    for (const obj of run.ocel.objects.filter(
+      (o) => o.type !== "Workflow" && o.type !== "workspace_snapshot"
+    )) {
       const last = obj.attributes.at(-1)?.value ?? "UNKNOWN";
       let standing: Standing =
         last === "ALIVE" ? "ALIVE" : last === "REFUSED" ? "REFUSED" : "UNKNOWN";
@@ -266,7 +282,7 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     }
 
     if (c < maxCycles) {
-      current = deriveFollowUpPowl(run, c + 1);
+      current = propagateTargetFiles(deriveFollowUpPowl(run, c + 1), knownTargetFiles);
       validatePowlTree(current);
     }
   }
@@ -349,4 +365,72 @@ async function runWriteScope(courts: TransitionCourtAdapter[], files: string[]):
     codes.push(await court.validateWriteScope(files));
   }
   return worstExitCode(codes);
+}
+
+/**
+ * Resolve the relative path the transition intends to mutate *before* execution.
+ * Dry-run / default executor: ontology/<activity>.ttl. Live custom executors must
+ * declare `targetFile` — missing target fails closed (SUBJECT_MISSING).
+ */
+function plannedWriteRel(
+  t: Transition,
+  opts: FoundryLoopOptions,
+  knownTargetFiles?: Map<string, string>
+): string | null {
+  if (t.targetFile) {
+    return t.targetFile.replace(/\\/g, "/").replace(/^\.\//, "");
+  }
+  const inherited =
+    (t.activityId ? knownTargetFiles?.get(t.activityId) : undefined) ??
+    knownTargetFiles?.get(t.id);
+  if (inherited) {
+    return inherited.replace(/\\/g, "/").replace(/^\.\//, "");
+  }
+  if (opts.dryRun || !opts.executor) {
+    return `ontology/${t.activityId ?? t.id}.ttl`;
+  }
+  return null;
+}
+
+function collectTargetFiles(node: PowlNode, out = new Map<string, string>()): Map<string, string> {
+  if (node.kind === "activity") {
+    if (node.targetFile) {
+      out.set(node.id, node.targetFile);
+      out.set(`art:${node.id}`, node.targetFile);
+    }
+  } else if (node.kind === "xor") {
+    for (const b of node.branches) collectTargetFiles(b, out);
+  } else if (node.kind === "loop") {
+    collectTargetFiles(node.doBranch, out);
+    collectTargetFiles(node.redoBranch, out);
+  } else if (node.kind === "partial_order") {
+    for (const c of node.children) collectTargetFiles(c, out);
+  }
+  return out;
+}
+
+function propagateTargetFiles(node: PowlNode, knownTargetFiles: Map<string, string>): PowlNode {
+  if (knownTargetFiles.size === 0) return node;
+  const uniqueTargets = [...new Set(knownTargetFiles.values())];
+  const fallbackTarget = uniqueTargets.length === 1 ? uniqueTargets[0] : undefined;
+  const rewrite = (n: PowlNode): PowlNode => {
+    if (n.kind === "activity") {
+      if (n.targetFile) return n;
+      const m = n.label.match(/^Remediate\s+(art:.+)$/);
+      const matched = m?.[1] ? knownTargetFiles.get(m[1]) : undefined;
+      const targetFile = matched ?? fallbackTarget;
+      return targetFile ? { ...n, targetFile } : n;
+    }
+    if (n.kind === "xor") {
+      return { ...n, branches: n.branches.map(rewrite) };
+    }
+    if (n.kind === "loop") {
+      return { ...n, doBranch: rewrite(n.doBranch), redoBranch: rewrite(n.redoBranch) };
+    }
+    if (n.kind === "partial_order") {
+      return { ...n, children: n.children.map(rewrite) };
+    }
+    return n;
+  };
+  return rewrite(node);
 }

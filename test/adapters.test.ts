@@ -120,6 +120,13 @@ describe("adapters/marketplace-court", () => {
     expect(v.exitCode).toBe(1);
     expect(v.diagnostics.join(" ")).toContain("FM-CONFIG-101");
   });
+
+  test("validateWriteScope does not short-circuit on ggen.toml before generated/", async () => {
+    const court = new MarketplaceCourtAdapter();
+    // Regression: prior early `return 0` on ggen.toml skipped later generated/ refuse.
+    expect(await court.validateWriteScope(["ggen.toml", "src/foo_generated.rs"])).toBe(1);
+    expect(await court.validateWriteScope(["ggen.toml", "ontology/a.ttl"])).toBe(0);
+  });
 });
 
 describe("adapters/igniter-sync", () => {
@@ -134,7 +141,9 @@ describe("adapters/igniter-sync", () => {
     const court = new IgniterSyncCourtAdapter({
       run: (cmd) => {
         if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
-        if (cmd[0] === "git") return { status: 1, stdout: "M generated", stderr: "" };
+        if (cmd[0] === "git" && cmd[1] === "diff" && !cmd.includes("--cached")) {
+          return { status: 1, stdout: "M generated", stderr: "" };
+        }
         return { status: 0, stdout: "", stderr: "" };
       },
       forbidGeneratedDirs: false
@@ -142,6 +151,38 @@ describe("adapters/igniter-sync", () => {
     const v = await court.verifyPostTransition("/tmp");
     expect(v.exitCode).toBe(1);
     expect(v.diagnostics.join(" ")).toContain("git diff");
+  });
+
+  test("post-transition refuses staged drift (cached diff)", async () => {
+    const court = new IgniterSyncCourtAdapter({
+      run: (cmd) => {
+        if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
+        if (cmd[0] === "git" && cmd[1] === "diff" && cmd.includes("--cached")) {
+          return { status: 1, stdout: "A staged", stderr: "" };
+        }
+        return { status: 0, stdout: "", stderr: "" };
+      },
+      forbidGeneratedDirs: false
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(1);
+    expect(v.diagnostics.join(" ")).toContain("staged");
+  });
+
+  test("post-transition refuses untracked drift", async () => {
+    const court = new IgniterSyncCourtAdapter({
+      run: (cmd) => {
+        if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
+        if (cmd[0] === "git" && cmd[1] === "ls-files") {
+          return { status: 0, stdout: "lib/generated/leak.ex\n", stderr: "" };
+        }
+        return { status: 0, stdout: "", stderr: "" };
+      },
+      forbidGeneratedDirs: false
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(1);
+    expect(v.diagnostics.join(" ")).toContain("untracked");
   });
 });
 

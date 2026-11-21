@@ -34,16 +34,148 @@ import {
 // 1. Recursive POWL v2 AST (Sound by Construction)
 // ---------------------------------------------------------------------------
 
+/** readonly = free concurrent fan-out; mutating = needs order or disjoint scopes (ARD §3.1.3). */
+export type ActivityKind = "readonly" | "mutating";
+
+export type PowlActivity = {
+  kind: "activity";
+  id: string;
+  label: string;
+  objectType: string;
+  targetFile?: string;
+  /** Optional; bare activities default to readonly fan-out; `targetFile` ⇒ mutating singleton scope. */
+  activityKind?: ActivityKind;
+  fileScope?: string[];
+};
+
+export type PowlPartialOrder = {
+  kind: "partial_order";
+  id: string;
+  children: PowlNode[];
+  order: ReadonlyArray<readonly [string, string]>;
+};
+
 export type PowlNode =
-  | { kind: "activity"; id: string; label: string; objectType: string; targetFile?: string }
+  | PowlActivity
   | { kind: "tau"; id: string }
   | { kind: "xor"; id: string; branches: PowlNode[] }
   | { kind: "loop"; id: string; doBranch: PowlNode; redoBranch: PowlNode; maxIterations?: number }
-  | { kind: "partial_order"; id: string; children: PowlNode[]; order: ReadonlyArray<readonly [string, string]> };
+  | PowlPartialOrder;
+
+export interface WriteScopeViolation {
+  a: string;
+  b: string;
+  overlap: string[];
+}
+
+/**
+ * Transitive closure ≺⁺ encoded as `${u}->${v}` (ARD §3.1.2).
+ * Stored edges need not be transitively closed; semantics use ≺⁺.
+ */
+export function transitiveClosure(
+  nodes: readonly string[],
+  edges: ReadonlyArray<readonly [string, string]>
+): Set<string> {
+  const adj = new Map<string, string[]>();
+  for (const id of nodes) adj.set(id, []);
+  for (const [u, v] of edges) {
+    if (!adj.has(u)) adj.set(u, []);
+    adj.get(u)!.push(v);
+  }
+  const closure = new Set<string>();
+  for (const u of nodes) {
+    const stack = [...(adj.get(u) ?? [])];
+    const seen = new Set<string>();
+    while (stack.length > 0) {
+      const v = stack.pop()!;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      closure.add(`${u}->${v}`);
+      for (const w of adj.get(v) ?? []) stack.push(w);
+    }
+  }
+  return closure;
+}
+
+/** Exact + simple trailing-`*` glob intersection approx for Explore (ARD §3.1.3). */
+export function defaultResolveOverlap(a: string[], b: string[]): string[] {
+  const overlap: string[] = [];
+  const seen = new Set<string>();
+  const push = (s: string) => {
+    if (!seen.has(s)) {
+      seen.add(s);
+      overlap.push(s);
+    }
+  };
+  for (const x of a) {
+    for (const y of b) {
+      if (x === y) {
+        push(x);
+        continue;
+      }
+      if (x.endsWith("/*") && y.startsWith(x.slice(0, -1))) push(`${x}∩${y}`);
+      else if (y.endsWith("/*") && x.startsWith(y.slice(0, -1))) push(`${x}∩${y}`);
+      else if (x.endsWith("*") && y.startsWith(x.slice(0, -1))) push(`${x}∩${y}`);
+      else if (y.endsWith("*") && x.startsWith(y.slice(0, -1))) push(`${x}∩${y}`);
+    }
+  }
+  return overlap;
+}
+
+function effectiveActivityKind(a: PowlActivity): ActivityKind {
+  if (a.activityKind) return a.activityKind;
+  if (a.targetFile || (a.fileScope && a.fileScope.length > 0)) return "mutating";
+  return "readonly";
+}
+
+function effectiveFileScope(a: PowlActivity): string[] {
+  if (a.fileScope && a.fileScope.length > 0) return a.fileScope;
+  if (a.targetFile) return [a.targetFile];
+  return [];
+}
+
+/**
+ * WIP>1 safety: unordered mutating activities must have disjoint write scopes (ARD §3.1.3).
+ * Returns violations; callers fail-closed with WRITE_SCOPE_CONFLICT.
+ */
+export function validateDisjointWriteScopes(
+  po: PowlPartialOrder,
+  resolveOverlap: (a: string[], b: string[]) => string[] = defaultResolveOverlap
+): WriteScopeViolation[] {
+  const childIds = po.children.map((c) => c.id);
+  const prec = transitiveClosure(childIds, po.order);
+  const activities = po.children.filter((c): c is PowlActivity => c.kind === "activity");
+  const violations: WriteScopeViolation[] = [];
+
+  for (let i = 0; i < activities.length; i++) {
+    for (let j = i + 1; j < activities.length; j++) {
+      const u = activities[i]!;
+      const v = activities[j]!;
+      if (effectiveActivityKind(u) !== "mutating" || effectiveActivityKind(v) !== "mutating") continue;
+      const ordered =
+        prec.has(`${u.id}->${v.id}`) || prec.has(`${v.id}->${u.id}`);
+      if (ordered) continue;
+      const su = effectiveFileScope(u);
+      const sv = effectiveFileScope(v);
+      if (su.length === 0 || sv.length === 0) {
+        violations.push({
+          a: u.id,
+          b: v.id,
+          overlap: ["∅-scope (mutating activities require fileScope/targetFile when unordered)"]
+        });
+        continue;
+      }
+      const overlap = resolveOverlap(su, sv);
+      if (overlap.length > 0) violations.push({ a: u.id, b: v.id, overlap });
+    }
+  }
+  return violations;
+}
 
 /**
  * Validates that every PartialOrder node in a POWL tree is a strict partial order
  * (irreflexive, asymmetric, acyclic) and all node IDs are unique.
+ * Also enforces disjoint write scopes for unordered mutating activities (ARD §3.1.3).
  */
 export function validatePowlTree(root: PowlNode): void {
   const seenIds = new Set<string>();
@@ -84,6 +216,13 @@ export function validatePowlTree(root: PowlNode): void {
       if (visited !== childIds.size) {
         throw new Error(`POWL PO "${node.id}": cycle detected (violates strict partial order)`);
       }
+      const scopeViolations = validateDisjointWriteScopes(node);
+      if (scopeViolations.length > 0) {
+        const v0 = scopeViolations[0]!;
+        throw new Error(
+          `WRITE_SCOPE_CONFLICT: POWL PO "${node.id}": unordered mutating activities "${v0.a}" and "${v0.b}" overlap ${JSON.stringify(v0.overlap)}`
+        );
+      }
       node.children.forEach(walk);
     }
   };
@@ -106,6 +245,8 @@ export interface Transition {
   activityId?: string;
   objectType: string;
   targetFile?: string;
+  activityKind?: ActivityKind;
+  fileScope?: string[];
 }
 
 export interface WorkflowNet {
@@ -119,6 +260,11 @@ export interface WorkflowNet {
   sinkPlace: string;
 }
 
+/**
+ * Compiler-allocated transition ids live in the reserved `__powl_t_` namespace and
+ * always include a monotonic seq, so structural τ prefixes cannot collide with
+ * user node ids (e.g. tau id `enter_L` vs loop enter for `L`).
+ */
 export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
   validatePowlTree(root);
   const places: Place[] = [];
@@ -134,7 +280,18 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     return id;
   };
 
+  /** Unique transition id: reserved prefix + role + optional hint + seq. */
+  const newTransitionId = (role: string, hint?: string): string => {
+    seq += 1;
+    return hint !== undefined
+      ? `__powl_t_${role}_${hint}_${seq}`
+      : `__powl_t_${role}_${seq}`;
+  };
+
   const addTransition = (t: Transition, inputs: string[], outputs: string[]) => {
+    if (pre.has(t.id) || post.has(t.id) || transitions.some((x) => x.id === t.id)) {
+      throw new Error(`POWL compile: duplicate transition id "${t.id}" (fail-closed)`);
+    }
     transitions.push(t);
     pre.set(t.id, inputs);
     post.set(t.id, outputs);
@@ -142,15 +299,30 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
   const compile = (node: PowlNode, startP: string, endP: string) => {
     if (node.kind === "activity") {
+      const kind = effectiveActivityKind(node);
+      const scope = effectiveFileScope(node);
       addTransition(
-        { id: `t_${node.id}`, label: node.label, silent: false, activityId: node.id, objectType: node.objectType, targetFile: node.targetFile },
+        {
+          id: newTransitionId("act", node.id),
+          label: node.label,
+          silent: false,
+          activityId: node.id,
+          objectType: node.objectType,
+          targetFile: node.targetFile,
+          activityKind: kind,
+          ...(scope.length > 0 ? { fileScope: scope } : {})
+        },
         [startP],
         [endP]
       );
       return;
     }
     if (node.kind === "tau") {
-      addTransition({ id: `tau_${node.id}`, label: "τ", silent: true, objectType: "Workflow" }, [startP], [endP]);
+      addTransition(
+        { id: newTransitionId("tau", node.id), label: "τ", silent: true, objectType: "Workflow" },
+        [startP],
+        [endP]
+      );
       return;
     }
     if (node.kind === "xor") {
@@ -162,10 +334,18 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     if (node.kind === "loop") {
       const loopEntry = newPlace(`loop_in_${node.id}`);
       const loopChoice = newPlace(`loop_choice_${node.id}`);
-      addTransition({ id: `tau_enter_${node.id}`, label: "τ_enter", silent: true, objectType: "Workflow" }, [startP], [loopEntry]);
+      addTransition(
+        { id: newTransitionId("enter", node.id), label: "τ_enter", silent: true, objectType: "Workflow" },
+        [startP],
+        [loopEntry]
+      );
       compile(node.doBranch, loopEntry, loopChoice);
       compile(node.redoBranch, loopChoice, loopEntry);
-      addTransition({ id: `tau_exit_${node.id}`, label: "τ_exit", silent: true, objectType: "Workflow" }, [loopChoice], [endP]);
+      addTransition(
+        { id: newTransitionId("exit", node.id), label: "τ_exit", silent: true, objectType: "Workflow" },
+        [loopChoice],
+        [endP]
+      );
       return;
     }
     if (node.kind === "partial_order") {
@@ -195,7 +375,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Fork from startP to all minimal elements
       addTransition(
-        { id: `tau_fork_${node.id}`, label: "τ_fork", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("fork", node.id), label: "τ_fork", silent: true, objectType: "Workflow" },
         [startP],
         roots.map((r) => childStart.get(r.id)!)
       );
@@ -211,7 +391,12 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
           orderPlaces.get(u)!.push(pEdge);
         }
         addTransition(
-          { id: `tau_join_${node.id}_${v.id}`, label: `τ_join(${v.id})`, silent: true, objectType: "Workflow" },
+          {
+            id: newTransitionId("join", `${node.id}_${v.id}`),
+            label: `τ_join(${v.id})`,
+            silent: true,
+            objectType: "Workflow"
+          },
           predSyncPlaces,
           [childStart.get(v.id)!]
         );
@@ -222,7 +407,12 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
         const outs = orderPlaces.get(u.id)!;
         if (outs.length === 0) continue;
         addTransition(
-          { id: `tau_split_${node.id}_${u.id}`, label: `τ_split(${u.id})`, silent: true, objectType: "Workflow" },
+          {
+            id: newTransitionId("split", `${node.id}_${u.id}`),
+            label: `τ_split(${u.id})`,
+            silent: true,
+            objectType: "Workflow"
+          },
           [childEnd.get(u.id)!],
           outs
         );
@@ -230,7 +420,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Join all maximal elements into endP
       addTransition(
-        { id: `tau_end_${node.id}`, label: "τ_end", silent: true, objectType: "Workflow" },
+        { id: newTransitionId("end", node.id), label: "τ_end", silent: true, objectType: "Workflow" },
         leaves.map((l) => childEnd.get(l.id)!),
         [endP]
       );
@@ -243,6 +433,115 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
   return { places, transitions, pre, post, sourcePlace, sinkPlace };
 }
+
+/**
+ * Defensive WF-net soundness checker (van der Aalst): option to complete,
+ * proper completion, and no dead transitions via finite reachability BFS.
+ * Explore dry-run Exp-1 / ARD §3.2.3.
+ */
+export function verifyStructuralSoundness(net: WorkflowNet): {
+  optionToComplete: boolean;
+  properCompletion: boolean;
+  noDeadTransitions: boolean;
+} {
+  const placeIds = net.places.map((p) => p.id);
+  const placeIndex = new Map(placeIds.map((id, i) => [id, i] as const));
+  const n = placeIds.length;
+  const sourceIdx = placeIndex.get(net.sourcePlace);
+  const sinkIdx = placeIndex.get(net.sinkPlace);
+  if (sourceIdx === undefined || sinkIdx === undefined) {
+    return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+  }
+
+  const encode = (marking: number[]): string => marking.join(",");
+  const initial = new Array<number>(n).fill(0);
+  initial[sourceIdx] = 1;
+
+  const enabled = (marking: number[], t: Transition): boolean => {
+    const inputs = net.pre.get(t.id) ?? [];
+    return inputs.every((p) => {
+      const i = placeIndex.get(p);
+      return i !== undefined && marking[i]! >= 1;
+    });
+  };
+
+  const fire = (marking: number[], t: Transition): number[] => {
+    const next = marking.slice();
+    for (const p of net.pre.get(t.id) ?? []) {
+      next[placeIndex.get(p)!]! -= 1;
+    }
+    for (const p of net.post.get(t.id) ?? []) {
+      next[placeIndex.get(p)!]! += 1;
+    }
+    return next;
+  };
+
+  const visited = new Map<string, number[]>();
+  const queue: number[][] = [initial];
+  visited.set(encode(initial), initial);
+  const fired = new Set<string>();
+  const MAX_STATES = 50_000;
+
+  while (queue.length > 0) {
+    if (visited.size > MAX_STATES) {
+      return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+    }
+    const m = queue.shift()!;
+    for (const t of net.transitions) {
+      if (!enabled(m, t)) continue;
+      fired.add(t.id);
+      const next = fire(m, t);
+      const key = encode(next);
+      if (!visited.has(key)) {
+        visited.set(key, next);
+        queue.push(next);
+      }
+    }
+  }
+
+  const isSinkOnly = (m: number[]): boolean =>
+    m[sinkIdx] === 1 && m.every((tokens, i) => (i === sinkIdx ? tokens === 1 : tokens === 0));
+
+  const sinkKeys = [...visited.entries()].filter(([, m]) => m[sinkIdx]! >= 1).map(([k]) => k);
+  const properCompletion = sinkKeys.every((k) => isSinkOnly(visited.get(k)!));
+
+  // Reverse BFS from sink-only marking over the reachability graph edges.
+  const reverseAdj = new Map<string, string[]>();
+  for (const [key, m] of visited) {
+    for (const t of net.transitions) {
+      if (!enabled(m, t)) continue;
+      const nextKey = encode(fire(m, t));
+      if (!reverseAdj.has(nextKey)) reverseAdj.set(nextKey, []);
+      reverseAdj.get(nextKey)!.push(key);
+    }
+  }
+  const canReachSink = new Set<string>();
+  const sinkOnlyKey = encode(
+    (() => {
+      const m = new Array<number>(n).fill(0);
+      m[sinkIdx] = 1;
+      return m;
+    })()
+  );
+  if (visited.has(sinkOnlyKey)) {
+    const rq = [sinkOnlyKey];
+    canReachSink.add(sinkOnlyKey);
+    while (rq.length > 0) {
+      const cur = rq.shift()!;
+      for (const pred of reverseAdj.get(cur) ?? []) {
+        if (!canReachSink.has(pred)) {
+          canReachSink.add(pred);
+          rq.push(pred);
+        }
+      }
+    }
+  }
+  const optionToComplete = visited.size > 0 && [...visited.keys()].every((k) => canReachSink.has(k));
+  const noDeadTransitions = net.transitions.every((t) => fired.has(t.id));
+
+  return { optionToComplete, properCompletion, noDeadTransitions };
+}
+
 
 // ---------------------------------------------------------------------------
 // 3. Token-Based Replay + Online Conformance + OCEL 2.0 Emitter
@@ -288,8 +587,14 @@ export interface Ocel2Log {
 
 /**
  * Autonomic Kingman-Variance-Law + AIMD WIP Controller.
+ * Discovers peak API equilibrium online — zero user-configurable concurrency knobs.
  * Separates transport-layer congestion (TTFT / RPM / TPM / 429) from
  * heavy-tailed coding turn service times (c_s^2 >> 1) to maximize lambda_alive.
+ *
+ * MD is transport/API-health only (connect timeout, 429, TTFT/RPM/TPM). Heavy-tailed task
+ * duration (`serviceMs > 2× median`) must never trigger MD — coding build/test
+ * transitions are class-dependent and routinely exceed that threshold under
+ * healthy transport (ARD §5.3 / EU AI Act robustness: no false congestion backoff).
  */
 export class AimdWipController {
   private readonly scheduler = new KingmanScheduler();
@@ -310,11 +615,34 @@ export class AimdWipController {
     this.scheduler.peakEquilibriumWip = value;
   }
 
+  /** Median serviceMs in the rolling window (telemetry only; not an MD signal). */
+  medianServiceMs(): number {
+    return this.scheduler.medianServiceMs();
+  }
+
   onSuccess(
     serviceMs: number,
     transport?: TransportTelemetrySample
   ): { changed: boolean; oldWip: number; newWip: number; reason: string; ttftMdTriggered: boolean } {
     const decision = this.scheduler.onSuccess(serviceMs, transport);
+    const hasTransportTelemetry =
+      transport !== undefined &&
+      (transport.ttftMs !== undefined ||
+        transport.rpmHeadroomRatio !== undefined ||
+        transport.tpmHeadroomRatio !== undefined ||
+        transport.interArrivalMs !== undefined);
+    if (!hasTransportTelemetry && !decision.ttftMdTriggered) {
+      const nextWip = decision.oldWip + 1;
+      this.scheduler.wip = nextWip;
+      this.scheduler.peakEquilibriumWip = Math.max(this.scheduler.peakEquilibriumWip, nextWip);
+      return {
+        changed: nextWip !== decision.oldWip,
+        oldWip: decision.oldWip,
+        newWip: nextWip,
+        reason: "clean_completion_ai",
+        ttftMdTriggered: false
+      };
+    }
     return {
       changed: decision.changed,
       oldWip: decision.oldWip,
@@ -385,6 +713,21 @@ export interface OcelPowlRunResult {
   rolledBackCount?: number;
 }
 
+
+/** Rozinat/van der Aalst token conservation: produced + missing = consumed + remaining. */
+export function tokenConservationHolds(replay: ReplayMetrics): boolean {
+  return replay.produced + replay.missing === replay.consumed + replay.remaining;
+}
+
+/** Deep-freeze a value so post-hash OCEL snapshots cannot silently diverge from ocelSha256. */
+export function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as object)) deepFreeze(child);
+  }
+  return value;
+}
+
 export async function executePowlWithTokenReplay(
   root: PowlNode,
   executor: TransitionExecutor,
@@ -432,6 +775,11 @@ export async function executePowlWithTokenReplay(
   const isEnabled = (t: Transition): boolean =>
     (net.pre.get(t.id) ?? []).every((p) => (marking.get(p) ?? 0) >= 1);
 
+  const sharesPre = (a: Transition, b: Transition): boolean => {
+    const preA = new Set(net.pre.get(a.id) ?? []);
+    return (net.pre.get(b.id) ?? []).some((p) => preA.has(p));
+  };
+
   const fireSilent = (t: Transition) => {
     for (const p of net.pre.get(t.id) ?? []) {
       const cur = marking.get(p) ?? 0;
@@ -444,22 +792,82 @@ export async function executePowlWithTokenReplay(
     }
   };
 
+  /** Loop ids → max do-iterations (default 1: do once, then τ_exit). */
+  const loopMaxIterations = new Map<string, number>();
+  const loopDoCompletions = new Map<string, number>();
+  const walkLoops = (node: PowlNode) => {
+    if (node.kind === "loop") {
+      loopMaxIterations.set(node.id, Math.max(1, node.maxIterations ?? 1));
+      loopDoCompletions.set(node.id, 0);
+      walkLoops(node.doBranch);
+      walkLoops(node.redoBranch);
+    } else if (node.kind === "xor") {
+      node.branches.forEach(walkLoops);
+    } else if (node.kind === "partial_order") {
+      node.children.forEach(walkLoops);
+    }
+  };
+  walkLoops(root);
+
+  /**
+   * Map τ_exit transition → PowlLoop id.
+   * A2: `tau_exit_<loopId>_<n>`; A1: `__powl_t_exit_<loopId>_<n>`.
+   * Strip-prefix alone can yield `<loopId>_<n>`, so match longest loop id.
+   */
+  const loopIdFromExit = (t: Transition): string | undefined => {
+    const schemas = [
+      { head: "tau_exit_", ok: (id: string) => id.startsWith("tau_exit_") },
+      { head: "__powl_t_exit_", ok: (id: string) => id.startsWith("__powl_t_exit_") }
+    ] as const;
+    const schema = schemas.find((s) => s.ok(t.id));
+    if (!schema) return undefined;
+    let best: string | undefined;
+    for (const lid of loopMaxIterations.keys()) {
+      const prefix = `${schema.head}${lid}`;
+      if (t.id === prefix || t.id.startsWith(`${prefix}_`)) {
+        const rest = t.id.slice(prefix.length);
+        if (rest === "" || /^_\d+$/.test(rest)) {
+          if (!best || lid.length > best.length) best = lid;
+        }
+      }
+    }
+    if (best) return best;
+    const body = t.id.slice(schema.head.length);
+    const m = body.match(/^(.*)_\d+$/);
+    return m?.[1] ?? body;
+  };
+
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const executedActivities: string[] = [];
   const inFlight = new Set<Promise<void>>();
   let haltedOnFailure = false;
   let refusalCode: string | undefined;
   let rolledBackCount = 0;
+  /** Executor-requested redo for the next loop choice (VdA free-choice). */
+  let pendingRedo = false;
+  /** Loop ids whose choice place must yield to redo this visit. */
+  const redoArmedLoops = new Set<string>();
 
+  /**
+   * Fire silent transitions that do not resolve a free choice.
+   * A silent t fires only when no other enabled transition (silent or visible)
+   * shares an input place — otherwise drainSilent would kill redoBranch,
+   * starve XOR visibles, or livelock loop(τ,τ).
+   */
   const drainSilent = () => {
     let fired = true;
     while (fired) {
       fired = false;
-      for (const t of net.transitions) {
-        if (t.silent && isEnabled(t)) {
-          fireSilent(t);
-          fired = true;
-        }
+      const enabledAll = net.transitions.filter((t) => isEnabled(t));
+      for (const t of enabledAll) {
+        if (!t.silent) continue;
+        const lid = loopIdFromExit(t);
+        if (lid && redoArmedLoops.has(lid)) continue;
+        const contested = enabledAll.some((o) => o.id !== t.id && sharesPre(t, o));
+        if (contested) continue;
+        fireSilent(t);
+        fired = true;
+        break;
       }
     }
   };
@@ -484,17 +892,93 @@ export async function executePowlWithTokenReplay(
     }
   };
 
+  /**
+   * Resolve PowlLoop choice places (τ_exit vs redo) and silent XOR free choices.
+   * Default: exit after each do unless pendingRedo && completions < maxIterations.
+   */
+  const resolveFreeChoices = (): boolean => {
+    let progress = false;
+
+    for (const exit of net.transitions) {
+      const loopId = loopIdFromExit(exit);
+      if (!loopId || !isEnabled(exit)) continue;
+      if (redoArmedLoops.has(loopId)) continue;
+
+      const maxIt = loopMaxIterations.get(loopId) ?? 1;
+      const done = (loopDoCompletions.get(loopId) ?? 0) + 1;
+      const allowRedo = pendingRedo && done < maxIt;
+      if (allowRedo) {
+        // Arm once; do not report progress (no marking change) to avoid spin.
+        if (!redoArmedLoops.has(loopId)) {
+          loopDoCompletions.set(loopId, done);
+          pendingRedo = false;
+          redoArmedLoops.add(loopId);
+        }
+        continue;
+      }
+      loopDoCompletions.set(loopId, done);
+      pendingRedo = false;
+      fireSilent(exit);
+      progress = true;
+    }
+
+    // Silent XOR (or silent redo τ) with no visible competitor: fire exactly one.
+    if (!net.transitions.some((t) => !t.silent && isEnabled(t))) {
+      const enabledSilent = net.transitions.filter((t) => {
+        if (!t.silent || !isEnabled(t)) return false;
+        const lid = loopIdFromExit(t);
+        if (lid && redoArmedLoops.has(lid)) return false;
+        return true;
+      });
+      if (enabledSilent.length > 0) {
+        const armedRedo = enabledSilent.find((t) =>
+          [...redoArmedLoops].some((lid) => {
+            const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+            return exit ? sharesPre(t, exit) : false;
+          })
+        );
+        const pick = armedRedo ?? enabledSilent[0]!;
+        for (const lid of [...redoArmedLoops]) {
+          const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+          if (exit && sharesPre(pick, exit)) redoArmedLoops.delete(lid);
+        }
+        fireSilent(pick);
+        progress = true;
+      }
+    }
+
+    return progress;
+  };
+
   while (!haltedOnFailure) {
     drainSilent();
+    while (resolveFreeChoices()) drainSilent();
     if ((marking.get(net.sinkPlace) ?? 0) >= 1 && inFlight.size === 0) break;
 
-    const enabledVisible = net.transitions.filter((t) => !t.silent && isEnabled(t));
-    if (enabledVisible.length === 0 && inFlight.size === 0) break;
+    // Suppress visibles that compete with an unarmed τ_exit (exit wins by default).
+    // When redo is armed, allow the competing visible redo branch.
+    const enabledVisible = net.transitions.filter((t) => {
+      if (t.silent || !isEnabled(t)) return false;
+      const blockingExit = net.transitions.find((x) => {
+        const lid = loopIdFromExit(x);
+        return Boolean(lid && isEnabled(x) && sharesPre(t, x) && !redoArmedLoops.has(lid));
+      });
+      return !blockingExit;
+    });
+    if (enabledVisible.length === 0 && inFlight.size === 0) {
+      if (redoArmedLoops.size > 0) {
+        redoArmedLoops.clear();
+        continue;
+      }
+      break;
+    }
 
     const effectiveWip = options.workspaceDir ? 1 : aimd.wip;
 
     for (const t of enabledVisible) {
       if (inFlight.size >= effectiveWip) break;
+      // Re-check enablement after prior reserves in this WIP window (XOR safety).
+      if (!isEnabled(t)) continue;
 
       let snap: WorkspaceSnapshotHandle | null = null;
       if (options.workspaceDir) {
@@ -519,8 +1003,24 @@ export async function executePowlWithTokenReplay(
 
       // Reserve input tokens atomically (strict Petri net firing semantics)
       for (const p of net.pre.get(t.id) ?? []) {
-        marking.set(p, (marking.get(p) ?? 1) - 1);
+        const cur = marking.get(p) ?? 0;
+        if (cur < 1) {
+          missing += 1;
+          haltedOnFailure = true;
+          break;
+        }
+        marking.set(p, cur - 1);
         consumed += 1;
+      }
+      if (haltedOnFailure) {
+        snap?.dispose();
+        break;
+      }
+
+      // Visible redo consumed the loop-choice token.
+      for (const lid of [...redoArmedLoops]) {
+        const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+        if (exit && sharesPre(t, exit)) redoArmedLoops.delete(lid);
       }
 
       const artObj = ensureObject(`art:${t.activityId ?? t.id}`, t.objectType);
@@ -548,12 +1048,23 @@ export async function executePowlWithTokenReplay(
         const serviceMs = Date.now() - started;
         bottlenecks.push({ transitionId: t.id, serviceMs });
 
+        const restoreReservedTokens = () => {
+          // Abort fire: restore reserved tokens to input places and undo their consume
+          // counts so Rozinat conservation (p+m = c+r) holds. Incompleteness is then
+          // carried by remaining > 0 (fitness < 1.0) without a phantom sink missing.
+          for (const p of net.pre.get(t.id) ?? []) {
+            marking.set(p, (marking.get(p) ?? 0) + 1);
+            if (consumed > 0) consumed -= 1;
+          }
+        };
+
         if (res?.ok) {
           snap?.dispose();
           for (const p of net.post.get(t.id) ?? []) {
             marking.set(p, (marking.get(p) ?? 0) + 1);
             produced += 1;
           }
+          if (res.redo) pendingRedo = true;
           executedActivities.push(t.activityId ?? t.label);
           const adj = aimd.onSuccess(serviceMs, {
             ttftMs: res.ttftMs,
@@ -599,6 +1110,9 @@ export async function executePowlWithTokenReplay(
           try {
             const rb = snap.rollback(failureReason, t.id, rollbackOnDirty);
             rolledBackCount += 1;
+            for (const rel of rb.event.relationships) {
+              ensureObject(rel.objectId, "workspace_snapshot");
+            }
             emitEvent(
               rb.event.type,
               rb.event.attributes,
@@ -607,6 +1121,7 @@ export async function executePowlWithTokenReplay(
           } catch (rbErr) {
             snap.dispose();
             haltedOnFailure = true;
+            restoreReservedTokens();
             refusalCode = rbErr instanceof TransactionalRollbackError ? rbErr.code : "ROLLBACK_FAILED";
             artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
             emitEvent(
@@ -634,6 +1149,7 @@ export async function executePowlWithTokenReplay(
             limiter.recordFailure(failureSig, t.id);
           } catch (limitErr) {
             haltedOnFailure = true;
+            restoreReservedTokens();
             refusalCode =
               limitErr instanceof ComplianceRefusalError ? limitErr.code : "RETRY_BUDGET_EXHAUSTED";
             artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
@@ -684,6 +1200,7 @@ export async function executePowlWithTokenReplay(
           );
         } else {
           haltedOnFailure = true;
+          restoreReservedTokens();
           artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
           const refusedSignature =
             res?.errorSignature && res.errorSignature.trim().length > 0
@@ -717,22 +1234,28 @@ export async function executePowlWithTokenReplay(
     await Promise.allSettled(inFlight);
   }
 
-  // Consume final token in sinkPlace if present
+  // Consume final token in sinkPlace if present. On a fail-closed halt the net never
+  // reached the sink; do not invent a missing sink token (that broke p+m=c+r).
   const sinkTokens = marking.get(net.sinkPlace) ?? 0;
   if (sinkTokens >= 1) {
     marking.set(net.sinkPlace, sinkTokens - 1);
     consumed += 1;
-  } else {
+  } else if (!haltedOnFailure) {
     missing += 1;
   }
 
   let remaining = 0;
-  for (const count of marking.values()) remaining += count;
+  let negativeMarking = false;
+  for (const count of marking.values()) {
+    if (count < 0) negativeMarking = true;
+    remaining += Math.max(0, count);
+  }
 
   const fitness =
     0.5 * (1 - (consumed > 0 ? missing / consumed : 0)) +
     0.5 * (1 - (produced > 0 ? remaining / produced : 0));
-  const soundTermination = missing === 0 && remaining === 0 && !haltedOnFailure;
+  const soundTermination =
+    missing === 0 && remaining === 0 && !negativeMarking && !haltedOnFailure;
 
   const replay: ReplayMetrics = { produced, consumed, missing, remaining, fitness, soundTermination };
   const alignment = alignTraceAStar(net, executedActivities);
@@ -747,21 +1270,68 @@ export async function executePowlWithTokenReplay(
   const ocel: Ocel2Log = {
     objectTypes: [
       { name: "Workflow", attributes: [{ name: "standing", type: "string" }] },
-      { name: "Artifact", attributes: [{ name: "standing", type: "string" }] }
+      { name: "Artifact", attributes: [{ name: "standing", type: "string" }] },
+      { name: "workspace_snapshot", attributes: [] }
     ],
     eventTypes: [
-      { name: "transition_fired", attributes: [{ name: "transition", type: "string" }, { name: "label", type: "string" }] },
-      { name: "transition_completed", attributes: [{ name: "transition", type: "string" }, { name: "service_ms", type: "string" }] },
+      {
+        name: "transition_fired",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "label", type: "string" },
+          { name: "wip", type: "string" }
+        ]
+      },
+      {
+        name: "transition_completed",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "service_ms", type: "string" },
+          { name: "wip", type: "string" },
+          { name: "aimd_reason", type: "string" },
+          { name: "cs2", type: "string" },
+          { name: "rho", type: "string" },
+          { name: "lambda_alive", type: "string" },
+          { name: "ttft_ms", type: "string" }
+        ]
+      },
       {
         name: "transition_refused",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "reason", type: "string" },
+          { name: "signature", type: "string" },
+          { name: "detail", type: "string" }
+        ]
+      },
+      {
+        name: "wip_backoff",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "old_wip", type: "string" },
+          { name: "new_wip", type: "string" },
+          { name: "reason", type: "string" },
+          { name: "signature", type: "string" }
+        ]
+      },
+      {
+        name: "workspace_rolled_back",
+        attributes: [
+          { name: "reason", type: "string" },
+          { name: "step_id", type: "string" },
+          { name: "snapshot_sha256", type: "string" },
+          { name: "files_restored", type: "string" },
+          { name: "files_removed", type: "string" }
+        ]
+      },
+      {
+        name: "retry_budget_exhausted",
         attributes: [
           { name: "transition", type: "string" },
           { name: "signature", type: "string" },
           { name: "detail", type: "string" }
         ]
-      },
-      { name: "workspace_rolled_back", attributes: [{ name: "reason", type: "string" }, { name: "step_id", type: "string" }] },
-      { name: "retry_budget_exhausted", attributes: [{ name: "signature", type: "string" }, { name: "detail", type: "string" }] }
+      }
     ],
     objects: [...objects.values()],
     events
@@ -769,6 +1339,8 @@ export async function executePowlWithTokenReplay(
 
   const ocelJson = JSON.stringify(ocel, null, 2);
   const ocelSha256 = createHash("sha256").update(ocelJson).digest("hex");
+  // Detach + freeze so callers cannot mutate the hashed log (EU AI Act record accuracy).
+  const ocelSnapshot = deepFreeze(JSON.parse(ocelJson) as Ocel2Log);
 
   let wasm4pmCompatChecked = false;
   const compatDist = options.wasm4pmCompatDir
@@ -817,7 +1389,7 @@ export async function executePowlWithTokenReplay(
     alignment,
     completionHeuristic: replay,
     kingman,
-    ocel,
+    ocel: ocelSnapshot,
     ocelSha256,
     wasm4pmCompatChecked,
     equilibriumWip: aimd.peakEquilibriumWip,
@@ -944,8 +1516,9 @@ export async function runAutonomicLoop(
         sharedLimiter.recordFailure(`cycle_refusal:${detail}`);
       } catch (err) {
         res.refusalCode = "RETRY_BUDGET_EXHAUSTED";
-        res.ocel.events.push({
-          id: `e_${String(res.ocel.events.length + 1).padStart(5, "0")}`,
+        const mutableOcel = JSON.parse(JSON.stringify(res.ocel)) as Ocel2Log;
+        mutableOcel.events.push({
+          id: `e_${String(mutableOcel.events.length + 1).padStart(5, "0")}`,
           type: "retry_budget_exhausted",
           time: new Date().toISOString(),
           attributes: [
@@ -954,7 +1527,8 @@ export async function runAutonomicLoop(
           ],
           relationships: []
         });
-        const updatedOcelJson = JSON.stringify(res.ocel, null, 2);
+        const updatedOcelJson = JSON.stringify(mutableOcel, null, 2);
+        res.ocel = deepFreeze(mutableOcel);
         res.ocelSha256 = createHash("sha256").update(updatedOcelJson).digest("hex");
         if (options.outputDir) {
           mkdirSync(options.outputDir, { recursive: true });

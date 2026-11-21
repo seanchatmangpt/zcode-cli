@@ -34,11 +34,13 @@ import {
 } from "./zai-oauth.ts";
 import { requestAppServer } from "./app-server-client.ts";
 import {
+  isHeadlessPromptArgs,
   leaseIdentityFromEnv,
   ocelDirectory,
   ocelEnabled,
   OcelRecorder,
   ocelSourceForArgs,
+  ocelUntappableWarning,
   startOcelTap,
   STREAM_SOURCE
 } from "./ocel-tap.ts";
@@ -632,7 +634,7 @@ async function runRuntime(
   const tuiInvocation = isTuiRuntimeInvocation(args);
   const regulated = Boolean(complianceCtx && isRegulatedProfile(complianceCtx.config.compliance.profile));
   const isStreamJson = ocelSourceForArgs(args) === STREAM_SOURCE;
-  const isJsonMode = (args.includes("-p") || args.includes("--print")) && args.includes("--json");
+  const isJsonMode = isHeadlessPromptArgs(args) && args.includes("--json");
 
   let disclosureEnvelope: ReturnType<typeof buildArt50DisclosureEnvelope> | undefined;
   if (regulated && complianceCtx) {
@@ -668,8 +670,12 @@ async function runRuntime(
       ? new OcelRecorder(tapSource, ocelDirectory(process.env), leaseIdentityFromEnv(process.env))
       : undefined);
 
-  const pipeStdoutForJson = !ocel && regulated && isJsonMode && Boolean(disclosureEnvelope);
+  if (!ocel) {
+    const warn = ocelUntappableWarning(args, process.env);
+    if (warn) process.stderr.write(warn);
+  }
 
+  const pipeStdoutForJson = !ocel && regulated && isJsonMode && Boolean(disclosureEnvelope);
   const child = spawnChild(node, [runtimePath, ...args], {
     cwd: process.cwd(),
     env: runtimeEnvironment(extraEnv),

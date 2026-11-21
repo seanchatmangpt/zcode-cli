@@ -471,9 +471,30 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
+ * Remove a stale lock only when its bytes still equal `observed`.
+ * Returns true when this call unlinked the path. A changed payload means a
+ * live holder won the race; leave their lock alone (closes the stale-PID TOCTOU).
+ */
+export function reclaimStaleLockIfUnchanged(lockPath: string, observed: string): boolean {
+  try {
+    if (readFileSync(lockPath, "utf8") !== observed) return false;
+    unlinkSync(lockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Run `fn` holding `<state>.lock` (created O_EXCL, containing the holder pid).
  * A lock whose pid is dead, or an empty/unparseable lock older than the
  * timeout (a crash between create and write), is stale and removed.
+ *
+ * Stale reclaim is compare-and-unlink: we only remove the lock if its bytes
+ * still match the dead-pid (or empty) payload we observed. Unlinking after a
+ * bare `!pidAlive` check is a TOCTOU — a live holder can replace the file
+ * between the liveness probe and unlink, and a blind unlink would steal that
+ * holder's lock (Art.15 cybersecurity / exclusive admission).
  */
 function withStateLock<T>(statePath: string, dir: string, timeoutMs: number, fn: () => T): T {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -504,8 +525,10 @@ function withStateLock<T>(statePath: string, dir: string, timeoutMs: number, fn:
     }
     let holder = "unknown";
     let stale = false;
+    let observed = "";
     try {
-      const text = readFileSync(lockPath, "utf8").trim();
+      observed = readFileSync(lockPath, "utf8");
+      const text = observed.trim();
       const pid = /^\d+$/.test(text) ? Number(text) : NaN;
       if (Number.isSafeInteger(pid) && pid > 0) {
         holder = `pid ${pid}`;
@@ -519,11 +542,7 @@ function withStateLock<T>(statePath: string, dir: string, timeoutMs: number, fn:
       throw error;
     }
     if (stale) {
-      try {
-        unlinkSync(lockPath);
-      } catch {
-        // another worker removed it first
-      }
+      reclaimStaleLockIfUnchanged(lockPath, observed);
       continue;
     }
     if (Date.now() >= deadline) throw new RelayLockError(lockPath, holder);

@@ -3,14 +3,9 @@ import { spawn } from "node:child_process";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { executePowlWithTokenReplay, type PowlNode } from "../src/powl-ocel-orchestrator.ts";
+import { resolvePowlWorkflowConfig } from "./powl-workflow-config.ts";
 
-const CASTLE_DIR = "/Users/sac/castle";
-const ZCODE_BIN = "/Users/sac/zcode-cli/bin/zcode.js";
-const WASM4PM_COMPAT_DIR = "/Users/sac/wasm4pm-compat";
-const OUT_DIR = "/Users/sac/.gemini/antigravity-cli/brain/252547d5-87d4-4733-9760-3d18ea51dcfb/scratch/castle-powl-ocel";
-
-const dryRun = process.argv.includes("--dry-run");
-const tomlPath = join(process.cwd(), "zcode-cli.toml");
+const cfg = resolvePowlWorkflowConfig({ workflowSlug: "castle" });
 
 const castlePowl: PowlNode = {
   kind: "partial_order",
@@ -44,19 +39,19 @@ const castlePowl: PowlNode = {
   ]
 };
 
-const logDir = join(OUT_DIR, "logs");
+const logDir = join(cfg.outputDir, "logs");
 mkdirSync(logDir, { recursive: true });
 
 const res = await executePowlWithTokenReplay(
   castlePowl,
   async (t) => {
-    if (dryRun) return { ok: true, exitCode: 0 };
+    if (cfg.dryRun) return { ok: true, exitCode: 0 };
     const logFile = join(logDir, `${t.activityId ?? t.id}.log`);
     const out = createWriteStream(logFile, { flags: "w" });
-    const prompt = `POWL Transition ${t.id} (${t.label})\nExclusive Target: ${t.targetFile}\nImplement in /Users/sac/castle (Pure Rust, zero mocks, unit tests).`;
+    const prompt = `POWL Transition ${t.id} (${t.label})\nExclusive Target: ${t.targetFile}\nImplement in ${cfg.castleDir} (Pure Rust, zero mocks, unit tests).`;
     return await new Promise((resolve) => {
-      const child = spawn("node", [ZCODE_BIN, "--cwd", CASTLE_DIR, "-p", prompt, "--mode", "yolo", "--max-turns", "12"], {
-        cwd: CASTLE_DIR,
+      const child = spawn("node", [cfg.zcodeBin, "--cwd", cfg.castleDir, "-p", prompt, "--mode", "yolo", "--max-turns", "12"], {
+        cwd: cfg.castleDir,
         stdio: ["ignore", "pipe", "pipe"]
       });
       child.stdout.pipe(out);
@@ -65,16 +60,18 @@ const res = await executePowlWithTokenReplay(
       child.on("error", (err) => { out.end(); resolve({ ok: false, exitCode: 1, detail: err.message }); });
     });
   },
-  { tomlPath, wasm4pmCompatDir: WASM4PM_COMPAT_DIR, outputDir: OUT_DIR }
+  { tomlPath: cfg.tomlPath, wasm4pmCompatDir: cfg.wasm4pmCompatDir, outputDir: cfg.outputDir }
 );
 
 console.log(JSON.stringify({
   workflowId: res.workflowId,
-  dryRun,
+  dryRun: cfg.dryRun,
   equilibriumWip: res.equilibriumWip,
   replay: res.replay,
   ocelSha256: res.ocelSha256,
   wasm4pmCompatChecked: res.wasm4pmCompatChecked,
   eventCount: res.ocel.events.length,
-  artifacts: OUT_DIR
+  artifacts: cfg.outputDir,
+  castleDir: cfg.castleDir,
+  zcodeBin: cfg.zcodeBin
 }, null, 2));
