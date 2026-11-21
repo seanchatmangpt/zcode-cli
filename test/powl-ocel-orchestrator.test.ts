@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AimdWipController,
   compilePowlToWorkflowNet,
   deriveFollowUpPowl,
   executePowlWithTokenReplay,
@@ -81,6 +82,44 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
     expect(res.replay.soundTermination).toBe(false);
     expect(res.replay.fitness).toBeLessThan(1);
     expect(res.ocel.events.some((e) => e.type === "transition_refused")).toBe(true);
+  });
+
+  test("AIMD never MD on long serviceMs with healthy transport (no false build/test backoff)", () => {
+    const aimd = new AimdWipController();
+    // Fast activities establish a low median (~100ms).
+    for (let i = 0; i < 12; i++) {
+      const adj = aimd.onSuccess(80 + (i % 5) * 10);
+      expect(adj.reason).toBe("clean_completion_ai");
+    }
+    const wipBefore = aimd.wip;
+    expect(wipBefore).toBeGreaterThan(1);
+    const median = aimd.medianServiceMs();
+    expect(median).toBeLessThan(200);
+
+    // Build/test class: routinely > 2× median under healthy transport.
+    const buildSamples = [5_000, 12_000, 8_000, 30_000, 4_500];
+    let falseMd = 0;
+    for (const ms of buildSamples) {
+      expect(ms).toBeGreaterThan(median * 2);
+      const adj = aimd.onSuccess(ms);
+      if (adj.reason === "latency_spike_md" || adj.newWip < adj.oldWip) falseMd += 1;
+      expect(adj.reason).toBe("clean_completion_ai");
+      expect(adj.newWip).toBe(adj.oldWip + 1);
+    }
+    expect(falseMd).toBe(0);
+    expect(aimd.wip).toBe(wipBefore + buildSamples.length);
+  });
+
+  test("AIMD MD only on transport backpressure, then recovers with AI", () => {
+    const aimd = new AimdWipController();
+    for (let i = 0; i < 6; i++) aimd.onSuccess(100);
+    expect(aimd.wip).toBe(7);
+    const md = aimd.onTransportBackpressure();
+    expect(md.reason).toBe("transport_timeout_md");
+    expect(md.newWip).toBe(3);
+    const ai = aimd.onSuccess(50_000); // long but healthy
+    expect(ai.reason).toBe("clean_completion_ai");
+    expect(ai.newWip).toBe(4);
   });
 
   test("autonomic AIMD returns token on transport backpressure and recovers to fitness = 1.0", async () => {

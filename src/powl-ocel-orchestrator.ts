@@ -423,28 +423,34 @@ export interface Ocel2Log {
 /**
  * Autonomic AIMD + Little's Law WIP Controller.
  * Discovers peak API equilibrium online — zero user-configurable concurrency knobs.
+ *
+ * MD is transport/API-health only (connect timeout, 429, …). Heavy-tailed task
+ * duration (`serviceMs > 2× median`) must never trigger MD — coding build/test
+ * transitions are class-dependent and routinely exceed that threshold under
+ * healthy transport (ARD §5.3 / EU AI Act robustness: no false congestion backoff).
  */
 export class AimdWipController {
   wip = 1;
   peakEquilibriumWip = 1;
+  /** Rolling service-time samples for telemetry / Kingman; never used for MD. */
   private serviceSamples: number[] = [];
 
-  private baselineMs(): number {
+  /** Median serviceMs in the rolling window (telemetry only; not an MD signal). */
+  medianServiceMs(): number {
     if (this.serviceSamples.length === 0) return Infinity;
     const sorted = [...this.serviceSamples].sort((a, b) => a - b);
     return sorted[Math.floor(sorted.length * 0.5)]!;
   }
 
+  /**
+   * Additive Increase on clean completion. Records `serviceMs` for histograms;
+   * does **not** multiplicatively decrease on long task duration.
+   */
   onSuccess(serviceMs: number): { changed: boolean; oldWip: number; newWip: number; reason: string } {
     const oldWip = this.wip;
-    const base = this.baselineMs();
     this.serviceSamples.push(serviceMs);
     if (this.serviceSamples.length > 32) this.serviceSamples.shift();
 
-    if (Number.isFinite(base) && base > 0 && serviceMs > base * 2.0) {
-      this.wip = Math.max(1, Math.floor(this.wip * 0.5));
-      return { changed: this.wip !== oldWip, oldWip, newWip: this.wip, reason: "latency_spike_md" };
-    }
     this.wip = this.wip + 1;
     this.peakEquilibriumWip = Math.max(this.peakEquilibriumWip, this.wip);
     return { changed: this.wip !== oldWip, oldWip, newWip: this.wip, reason: "clean_completion_ai" };
