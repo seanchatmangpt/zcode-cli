@@ -206,6 +206,51 @@ export function redactSecrets(text: string): string {
   return redactSchemes(out);
 }
 
+
+/**
+ * IEEE OCEL 2.0 attribute closure for sealed logs: every attribute name that appears
+ * on an event must be declared on that event's eventType. The generated Tap.toOcel()
+ * emits empty eventType.attributes[]; this post-step closes the gap without editing
+ * src/generated/.
+ */
+export function closeEventTypeAttributes(doc: OcelDoc): OcelDoc {
+  const observed = new Map<string, Set<string>>();
+  for (const e of doc.events) {
+    let set = observed.get(e.type);
+    if (!set) {
+      set = new Set();
+      observed.set(e.type, set);
+    }
+    for (const a of e.attributes) set.add(a.name);
+  }
+  return {
+    ...doc,
+    eventTypes: doc.eventTypes.map((t) => {
+      const names = observed.get(t.name);
+      if (!names || names.size === 0) return t;
+      const prior = Array.isArray(t.attributes) ? t.attributes : [];
+      const existing = new Set<string>();
+      const merged: { name: string; type: string }[] = [];
+      for (const a of prior) {
+        if (a && typeof a === "object" && typeof (a as { name?: unknown }).name === "string") {
+          const name = (a as { name: string }).name;
+          if (existing.has(name)) continue;
+          existing.add(name);
+          merged.push({
+            name,
+            type: typeof (a as { type?: unknown }).type === "string" ? (a as { type: string }).type : "string",
+          });
+        }
+      }
+      for (const name of [...names].sort()) {
+        if (existing.has(name)) continue;
+        merged.push({ name, type: "string" });
+      }
+      return { name: t.name, attributes: merged };
+    }),
+  };
+}
+
 export class OcelRecorder {
   private readonly tap: Tap;
   private sessionId: string | undefined;
@@ -253,7 +298,7 @@ export class OcelRecorder {
     this.carry = "";
     this.closed = true;
     const sessionId = this.sessionId ?? `unknown-${Date.now()}`;
-    const doc = this.tap.toOcel();
+    const doc = closeEventTypeAttributes(this.tap.toOcel());
     const head = this.tap.seal();
     const ocelText = JSON.stringify(doc);
     mkdirSync(this.dir, { recursive: true });

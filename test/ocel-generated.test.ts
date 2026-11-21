@@ -66,7 +66,13 @@ describe("recorded real runtime turns -> generated OCEL 2.0", () => {
         const { seal: _seal, ...fields } = entry;
         expect(schemaProblems(schemas, "ReceiptEntry", fields)).toEqual([]);
       }
-      for (const e of doc.events) expect(schemaProblems(schemas, "OcelEventRecord", { id: e.id, type: e.type, time: e.time })).toEqual([]);
+      // OcelEventRecord is the SHACL primary-output identity triple only; full events
+      // carry attributes/relationships and fail additionalProperties (see ocel-schema-closure).
+      for (const e of doc.events) {
+        expect(schemaProblems(schemas, "OcelEventRecord", { id: e.id, type: e.type, time: e.time })).toEqual([]);
+        expect(schemaProblems(schemas, "OcelEventRecord", e)).toContain("unexpected attributes");
+        expect(schemaProblems(schemas, "OcelEventRecord", e)).toContain("unexpected relationships");
+      }
     });
 
     test(`${fx.name}: receipt entries project onto the ex4pm receipt schema`, () => {
