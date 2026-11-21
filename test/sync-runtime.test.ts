@@ -14,7 +14,9 @@ import {
   hasRuntimeHttpNoContentGuard,
   hasRuntimeNetworkRetryGuard,
   hasRuntimeSqliteBusyTimeout,
+  hasRuntimeSqliteImmediateNoAwait,
   hasRuntimeStreamEofFinishGuard,
+  countRuntimeSqliteImmediateAwaitTxns,
   installRuntimeProviderConfig,
   manifestUrl,
   parseArgs,
@@ -31,6 +33,7 @@ import {
   patchRuntimeOAuthHttpErrors,
   patchRuntimeSessionModelRecovery,
   patchRuntimeSqliteBusyTimeout,
+  patchRuntimeSqliteImmediateNoAwait,
   patchRuntimeStreamEofFinishGuard,
   patchRuntimeTerminalToolProjection,
   patchRuntimeTuiBridge,
@@ -401,6 +404,32 @@ describe("runtime synchronization", () => {
     const partial = patched.replace(`,o.db.exec("pragma busy_timeout = ${sqliteBusyTimeoutMs}")`, "");
     expect(hasRuntimeSqliteBusyTimeout(partial)).toBe(false);
     expect(() => patchRuntimeSqliteBusyTimeout(partial)).toThrow(/migration anchors/);
+  });
+
+  test("strips awaits inside promoteSessionInput BEGIN IMMEDIATE transactions", () => {
+    const vulnerable = [
+      'async function promote(e,t){let n=Date.now();e.exec("begin immediate");try{',
+      "await saveMessage(e,t.message);for(let s of t.parts)await savePart(e,s);",
+      "let f=(await listMessages(e,{sessionID:t.sessionID})).find(()=>true);",
+      "f&&await saveMessage(e,f.info);",
+      "e.prepare(`\n        update session_input\n        set status = 'promoted',\n            promoted_message_id = ?\n        `).run(t.message.id),",
+      'e.exec("commit")}catch(o){throw e.exec("rollback"),o}}'
+    ].join("");
+    const alreadySync = vulnerable.replace(/\bawait\s+/gu, "");
+    expect(countRuntimeSqliteImmediateAwaitTxns(vulnerable)).toBe(1);
+    expect(hasRuntimeSqliteImmediateNoAwait(vulnerable)).toBe(false);
+    expect(hasRuntimeSqliteImmediateNoAwait(alreadySync)).toBe(true);
+    expect(patchRuntimeSqliteImmediateNoAwait(alreadySync)).toBe(alreadySync);
+
+    const patched = patchRuntimeSqliteImmediateNoAwait(vulnerable);
+    expect(hasRuntimeSqliteImmediateNoAwait(patched)).toBe(true);
+    expect(countRuntimeSqliteImmediateAwaitTxns(patched)).toBe(0);
+    expect(patched).toContain('e.exec("begin immediate");try{saveMessage(e,t.message);');
+    expect(patched).toContain("for(let s of t.parts)savePart(e,s);");
+    expect(patched).toContain("let f=(listMessages(e,{sessionID:t.sessionID})).find");
+    expect(patched).not.toMatch(/begin immediate[\s\S]*?\bawait\b[\s\S]*?status = 'promoted'/u);
+    expect(patchRuntimeSqliteImmediateNoAwait(patched)).toBe(patched);
+    expect(hasRuntimeSqliteImmediateNoAwait('e.exec("begin immediate");try{e.exec("commit")}catch(o){throw e.exec("rollback"),o}')).toBe(true);
   });
 
   test.each(["legacy", "budgeted"])("classifies transport failures without retrying after output (%s)", budget => {
