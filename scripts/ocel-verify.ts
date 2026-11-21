@@ -4,8 +4,8 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { EVENT_TYPES, verifyChain, type OcelDoc } from "../src/generated/ocel.ts";
-import { ZcodeTurnInitial, ZcodeTurnState, ZcodeTurnTransitions, replayZcodeTurn, stepZcodeTurn } from "../src/generated/loop.ts";
 import { verify as verifyReceiptChain } from "../src/generated/receipt.ts";
+import { deviationsByTurnCase } from "./ocel-case-fsm.ts";
 
 const args = process.argv.slice(2);
 const log = args.find((a) => a.endsWith(".jsonocel"));
@@ -27,15 +27,8 @@ const types = new Set(doc.events.map((e) => e.type));
 for (const t of req) if (!types.has(t)) fail.push(`coverage: declared event type ${t} absent`);
 for (const t of types) if (!EVENT_TYPES.includes(t)) fail.push(`undeclared event type ${t}`);
 
-const names = new Set(ZcodeTurnTransitions.map((t) => t.name));
-let state: ZcodeTurnState = ZcodeTurnInitial;
-const steps: { name: string; from: string; to: string }[] = [];
-let deviations = 0;
-for (const e of doc.events) {
-  if (!names.has(e.type)) continue;
-  try { const to = stepZcodeTurn(state, e.type, {}); steps.push({ name: e.type, from: state, to }); state = to; } catch { deviations++; }
-}
-deviations += replayZcodeTurn(steps).length;
+// Case-projected FSM: one ZcodeTurn machine per `in_turn` object (not a global fold).
+const deviations = deviationsByTurnCase(doc.events);
 console.log(`deviations: ${deviations}`);
 if (deviations) fail.push(`${deviations} replay deviations`);
 
