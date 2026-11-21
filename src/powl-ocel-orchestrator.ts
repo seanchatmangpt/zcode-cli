@@ -121,7 +121,16 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     return id;
   };
 
+  /** Unique transition ids — seq suffix prevents tau_* / tau_enter_* prefix collisions. */
+  const newTransitionId = (prefix: string): string => {
+    seq += 1;
+    return `${prefix}_${seq}`;
+  };
+
   const addTransition = (t: Transition, inputs: string[], outputs: string[]) => {
+    if (pre.has(t.id) || post.has(t.id) || transitions.some((x) => x.id === t.id)) {
+      throw new Error(`WF-net violation: duplicate transition id "${t.id}"`);
+    }
     transitions.push(t);
     pre.set(t.id, inputs);
     post.set(t.id, outputs);
@@ -130,14 +139,25 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
   const compile = (node: PowlNode, startP: string, endP: string) => {
     if (node.kind === "activity") {
       addTransition(
-        { id: `t_${node.id}`, label: node.label, silent: false, activityId: node.id, objectType: node.objectType, targetFile: node.targetFile },
+        {
+          id: newTransitionId(`t_${node.id}`),
+          label: node.label,
+          silent: false,
+          activityId: node.id,
+          objectType: node.objectType,
+          targetFile: node.targetFile
+        },
         [startP],
         [endP]
       );
       return;
     }
     if (node.kind === "tau") {
-      addTransition({ id: `tau_${node.id}`, label: "τ", silent: true, objectType: "Workflow" }, [startP], [endP]);
+      addTransition(
+        { id: newTransitionId(`tau_${node.id}`), label: "τ", silent: true, objectType: "Workflow" },
+        [startP],
+        [endP]
+      );
       return;
     }
     if (node.kind === "xor") {
@@ -149,10 +169,18 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     if (node.kind === "loop") {
       const loopEntry = newPlace(`loop_in_${node.id}`);
       const loopChoice = newPlace(`loop_choice_${node.id}`);
-      addTransition({ id: `tau_enter_${node.id}`, label: "τ_enter", silent: true, objectType: "Workflow" }, [startP], [loopEntry]);
+      addTransition(
+        { id: newTransitionId(`tau_enter_${node.id}`), label: "τ_enter", silent: true, objectType: "Workflow" },
+        [startP],
+        [loopEntry]
+      );
       compile(node.doBranch, loopEntry, loopChoice);
       compile(node.redoBranch, loopChoice, loopEntry);
-      addTransition({ id: `tau_exit_${node.id}`, label: "τ_exit", silent: true, objectType: "Workflow" }, [loopChoice], [endP]);
+      addTransition(
+        { id: newTransitionId(`tau_exit_${node.id}`), label: "τ_exit", silent: true, objectType: "Workflow" },
+        [loopChoice],
+        [endP]
+      );
       return;
     }
     if (node.kind === "partial_order") {
@@ -182,7 +210,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Fork from startP to all minimal elements
       addTransition(
-        { id: `tau_fork_${node.id}`, label: "τ_fork", silent: true, objectType: "Workflow" },
+        { id: newTransitionId(`tau_fork_${node.id}`), label: "τ_fork", silent: true, objectType: "Workflow" },
         [startP],
         roots.map((r) => childStart.get(r.id)!)
       );
@@ -198,7 +226,12 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
           orderPlaces.get(u)!.push(pEdge);
         }
         addTransition(
-          { id: `tau_join_${node.id}_${v.id}`, label: `τ_join(${v.id})`, silent: true, objectType: "Workflow" },
+          {
+            id: newTransitionId(`tau_join_${node.id}_${v.id}`),
+            label: `τ_join(${v.id})`,
+            silent: true,
+            objectType: "Workflow"
+          },
           predSyncPlaces,
           [childStart.get(v.id)!]
         );
@@ -209,7 +242,12 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
         const outs = orderPlaces.get(u.id)!;
         if (outs.length === 0) continue;
         addTransition(
-          { id: `tau_split_${node.id}_${u.id}`, label: `τ_split(${u.id})`, silent: true, objectType: "Workflow" },
+          {
+            id: newTransitionId(`tau_split_${node.id}_${u.id}`),
+            label: `τ_split(${u.id})`,
+            silent: true,
+            objectType: "Workflow"
+          },
           [childEnd.get(u.id)!],
           outs
         );
@@ -217,7 +255,7 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
       // Join all maximal elements into endP
       addTransition(
-        { id: `tau_end_${node.id}`, label: "τ_end", silent: true, objectType: "Workflow" },
+        { id: newTransitionId(`tau_end_${node.id}`), label: "τ_end", silent: true, objectType: "Workflow" },
         leaves.map((l) => childEnd.get(l.id)!),
         [endP]
       );
@@ -230,6 +268,115 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
   return { places, transitions, pre, post, sourcePlace, sinkPlace };
 }
+
+/**
+ * Defensive WF-net soundness checker (van der Aalst): option to complete,
+ * proper completion, and no dead transitions via finite reachability BFS.
+ * Explore dry-run Exp-1 / ARD §3.2.3.
+ */
+export function verifyStructuralSoundness(net: WorkflowNet): {
+  optionToComplete: boolean;
+  properCompletion: boolean;
+  noDeadTransitions: boolean;
+} {
+  const placeIds = net.places.map((p) => p.id);
+  const placeIndex = new Map(placeIds.map((id, i) => [id, i] as const));
+  const n = placeIds.length;
+  const sourceIdx = placeIndex.get(net.sourcePlace);
+  const sinkIdx = placeIndex.get(net.sinkPlace);
+  if (sourceIdx === undefined || sinkIdx === undefined) {
+    return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+  }
+
+  const encode = (marking: number[]): string => marking.join(",");
+  const initial = new Array<number>(n).fill(0);
+  initial[sourceIdx] = 1;
+
+  const enabled = (marking: number[], t: Transition): boolean => {
+    const inputs = net.pre.get(t.id) ?? [];
+    return inputs.every((p) => {
+      const i = placeIndex.get(p);
+      return i !== undefined && marking[i]! >= 1;
+    });
+  };
+
+  const fire = (marking: number[], t: Transition): number[] => {
+    const next = marking.slice();
+    for (const p of net.pre.get(t.id) ?? []) {
+      next[placeIndex.get(p)!]! -= 1;
+    }
+    for (const p of net.post.get(t.id) ?? []) {
+      next[placeIndex.get(p)!]! += 1;
+    }
+    return next;
+  };
+
+  const visited = new Map<string, number[]>();
+  const queue: number[][] = [initial];
+  visited.set(encode(initial), initial);
+  const fired = new Set<string>();
+  const MAX_STATES = 50_000;
+
+  while (queue.length > 0) {
+    if (visited.size > MAX_STATES) {
+      return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+    }
+    const m = queue.shift()!;
+    for (const t of net.transitions) {
+      if (!enabled(m, t)) continue;
+      fired.add(t.id);
+      const next = fire(m, t);
+      const key = encode(next);
+      if (!visited.has(key)) {
+        visited.set(key, next);
+        queue.push(next);
+      }
+    }
+  }
+
+  const isSinkOnly = (m: number[]): boolean =>
+    m[sinkIdx] === 1 && m.every((tokens, i) => (i === sinkIdx ? tokens === 1 : tokens === 0));
+
+  const sinkKeys = [...visited.entries()].filter(([, m]) => m[sinkIdx]! >= 1).map(([k]) => k);
+  const properCompletion = sinkKeys.every((k) => isSinkOnly(visited.get(k)!));
+
+  // Reverse BFS from sink-only marking over the reachability graph edges.
+  const reverseAdj = new Map<string, string[]>();
+  for (const [key, m] of visited) {
+    for (const t of net.transitions) {
+      if (!enabled(m, t)) continue;
+      const nextKey = encode(fire(m, t));
+      if (!reverseAdj.has(nextKey)) reverseAdj.set(nextKey, []);
+      reverseAdj.get(nextKey)!.push(key);
+    }
+  }
+  const canReachSink = new Set<string>();
+  const sinkOnlyKey = encode(
+    (() => {
+      const m = new Array<number>(n).fill(0);
+      m[sinkIdx] = 1;
+      return m;
+    })()
+  );
+  if (visited.has(sinkOnlyKey)) {
+    const rq = [sinkOnlyKey];
+    canReachSink.add(sinkOnlyKey);
+    while (rq.length > 0) {
+      const cur = rq.shift()!;
+      for (const pred of reverseAdj.get(cur) ?? []) {
+        if (!canReachSink.has(pred)) {
+          canReachSink.add(pred);
+          rq.push(pred);
+        }
+      }
+    }
+  }
+  const optionToComplete = visited.size > 0 && [...visited.keys()].every((k) => canReachSink.has(k));
+  const noDeadTransitions = net.transitions.every((t) => fired.has(t.id));
+
+  return { optionToComplete, properCompletion, noDeadTransitions };
+}
+
 
 // ---------------------------------------------------------------------------
 // 3. Token-Based Replay + Online Conformance + OCEL 2.0 Emitter
