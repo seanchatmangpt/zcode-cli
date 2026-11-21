@@ -9,6 +9,10 @@ Calendar wave for **`ZCODE-CLI-SPEC-26.11.20`**: Experimentation-Through-Impleme
 | **Unified ARD/PRD (normative)** | [`ard/ZCODE-CLI-SPEC-26.11.20.md`](./ard/ZCODE-CLI-SPEC-26.11.20.md) |
 | PRD pointer | [`prd/ZCODE-CLI-SPEC-26.11.20.md`](./prd/ZCODE-CLI-SPEC-26.11.20.md) |
 
+## Implementation status (honesty)
+
+Path-exact Explore/Exploit traceability against §2.2 / §9.1.1 / §10 is **incomplete** as of the C4 EU AI Act prep pass (`REQUEST_CHANGES`): core split modules (`powl-ast`, `wf-net`, `aimd-controller`, `ocel-emitter`, `ocel-validator`, `conformance`, `lease-manager`) are not yet at their specified paths (temporary monolith credit under SPEC §2.2.1 only); Exploit X1–X4 are **0/4**. Treat the Unified ARD/PRD as the target contract, not as a claim that every path already exists on `main`.
+
 ## Release modes
 
 | Mode | Meaning |

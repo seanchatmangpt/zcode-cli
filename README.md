@@ -12,7 +12,7 @@ Running coding agents with fixed thread pools (`--concurrency 20`) or flat task 
 
 1. **Unsound Orchestration (Deadlocks & Cascade Failures):** Flat scripts fire downstream tasks before upstream contracts exist, or continue burning tokens after a foundational artifact fails.
 2. **Static Concurrency Ignores Little's Law ($L = \lambda W$):** Hardcoding `N` workers either under-utilizes the Z.AI API or saturates `api.z.ai:443` with simultaneous handshakes (`UND_ERR_CONNECT_TIMEOUT` / `429`), collapsing effective throughput $\lambda$ to zero.
-3. **Zero Process Telemetry (No Feedback Loop):** Without an **Object-Centric Event Log (OCEL 2.0)** linking events to artifacts, workflows, and stages (`E2O` and `O2O`), an orchestrator cannot measure service times, detect bottlenecks, compute conformance fitness, or synthesize follow-up work when the queue drains.
+3. **Zero Process Telemetry (No Feedback Loop):** Without an **Object-Centric Event Log (OCEL 2.0)** linking events to artifacts, workflows, and stages (`E2O` and `O2O`), an orchestrator cannot measure service times, detect bottlenecks, score schedule-completion heuristics, or synthesize follow-up work when the queue drains.
 
 ---
 
@@ -43,11 +43,12 @@ Running coding agents with fixed thread pools (`--concurrency 20`) or flat task 
 └──────────────────────────────┘                        │
                                                         ▼
                   ┌──────────────────────────────────────────┐
-                  │   IEEE OCEL 2.0 Log + Conformance Court  │
+                  │   IEEE OCEL 2.0 Log + Completion Court   │
                   │   • E2O & O2O relationships              │
                   │   • Dynamic timestamped standing         │
-                  │   • Fitness: 0.5(1-m/c) + 0.5(1-r/p)     │
-                  │   • Validated via ~/wasm4pm-compat       │
+                  │   • Schedule fitness (completion heuris- │
+                  │     tic — not behavioral conformance)    │
+                  │   • Optional external OCEL validator hook│
                   └────────────────────┬─────────────────────┘
                                        │ deriveFollowUpPowl(R_t)
                                        ▼
@@ -65,9 +66,9 @@ Running coding agents with fixed thread pools (`--concurrency 20`) or flat task 
 |---|---|---|
 | **POWL v2 AST** (`src/powl-ocel-orchestrator.ts`) | Kourani & van der Aalst (2023) | Recursive `Activity`, `Tau`, `Xor`, `Loop(do, redo)`, and strict `PartialOrder(V, ≺)` — validated for irreflexivity, asymmetry, and acyclicity. |
 | **Workflow-Net Compiler** (`compilePowlToWorkflowNet`) | Van der Aalst Soundness Theorem | Compiles any POWL tree into a sound Petri Net `(P, T, pre, post, sourcePlace, sinkPlace)` guaranteed free of deadlocks and livelocks. |
-| **Token-Based Replay** (`executePowlWithTokenReplay`) | Conformance Fitness $f = \frac{1}{2}(1 - \frac{m}{c}) + \frac{1}{2}(1 - \frac{r}{p})$ | Transitions fire strictly when input places hold tokens (`M(p) ≥ 1`). Logic refusals halt fail-closed (`f < 1.0`); transient transport timeouts return tokens to input places (`m = 0`), preserving soundness. |
-| **Autonomic AIMD Equilibrium** (`AimdWipController`) | Little's Law ($L = \lambda W$) + AIMD | Starts at `WIP = 1`, probes upward (`+1`) on clean completions, and backs off (`×0.5`) on transport/API congestion (connect timeouts, `429`s). **Never** MD on raw `serviceMs > 2×` median (build/test are heavy-tailed). **Zero hardcoded concurrency knobs.** |
-| **IEEE OCEL 2.0 Telemetry** | Berti, Koren, van der Aalst et al. (2024) | Records `E2O` (`workflow`, `produces`, `verifies`, `blocks`), `O2O` (`part_of`), timestamped `standing` transitions (`RUNNING -> ALIVE | REFUSED`), and per-transition `serviceMs`; auto-validates against `~/wasm4pm-compat`. |
+| **Token-Based Replay** (`executePowlWithTokenReplay`) | Schedule completion heuristic $f = \frac{1}{2}(1 - \frac{m}{c}) + \frac{1}{2}(1 - \frac{r}{p})$ (Explore; **not** behavioral conformance — see SPEC §0.3 / §4) | Transitions fire strictly when input places hold tokens (`M(p) ≥ 1`). Logic refusals halt fail-closed (`f < 1.0`); transient transport timeouts return tokens to input places (`m = 0`), preserving soundness. Optimal $A^*$ alignment is an Exploit upgrade. |
+| **Autonomic AIMD Equilibrium** (`AimdWipController`) | AIMD feedback (seeks a usable WIP; does not “enforce” Little's Law) | Starts at `WIP = 1`, probes upward (`+1`) on clean completions, and backs off (`×0.5`) on **transport** signals (connect timeout, `429`, TTFT spike). Service-time duration alone must not drive MD. **Zero hardcoded concurrency knobs.** |
+| **IEEE OCEL 2.0 Telemetry** | Berti, Koren, van der Aalst et al. (2024) | Records `E2O` (`workflow`, `produces`, `verifies`, `blocks`), `O2O` (`part_of`), timestamped `standing` transitions (`RUNNING -> ALIVE | REFUSED`), and per-transition `serviceMs`; optional external validator via `ocel.validator_cmd` (absence must not block Explore). |
 | **Never-Empty Follow-Up Synthesis** (`runAutonomicLoop`) | Closed-Loop Recursion ($R_t \to \text{POWL}_{t+1}$) | When a cycle completes, `deriveFollowUpPowl()` immediately synthesizes the next cycle (remediation if refused, profiling/optimization if bottlenecked, or anti-vacuity mutation + drift audit if `ALIVE`). |
 
 ---
