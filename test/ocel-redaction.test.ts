@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OcelRecorder, redactSecrets } from "../src/ocel-tap.ts";
+import { OcelRecorder, redactSecrets, sanitizeSessionFileId } from "../src/ocel-tap.ts";
 import { fixtures } from "./support/ocel.ts";
 
 const fakeKey = "FAKEKEY-9ce8af9704914b78a47ecb91ded590c3";
@@ -77,9 +77,60 @@ describe("redactSecrets (pure)", () => {
     expect(redactSecrets(`Bearer ${fakeKey}`)).toBe("Bearer REDACTED");
     expect(redactSecrets("the token bucket refills")).toBe("the token bucket refills");
   });
+
+  test("redacts URL query/fragment credentials (B4 pre-fix: secrets never matched a JSON key)", () => {
+    const query = JSON.stringify({ url: `https://api.example.com/v1?api_key=${fakeKey}&q=1` });
+    const out = redactSecrets(query);
+    expect(out.includes(fakeKey)).toBe(false);
+    expect(out.includes("api_key=REDACTED")).toBe(true);
+    expect(redactSecrets(`https://oauth.example/?access_token=${fakeKey}`).includes(fakeKey)).toBe(false);
+    expect(redactSecrets(`https://x/#access_token=${fakeKey}`).includes(fakeKey)).toBe(false);
+    expect(redactSecrets(`https://x/?token=${fakeKey}`).includes(fakeKey)).toBe(false);
+    // userinfo password
+    expect(redactSecrets(`https://user:${fakeKey}@host/path`)).toBe("https://user:REDACTED@host/path");
+    // Ordinary prose with a guarded word still survives.
+    expect(redactSecrets("the token bucket refills")).toBe("the token bucket refills");
+  });
+
+  test("sanitizeSessionFileId strips path-hostile URL punctuation", () => {
+    const sid = sanitizeSessionFileId(`https://api.example.com/?api_key=REDACTED`);
+    expect(sid.includes("/")).toBe(false);
+    expect(sid.includes("?")).toBe(false);
+    expect(sid.includes("=")).toBe(false);
+    expect(sid.length).toBeGreaterThan(0);
+  });
 });
 
 describe("recorder-level redaction", () => {
+  test("secret-bearing URL sessionId is redacted before filename/receipt bind (B4 pre-fix)", () => {
+    const suite = fixtures().find((f) => f.name === "turn-simple.ndjson") ?? fixtures()[0];
+    expect(suite).toBeDefined();
+    const sid = `https://api.example.com/callback?api_key=${fakeKey}`;
+    const doctored = suite!.lines.map((line) => {
+      if (!line.trim()) return line;
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      parsed.sessionId = sid;
+      return JSON.stringify(parsed);
+    });
+    const dir = mkdtempSync(join(tmpdir(), "ocel-sess-redact-"));
+    try {
+      const recorder = new OcelRecorder("zcode_stream", dir);
+      for (const line of doctored) recorder.feedLine(line);
+      const result = recorder.finish();
+      expect(result.events).toBeGreaterThan(0);
+      expect(result.sessionId.includes(fakeKey)).toBe(false);
+      expect(result.ocelPath.includes(fakeKey)).toBe(false);
+      expect(result.receiptPath.includes(fakeKey)).toBe(false);
+      const ocel = readFileSync(result.ocelPath, "utf8");
+      const receipt = readFileSync(result.receiptPath, "utf8");
+      expect(ocel.includes(fakeKey)).toBe(false);
+      expect(receipt.includes(fakeKey)).toBe(false);
+      expect(JSON.parse(receipt).chain_intact).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a secret in real fixture traffic never reaches the ocel file or receipt", () => {
     const suite = fixtures().find((f) => f.name === "turn-tool.ndjson");
     expect(suite).toBeDefined();
