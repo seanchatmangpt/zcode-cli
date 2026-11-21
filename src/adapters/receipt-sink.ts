@@ -1,0 +1,200 @@
+/**
+ * Honest standing, machine exit codes, dual-receipt egress (ledger + loop_receipt + optional DFCM).
+ */
+
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+
+import type { ExitCode, Standing, TransitionReceipt } from "./types.ts";
+import { standingFromExit, worstExitCode } from "./types.ts";
+
+export interface ReceiptSinkOptions {
+  ledgerPath: string;
+  outDir: string;
+  /** Optional path to DFCM receipt schema / sink (~/.zcode/dfcm/...). */
+  dfcmReceiptPath?: string;
+  enforceTwinParity?: boolean;
+  twinParitySelfTestCmd?: string[];
+  cwd?: string;
+}
+
+export interface CycleCloseInput {
+  cycleId: string;
+  startedAt: string;
+  receipts: TransitionReceipt[];
+  twinParity?: Record<string, string>;
+  /** Missing live secrets / AS-01 seals → BLOCKED, never ALIVE. */
+  blocked?: boolean;
+  sandbox?: boolean;
+  unverified?: boolean;
+}
+
+export interface CycleCloseResult {
+  aggregateStanding: Standing;
+  exitCode: ExitCode;
+  loopReceiptPath: string;
+  ledgerPath: string;
+  dfcmPath?: string;
+}
+
+export class ReceiptSink {
+  readonly name = "receipt-sink";
+  constructor(private readonly opts: ReceiptSinkOptions) {}
+
+  /**
+   * Anti-fake-ALIVE: compose court exit codes + sandbox/seal flags into honest standing.
+   */
+  resolveStanding(
+    courtExit: ExitCode,
+    flags: { sandbox?: boolean; unverified?: boolean; blocked?: boolean } = {}
+  ): Standing {
+    return standingFromExit(courtExit, flags);
+  }
+
+  closeCycle(input: CycleCloseInput): CycleCloseResult {
+    if (this.opts.enforceTwinParity) {
+      const cmd = this.opts.twinParitySelfTestCmd;
+      if (cmd?.length) {
+        const r = spawnSync(cmd[0]!, cmd.slice(1), {
+          cwd: this.opts.cwd,
+          encoding: "utf8",
+          env: process.env
+        });
+        if (r.status !== 0) {
+          input = {
+            ...input,
+            unverified: true,
+            twinParity: { ...(input.twinParity ?? {}), hands_free: "FAILED" }
+          };
+        } else {
+          input = {
+            ...input,
+            twinParity: { ...(input.twinParity ?? {}), hands_free: "self-test-ok" }
+          };
+        }
+      }
+    }
+
+    const standings = input.receipts.map((r) => {
+      if (input.blocked) return "BLOCKED" as Standing;
+      if (input.sandbox && r.standing === "ALIVE") return "PARTIAL_ALIVE";
+      if (input.unverified && r.standing === "ALIVE") return "UNVERIFIED";
+      return r.standing;
+    });
+
+    const aggregate = aggregateStanding(standings);
+    const exitCode = exitCodeForStanding(aggregate);
+
+    mkdirSync(dirname(this.opts.ledgerPath), { recursive: true });
+    for (const r of input.receipts) {
+      const line = {
+        ts: new Date().toISOString(),
+        cycleId: input.cycleId,
+        workOrderId: r.workOrderId,
+        outcome: r.outcome,
+        standing: standings[input.receipts.indexOf(r)],
+        sha256Receipt: r.sha256Receipt,
+        detail: r.detail,
+        baseSha: r.baseSha,
+        ocelSha256: r.ocelSha256
+      };
+      appendFileSync(this.opts.ledgerPath, `${JSON.stringify(line)}\n`);
+    }
+
+    mkdirSync(this.opts.outDir, { recursive: true });
+    const loopReceiptPath = join(this.opts.outDir, "loop_receipt.json");
+    const loopReceipt = {
+      schema: "zcode.sjira.loop_receipt/1",
+      cycleId: input.cycleId,
+      startedAt: input.startedAt,
+      finishedAt: new Date().toISOString(),
+      twinParity: input.twinParity,
+      outcomes: input.receipts.map((r, i) => ({
+        workOrderId: r.workOrderId,
+        outcome: r.outcome,
+        standing: standings[i],
+        sha256Receipt: r.sha256Receipt
+      })),
+      aggregateStanding: aggregate,
+      exitCode
+    };
+    writeFileSync(loopReceiptPath, `${JSON.stringify(loopReceipt, null, 2)}\n`);
+
+    let dfcmPath: string | undefined;
+    if (this.opts.dfcmReceiptPath) {
+      dfcmPath = this.writeDfcmReceipt(input, aggregate, exitCode);
+    }
+
+    return {
+      aggregateStanding: aggregate,
+      exitCode,
+      loopReceiptPath,
+      ledgerPath: this.opts.ledgerPath,
+      dfcmPath
+    };
+  }
+
+  /**
+   * Five Chatman fields bound to HEAD SHA (dfcm receipt schema subset).
+   */
+  writeDfcmReceipt(input: CycleCloseInput, standing: Standing, exitCode: ExitCode): string {
+    const path = this.opts.dfcmReceiptPath!;
+    mkdirSync(dirname(path), { recursive: true });
+    const head = gitHead(this.opts.cwd ?? process.cwd());
+    const body = {
+      schema: "zcode.dfcm.receipt/1",
+      subject_sha: head,
+      cycle_id: input.cycleId,
+      standing,
+      exit_code: exitCode,
+      authority: "NONE",
+      external_do_count: 0,
+      sha256: ""
+    };
+    body.sha256 = createHash("sha256").update(JSON.stringify({ ...body, sha256: undefined })).digest("hex");
+    writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`);
+    return path;
+  }
+}
+
+export function aggregateStanding(standings: readonly Standing[]): Standing {
+  if (standings.length === 0) return "UNKNOWN";
+  if (standings.some((s) => s === "REFUSED" || s === "TIMED_OUT")) {
+    return standings.find((s) => s === "REFUSED" || s === "TIMED_OUT")!;
+  }
+  if (standings.some((s) => s === "BLOCKED")) return "BLOCKED";
+  if (standings.some((s) => s === "PARTIAL_ALIVE")) return "PARTIAL_ALIVE";
+  if (standings.some((s) => s === "UNVERIFIED")) return "UNVERIFIED";
+  if (standings.every((s) => s === "ALIVE")) return "ALIVE";
+  return "UNKNOWN";
+}
+
+export function exitCodeForStanding(s: Standing): ExitCode {
+  if (s === "ALIVE") return 0;
+  if (s === "REFUSED" || s === "TIMED_OUT") return 1;
+  if (s === "BLOCKED") return 2;
+  if (s === "UNVERIFIED" || s === "PARTIAL_ALIVE") return 2;
+  if (s === "UNSUPPORTED") return 3;
+  return 2;
+}
+
+function gitHead(cwd: string): string {
+  const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  return (r.stdout || "").trim() || "UNKNOWN";
+}
+
+/** Anti-vacuity: flip a known PASS court to REFUSED when mutation injected. */
+export function antiVacuityExpectFail(actual: ExitCode): boolean {
+  return actual === 1;
+}
+
+export function composeCourtExits(exits: ExitCode[]): ExitCode {
+  return worstExitCode(exits);
+}
+
+export function loadLoopReceipt(path: string): unknown {
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8"));
+}

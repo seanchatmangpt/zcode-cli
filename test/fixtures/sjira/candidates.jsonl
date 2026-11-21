@@ -1,0 +1,3 @@
+{"id":"WO-A","label":"Author ontology shape","objectType":"WorkOrder","pathScope":["ontology/"],"requiresIgniterCleanRoom":true,"standing":"UNKNOWN","prompt":"Mutate ontology/*.ttl only; never edit generated outputs."}
+{"id":"WO-B","label":"Author template","objectType":"WorkOrder","dependsOn":["WO-A"],"pathScope":["priv/ggen/"],"requiresIgniterCleanRoom":true,"standing":"UNKNOWN","prompt":"Mutate .eex/.tera templates only."}
+{"id":"WO-C","label":"Readonly audit","objectType":"WorkOrder","dependsOn":["WO-A","WO-B"],"standing":"UNKNOWN","prompt":"Audit regeneration; do not mutate."}
