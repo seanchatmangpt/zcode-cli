@@ -109,6 +109,96 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
     expect(res.ocel.events.some((e) => e.type === "wip_backoff")).toBe(true);
   });
 
+  test("falsifier: drainSilent must not kill PowlLoop.redoBranch when redo requested", async () => {
+    const powl: PowlNode = {
+      kind: "loop",
+      id: "L",
+      maxIterations: 2,
+      doBranch: { kind: "activity", id: "do", label: "DO", objectType: "Artifact" },
+      redoBranch: { kind: "activity", id: "redo", label: "REDO", objectType: "Artifact" }
+    };
+    const fired: string[] = [];
+    const res = await executePowlWithTokenReplay(powl, async (t) => {
+      fired.push(t.activityId!);
+      // Request redo after the first do so the redoBranch is taken once.
+      return { ok: true, exitCode: 0, redo: t.activityId === "do" && fired.filter((x) => x === "do").length === 1 };
+    });
+    expect(fired).toContain("redo");
+    expect(fired.filter((x) => x === "do").length).toBe(2);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.replay.fitness).toBe(1);
+  });
+
+  test("falsifier: loop(tau,tau) must terminate (no drainSilent livelock)", async () => {
+    const powl: PowlNode = {
+      kind: "loop",
+      id: "Ltau",
+      doBranch: { kind: "tau", id: "doTau" },
+      redoBranch: { kind: "tau", id: "redoTau" }
+    };
+    const res = await Promise.race([
+      executePowlWithTokenReplay(powl, async () => ({ ok: true, exitCode: 0 })),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("loop(tau,tau) hung — drainSilent livelock")), 500)
+      )
+    ]);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.replay.fitness).toBe(1);
+  });
+
+  test("falsifier: silent XOR branch must not starve visible sibling", async () => {
+    const powl: PowlNode = {
+      kind: "xor",
+      id: "X",
+      branches: [
+        { kind: "activity", id: "A", label: "A", objectType: "Artifact" },
+        { kind: "tau", id: "silentB" }
+      ]
+    };
+    const fired: string[] = [];
+    const res = await executePowlWithTokenReplay(powl, async (t) => {
+      fired.push(t.activityId!);
+      return { ok: true, exitCode: 0 };
+    });
+    expect(fired).toEqual(["A"]);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.replay.fitness).toBe(1);
+  });
+
+  test("falsifier: WIP>=2 must not fire all XOR branches (no negative marking)", async () => {
+    const powl: PowlNode = {
+      kind: "partial_order",
+      id: "root",
+      children: [
+        { kind: "activity", id: "warm1", label: "W1", objectType: "Artifact" },
+        { kind: "activity", id: "warm2", label: "W2", objectType: "Artifact" },
+        {
+          kind: "xor",
+          id: "X",
+          branches: [
+            { kind: "activity", id: "xa", label: "XA", objectType: "Artifact" },
+            { kind: "activity", id: "xb", label: "XB", objectType: "Artifact" }
+          ]
+        }
+      ],
+      order: [
+        ["warm1", "X"],
+        ["warm2", "X"]
+      ]
+    };
+    const fired: string[] = [];
+    const res = await executePowlWithTokenReplay(powl, async (t) => {
+      fired.push(t.activityId!);
+      await new Promise((r) => setTimeout(r, 5));
+      return { ok: true, exitCode: 0 };
+    });
+    const xorFired = fired.filter((x) => x === "xa" || x === "xb");
+    expect(xorFired).toHaveLength(1);
+    expect(res.replay.fitness).toBeLessThanOrEqual(1);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.equilibriumWip).toBeGreaterThanOrEqual(2);
+  });
+
   test("autonomic loop never empties queue: synthesizes follow-up POWL cycles from R_t", async () => {
     const initial: PowlNode = {
       kind: "activity",
