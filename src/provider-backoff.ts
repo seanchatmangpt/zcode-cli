@@ -159,6 +159,11 @@ export async function callWithCapacityBackoff<T>(
  * FIFO concurrency cap over provider calls. Queued calls wait; nothing is
  * dropped, and the in-flight bound this process contributes never exceeds
  * `limit`.
+ *
+ * Slot transfer on release: a waiter inherits the freed slot atomically
+ * (inFlight unchanged) so a concurrent non-waiter cannot sneak an acquire
+ * between decrement and wake — the classic ConcurrencyCap(1) TOCTOU under
+ * single-threaded JS microtask interleaving.
  */
 export class ConcurrencyCap {
   private inFlight = 0;
@@ -173,16 +178,24 @@ export class ConcurrencyCap {
   }
 
   async acquire(): Promise<() => void> {
-    if (this.inFlight >= this.limit) {
+    if (this.inFlight < this.limit) {
+      this.inFlight += 1;
+    } else {
+      // Wait for a releaser to transfer its slot; do not re-increment.
       await new Promise<void>((resolve) => this.queue.push(resolve));
     }
-    this.inFlight += 1;
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      this.inFlight -= 1;
-      this.queue.shift()?.();
+      const next = this.queue.shift();
+      if (next) {
+        // Transfer the slot: inFlight stays at the bound; the waiter resumes
+        // already counted.
+        next();
+      } else {
+        this.inFlight -= 1;
+      }
     };
   }
 
