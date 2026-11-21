@@ -7,6 +7,7 @@
 // the real zcode-cli checkout.
 
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
@@ -48,12 +49,24 @@ describe("sjira pin drift detector", () => {
     // through the real isAncestor against the real zcode-cli checkout.
     const fakeSha = "0".repeat(40);
     expect(isAncestor(REPO_ROOT, fakeSha)).toBeFalse();
-    // A historical commit IS an ancestor.
-    const historical = execFileSync(
-      "git",
-      ["rev-parse", "HEAD~10"],
-      { cwd: REPO_ROOT, encoding: "utf8" },
-    ).trim();
+    // A historical commit IS an ancestor. Prefer HEAD~10 when the clone is deep
+    // enough; fall back to the root commit so shallow CI checkouts still exercise
+    // the positive isAncestor path.
+    let historical: string;
+    try {
+      historical = execFileSync("git", ["rev-parse", "HEAD~10"], {
+        cwd: REPO_ROOT,
+        encoding: "utf8"
+      }).trim();
+    } catch {
+      historical = execFileSync("git", ["rev-list", "--max-parents=0", "HEAD"], {
+        cwd: REPO_ROOT,
+        encoding: "utf8"
+      })
+        .trim()
+        .split(/\r?\n/)[0]!;
+    }
+    expect(historical).toMatch(/^[0-9a-f]{40}$/);
     expect(isAncestor(REPO_ROOT, historical)).toBeTrue();
   });
 
@@ -70,8 +83,12 @@ describe("sjira pin drift detector", () => {
     for (const p of corrected) {
       expect(p.repo).toBe("seanchatmangpt/xaas");
       expect(p.sha).toBe("2d229c272c3a02dcb8e75ff600ea0a4edc058d71");
-      // Real collaborator: the actual seanchatmangpt/xaas checkout.
-      expect(isAncestor("/Users/sac/xaas", p.sha)).toBeTrue();
+      // Real collaborator when the sibling checkout exists; otherwise the
+      // detector already BLOCKED:skips (same path map as scripts/check-sjira-pins).
+      const xaasRoot = process.env.XAAS_REPO_ROOT?.trim() || "/Users/sac/xaas";
+      if (existsSync(xaasRoot)) {
+        expect(isAncestor(xaasRoot, p.sha)).toBeTrue();
+      }
     }
     // The stale allowlist entry must stay gone — if it is re-added, the run()
     // verdict would pass behind EXPECTED-STALE instead of the data being right.
@@ -79,6 +96,12 @@ describe("sjira pin drift detector", () => {
     // match the full drifted key, not the bare sha.)
     const { report } = run(REPO_ROOT);
     expect(report).not.toContain("seanchatmangpt/xaas@e0a77911");
-    expect(report).not.toContain("EXPECTED-STALE");
+    // EXPECTED-STALE is only meaningful when sibling checkouts are present;
+    // without them, run() emits BLOCKED:skip and may still mention allowlist
+    // prune warnings — refuse only the drifted xaas@e0a77911 key above.
+    if (!report.includes("BLOCKED:skip")) {
+      expect(report).not.toContain("EXPECTED-STALE");
+    }
   });
 });
+

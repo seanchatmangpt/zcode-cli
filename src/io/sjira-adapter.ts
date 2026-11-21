@@ -705,8 +705,22 @@ export interface SjiraIoAdapter {
   paths: SjiraIoPaths;
 }
 
+/** Pick only known sjira env keys from a ProcessEnv-like bag (no index signature bleed). */
+export function sjiraEnvFromProcess(env: NodeJS.ProcessEnv = process.env): SjiraAdapterEnv {
+  const pick = (k: keyof SjiraAdapterEnv): string | undefined => {
+    const v = env[k];
+    return typeof v === "string" && v.trim() ? v : undefined;
+  };
+  return {
+    GGEN_BIN: pick("GGEN_BIN"),
+    SJIRA_CANDIDATES: pick("SJIRA_CANDIDATES"),
+    SJIRA_LEDGER: pick("SJIRA_LEDGER"),
+    SJIRA_OUT_DIR: pick("SJIRA_OUT_DIR")
+  };
+}
+
 export function createSjiraIoAdapter(
-  env: SjiraAdapterEnv = process.env,
+  env: SjiraAdapterEnv = sjiraEnvFromProcess(),
   defaults: Partial<SjiraIoPaths> & { cwd: string }
 ): SjiraIoAdapter {
   const paths = resolveSjiraPaths(env, defaults);
