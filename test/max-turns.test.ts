@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractMaxTurns, readSubagentMaxTurnsSetting, resolveSubagentMaxTurnsEnv } from "../src/max-turns.ts";
 import { patchRuntimeMaxTurnsEnforcement, patchRuntimeSubagentMaxTurns } from "../scripts/sync-runtime.ts";
@@ -45,13 +48,19 @@ test("readSubagentMaxTurnsSetting accepts positive integers and refuses everythi
 });
 
 test("resolveSubagentMaxTurnsEnv: explicit env wins, then setting.json, else unset", () => {
-  const home = fileURLToPath(new URL("./fixtures/max-turns/home", import.meta.url));
+  // Materialize under a temp HOME at runtime: repo .gitignore blocks `.zcode/`
+  // and `setting.json`, so a checked-in fixture path cannot exist in CI.
+  const home = mkdtempSync(join(tmpdir(), "zcode-max-turns-home-"));
+  mkdirSync(join(home, ".zcode", "cli"), { recursive: true });
+  writeFileSync(
+    join(home, ".zcode", "cli", "setting.json"),
+    `${JSON.stringify({ subagents: { maxTurns: 100 } }, null, 2)}\n`
+  );
   const envWithHome = { HOME: home } as NodeJS.ProcessEnv;
   expect(resolveSubagentMaxTurnsEnv({ ZCODE_SUBAGENT_MAX_TURNS: "30" })).toBe("30");
   expect(resolveSubagentMaxTurnsEnv({ ...envWithHome, ZCODE_SUBAGENT_MAX_TURNS: "30" })).toBe("30");
   expect(resolveSubagentMaxTurnsEnv(envWithHome)).toBe("100");
-  // no config anywhere: HOME points at a fixture dir with no .zcode/cli/setting.json
-  const emptyHome = fileURLToPath(new URL("./fixtures/max-turns/empty-home", import.meta.url));
+  const emptyHome = mkdtempSync(join(tmpdir(), "zcode-max-turns-empty-"));
   expect(resolveSubagentMaxTurnsEnv({ HOME: emptyHome })).toBeUndefined();
 });
 
