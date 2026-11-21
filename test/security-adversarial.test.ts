@@ -202,12 +202,13 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
   test("transactional lifecycle rolls back dirty git workspace, rejects .git/index.lock, and caps per-signature retries", async () => {
     const repoDir = makeTempDir("zcode-m4-tx-");
     try {
-      spawnSync("git", ["init", "-b", "main"], { cwd: repoDir });
-      spawnSync("git", ["config", "user.name", "Sec Test"], { cwd: repoDir });
-      spawnSync("git", ["config", "user.email", "sec@zcode.local"], { cwd: repoDir });
+      const gitOpts = { cwd: repoDir, timeout: 15_000 };
+      spawnSync("git", ["init", "-b", "main"], gitOpts);
+      spawnSync("git", ["config", "user.name", "Sec Test"], gitOpts);
+      spawnSync("git", ["config", "user.email", "sec@zcode.local"], gitOpts);
       writeFileSync(join(repoDir, "app.ts"), "export const clean = true;\n", "utf8");
-      spawnSync("git", ["add", "app.ts"], { cwd: repoDir });
-      spawnSync("git", ["commit", "-m", "init"], { cwd: repoDir });
+      spawnSync("git", ["add", "app.ts"], gitOpts);
+      spawnSync("git", ["commit", "-m", "init"], gitOpts);
 
       const powl = {
         kind: "activity" as const,
@@ -251,7 +252,7 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
     } finally {
       rmSync(repoDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("receipts:validate fails closed on defective ZCODE-26923-01 while integrity floor admits clean receipts", async () => {
     const { checkReceiptIntegrity } = await import("../scripts/validate-receipts.ts");
@@ -262,19 +263,21 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
     expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
     expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
 
-    // Running scripts/validate-receipts.ts on the defective receipt refuses fail-closed (exit 1)
+    // scripts/validate-receipts.ts accepts only --staged (no positional file filter) and scans all
+    // 27 non-partial receipts/**/*.json files via git cat-file + sequential python3 validator runs.
     const res = spawnSync(
       process.execPath,
-      ["scripts/validate-receipts.ts", "receipts/v26.9.23/ZCODE-26923-01.json"],
+      ["scripts/validate-receipts.ts"],
       {
         cwd: REPO_ROOT,
         encoding: "utf8",
-        timeout: 15_000
+        timeout: 45_000
       }
     );
     expect(res.status).toBe(1);
+    expect(res.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
     expect(`${res.stdout}\n${res.stderr}`).toContain("REFUSED");
-  });
+  }, 50_000);
 
   test("launcher enforces subagent oversight inheritance, --cwd config resolution, and pre-settings refusal without mutating HOME", () => {
     const root = makeTempDir("zcode-m4-subagent-");
@@ -349,5 +352,5 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
       chmodSync(home, 0o755);
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

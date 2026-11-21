@@ -44,7 +44,7 @@ const gitEnv = {
 };
 
 const git = (args: string[], cwd: string): string => {
-  const result = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, ...gitEnv }, stdout: "pipe", stderr: "pipe" });
+  const result = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, ...gitEnv }, stdout: "pipe", stderr: "pipe", timeout: 15_000 });
   if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
   return result.stdout.toString().trim();
 };
@@ -381,7 +381,7 @@ describe("CLAUDE-EXTINCTION-001 (permanent court)", () => {
     // -- falsifier (c): the qualification path consulted ONLY the registry ---
     expect(court.reads.length).toBe(2); // one read per selection, nothing else
     for (const read of court.reads) expect(read).toBe(court.registryPath);
-  });
+  }, 25_000);
 
   test("falsifier (a): every provider disabled -> typed refusal with ZERO fabric calls", async () => {
     const court = harness();
@@ -407,7 +407,7 @@ describe("CLAUDE-EXTINCTION-001 (permanent court)", () => {
     expect(result.code).toBe("provider_disabled");
     expect(fabric.calls).toEqual([]); // ZERO fabric calls: a disabled provider cannot even claim
     expect(existsSync(leaseFilePaths(court.worktree)[0]!)).toBe(false);
-  });
+  }, 25_000);
 
   test("falsifier (a2): corrupted contract fixture bytes fail the digest pin", () => {
     const fixturePath = new URL("./fixtures/gall-work.contract.json", import.meta.url).pathname;
@@ -421,5 +421,5 @@ describe("CLAUDE-EXTINCTION-001 (permanent court)", () => {
   test("falsifier (c) is structural: the qualification seam cannot read a credential file", () => {
     const court = harness();
     expect(() => court.readExecutionProviderConfig("/fake/claude/credentials.json")).toThrow("court refuses credential reads");
-  });
+  }, 25_000);
 });

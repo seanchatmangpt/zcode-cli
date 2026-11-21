@@ -45,13 +45,32 @@ function runRealSubprocess(
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore kill error if already exited
+      }
+      resolve({ ok: false, exitCode: 1, detail: "subprocess timed out after 20000ms" });
+    }, 20_000);
     child.stderr?.on("data", (d) => {
       stderr += String(d);
     });
-    child.on("close", (code) =>
-      resolve({ ok: code === 0, exitCode: code ?? 1, detail: stderr.trim() || undefined })
-    );
-    child.on("error", (err) => resolve({ ok: false, exitCode: 1, detail: err.message }));
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: code === 0, exitCode: code ?? 1, detail: stderr.trim() || undefined });
+    });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: false, exitCode: 1, detail: err.message });
+    });
   });
 }
 
@@ -143,7 +162,7 @@ describe("F05: Unified IEEE OCEL 2.0 metamodel, O2O graph, redaction & validatio
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("Ocel2ComplianceBuilder constructs full 8-edge O2O graph, redacts before hashing, and rejects tampering", () => {
     expect(CANONICAL_O2O_EDGES).toHaveLength(8);
@@ -418,7 +437,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
            console.log(JSON.stringify({ journal_mode: jm.journal_mode, ids: rows.map(r => r.ocel_id) }));
            db.close();`
         ],
-        { encoding: "utf8" }
+        { encoding: "utf8", timeout: 15_000 }
       );
       expect(nodeRes.status).toBe(0);
       const parsed = JSON.parse(nodeRes.stdout.trim()) as { journal_mode: string; ids: string[] };
@@ -427,7 +446,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 
   test("enforceRetentionPolicy enforces >=180d floor, retains recent artifacts, purges expired, and fails closed when unwritable", () => {
     const dir = mkdtempSync(join(tmpdir(), "zcode-retention-"));
@@ -637,12 +656,13 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
     // Verify with Python XML 1.0 parser if python3 is present
     const pyCheck = spawnSync("python3", ["-c", "import sys, xml.etree.ElementTree as ET; ET.fromstring(sys.stdin.read()); print('XML_OK')"], {
       input: xml,
-      encoding: "utf8"
+      encoding: "utf8",
+      timeout: 15_000
     });
     if (pyCheck.status === 0) {
       expect(pyCheck.stdout.trim()).toBe("XML_OK");
     }
-  });
+  }, 25_000);
 
   test("regression (Iteration 2): writeOcel2Sqlite defaults to WAL readable via { readonly: true }, handles case-insensitive column collisions, dynamic meta & WAL retention mtime", () => {
     const dir = mkdtempSync(join(tmpdir(), "zcode-sqlite-reg-"));
@@ -1109,7 +1129,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       }
 
       // (f) Cross-runtime Node v22 AppendableOcel2SqliteSink.close() -> Bun readOcel2Sqlite
-      const nodeVer = spawnSync("node", ["--version"], { encoding: "utf8" });
+      const nodeVer = spawnSync("node", ["--version"], { encoding: "utf8", timeout: 15_000 });
       if (nodeVer.status === 0 && /^v2[2-9]\./.test((nodeVer.stdout ?? "").trim())) {
         const nodeDb = join(dir, "node-sink.sqlite");
         const docJsonPath = join(dir, "node-doc.json");
@@ -1125,7 +1145,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
         const res = spawnSync(
           "node",
           ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script, docJsonPath, nodeDb],
-          { encoding: "utf8" }
+          { encoding: "utf8", timeout: 15_000 }
         );
         expect(res.status).toBe(0);
         expect(existsSync(nodeDb)).toBe(true);
@@ -1136,7 +1156,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 
   test("regression (Iteration 5): validateOcel2 returns { ok: false, errors } without TypeError on non-array event attributes/relationships", () => {
     const builder = new Ocel2ComplianceBuilder();

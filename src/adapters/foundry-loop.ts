@@ -127,7 +127,7 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const useRollback = opts.transactionalRollback ?? !opts.dryRun;
   const retryLimiter = new SignatureRetryLimiter(opts.maxSameSignatureRetries ?? 2);
   const priorDiagnostics = opts.priorDiagnostics ?? new Map<string, string>();
-  const knownTargetFiles = collectTargetFiles(current);
+  const knownTargetScopes = collectTargetScopes(current);
   let converged = false;
   let retryBudgetExhausted = false;
 
@@ -149,22 +149,22 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const executor = opts.executor ?? defaultExecutor;
 
   for (let c = 1; c <= maxCycles; c += 1) {
-    for (const [k, v] of collectTargetFiles(current)) {
-      knownTargetFiles.set(k, v);
+    for (const [k, v] of collectTargetScopes(current)) {
+      knownTargetScopes.set(k, v);
     }
     const run = await executePowlWithTokenReplay(
       current,
       async (t) => {
         // Pre: validateWriteScope before any executor mutation (EU AI Act human oversight / fail-closed).
-        const planned = plannedWriteRel(t, opts, knownTargetFiles);
-        if (!planned) {
+        const planned = plannedWriteRels(t, opts, knownTargetScopes);
+        if (!planned || planned.length === 0) {
           return {
             ok: false,
             exitCode: 2,
             detail: "write-scope refused: transition missing targetFile (SUBJECT_MISSING)"
           };
         }
-        const scope = await runWriteScope(opts.courts, [planned]);
+        const scope = await runWriteScope(opts.courts, planned);
         if (scope !== 0) {
           return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
         }
@@ -282,7 +282,7 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     }
 
     if (c < maxCycles) {
-      current = propagateTargetFiles(deriveFollowUpPowl(run, c + 1), knownTargetFiles);
+      current = propagateTargetScopes(deriveFollowUpPowl(run, c + 1), knownTargetScopes);
       validatePowlTree(current);
     }
   }
@@ -367,59 +367,98 @@ async function runWriteScope(courts: TransitionCourtAdapter[], files: string[]):
   return worstExitCode(codes);
 }
 
+function normalizeWriteRel(p: string): string {
+  return p.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
 /**
- * Resolve the relative path the transition intends to mutate *before* execution.
+ * Resolve the relative paths the transition intends to mutate *before* execution.
  * Dry-run / default executor: ontology/<activity>.ttl. Live custom executors must
- * declare `targetFile` — missing target fails closed (SUBJECT_MISSING).
+ * declare `targetFile` or non-empty `fileScope` — missing target fails closed (SUBJECT_MISSING).
  */
-function plannedWriteRel(
+function plannedWriteRels(
   t: Transition,
   opts: FoundryLoopOptions,
-  knownTargetFiles?: Map<string, string>
-): string | null {
-  if (t.targetFile) {
-    return t.targetFile.replace(/\\/g, "/").replace(/^\.\//, "");
+  knownTargetScopes?: Map<string, string[]>
+): string[] | null {
+  const explicit = [
+    ...(t.targetFile ? [t.targetFile] : []),
+    ...(t.fileScope ?? [])
+  ].map(normalizeWriteRel);
+  if (explicit.length > 0) {
+    return [...new Set(explicit)];
   }
   const inherited =
-    (t.activityId ? knownTargetFiles?.get(t.activityId) : undefined) ??
-    knownTargetFiles?.get(t.id);
-  if (inherited) {
-    return inherited.replace(/\\/g, "/").replace(/^\.\//, "");
+    (t.activityId ? knownTargetScopes?.get(t.activityId) : undefined) ??
+    knownTargetScopes?.get(t.id);
+  if (inherited && inherited.length > 0) {
+    return [...new Set(inherited.map(normalizeWriteRel))];
   }
   if (opts.dryRun || !opts.executor) {
-    return `ontology/${t.activityId ?? t.id}.ttl`;
+    return [`ontology/${t.activityId ?? t.id}.ttl`];
   }
   return null;
 }
 
-function collectTargetFiles(node: PowlNode, out = new Map<string, string>()): Map<string, string> {
+function collectTargetScopes(
+  node: PowlNode,
+  out = new Map<string, string[]>()
+): Map<string, string[]> {
   if (node.kind === "activity") {
-    if (node.targetFile) {
-      out.set(node.id, node.targetFile);
-      out.set(`art:${node.id}`, node.targetFile);
+    const unique = [
+      ...new Set([
+        ...(node.targetFile ? [node.targetFile] : []),
+        ...(node.fileScope ?? [])
+      ])
+    ];
+    if (unique.length > 0) {
+      out.set(node.id, unique);
+      out.set(`art:${node.id}`, unique);
     }
   } else if (node.kind === "xor") {
-    for (const b of node.branches) collectTargetFiles(b, out);
+    for (const b of node.branches) collectTargetScopes(b, out);
   } else if (node.kind === "loop") {
-    collectTargetFiles(node.doBranch, out);
-    collectTargetFiles(node.redoBranch, out);
+    collectTargetScopes(node.doBranch, out);
+    collectTargetScopes(node.redoBranch, out);
   } else if (node.kind === "partial_order") {
-    for (const c of node.children) collectTargetFiles(c, out);
+    for (const c of node.children) collectTargetScopes(c, out);
   }
   return out;
 }
 
-function propagateTargetFiles(node: PowlNode, knownTargetFiles: Map<string, string>): PowlNode {
-  if (knownTargetFiles.size === 0) return node;
-  const uniqueTargets = [...new Set(knownTargetFiles.values())];
-  const fallbackTarget = uniqueTargets.length === 1 ? uniqueTargets[0] : undefined;
+function withTargetScope(
+  n: Extract<PowlNode, { kind: "activity" }>,
+  scope: string[]
+): PowlNode {
+  if (scope.length === 0) return n;
+  if (scope.length === 1) return { ...n, targetFile: scope[0] };
+  return { ...n, fileScope: scope };
+}
+
+function propagateTargetScopes(
+  node: PowlNode,
+  knownTargetScopes: Map<string, string[]>
+): PowlNode {
+  if (knownTargetScopes.size === 0) return node;
+  const allKnown = [...new Set([...knownTargetScopes.values()].flat())];
   const rewrite = (n: PowlNode): PowlNode => {
     if (n.kind === "activity") {
-      if (n.targetFile) return n;
+      if (n.targetFile || (n.fileScope && n.fileScope.length > 0)) return n;
       const m = n.label.match(/^Remediate\s+(art:.+)$/);
-      const matched = m?.[1] ? knownTargetFiles.get(m[1]) : undefined;
-      const targetFile = matched ?? fallbackTarget;
-      return targetFile ? { ...n, targetFile } : n;
+      if (m?.[1]) {
+        const refId = m[1];
+        const matched = knownTargetScopes.get(refId);
+        if (matched && matched.length > 0) {
+          return withTargetScope(n, matched);
+        }
+        // Only the synthetic workflow-level target ("art:workflow" when refused.length === 0)
+        // may inherit known workspace scopes; never leak another WO's targetFile onto a
+        // specific work order that omitted targetFile (preserves PR #32 SUBJECT_MISSING).
+        if (refId === "art:workflow" && allKnown.length > 0) {
+          return withTargetScope(n, allKnown);
+        }
+      }
+      return n;
     }
     if (n.kind === "xor") {
       return { ...n, branches: n.branches.map(rewrite) };
@@ -428,7 +467,36 @@ function propagateTargetFiles(node: PowlNode, knownTargetFiles: Map<string, stri
       return { ...n, doBranch: rewrite(n.doBranch), redoBranch: rewrite(n.redoBranch) };
     }
     if (n.kind === "partial_order") {
-      return { ...n, children: n.children.map(rewrite) };
+      const childrenAfterRemediate = n.children.map(rewrite);
+      const remediateScopes: string[] = [];
+      let hasUnscopedRemediate = false;
+      for (const child of childrenAfterRemediate) {
+        if (child.kind === "activity" && child.id.startsWith("remediate-")) {
+          const s = [
+            ...(child.targetFile ? [child.targetFile] : []),
+            ...(child.fileScope ?? [])
+          ];
+          if (s.length === 0) hasUnscopedRemediate = true;
+          else remediateScopes.push(...s);
+        }
+      }
+      const uniqueRemediate = [...new Set(remediateScopes)];
+      return {
+        ...n,
+        children: childrenAfterRemediate.map((child) => {
+          if (
+            child.kind === "activity" &&
+            !child.targetFile &&
+            (!child.fileScope || child.fileScope.length === 0) &&
+            /^verify-remediation-\d+$/.test(child.id) &&
+            !hasUnscopedRemediate &&
+            uniqueRemediate.length > 0
+          ) {
+            return withTargetScope(child, uniqueRemediate);
+          }
+          return child;
+        })
+      };
     }
     return n;
   };

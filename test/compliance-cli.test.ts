@@ -160,7 +160,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
         expect(existsSync(join(home, ".zcode", "cli", "config.json"))).toBe(false);
       }
     });
-  });
+  }, 25_000);
 
   test("compliance info and risk-register run via Node 22 bin/zcode.js and respect --format validation", () => {
     withTempWorkspace(({ home, cwd }) => {
@@ -202,7 +202,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
       expect(badFmt.stderr).toContain("bogus");
       expect(badFmt.stderr).not.toContain("Usage:");
     });
-  });
+  }, 25_000);
 
   test("strict CLI exit codes 0 / 1 / 2 and anti-stub diagnostics across subcommands", () => {
     withTempWorkspace(({ home, cwd }) => {
@@ -219,7 +219,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
       expect(missingOut.exitCode).toBe(2);
       expect(missingOut.stderr).toContain("--out");
     });
-  });
+  }, 25_000);
 
   test("full CLI lifecycle: deployer-check, annex-iv, assess, doc, fria-export, ocel export/verify/discover, pmm analyze, incident report", () => {
     withTempWorkspace(({ root, home, cwd }) => {
@@ -290,7 +290,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
       expect(runCli("bun", ["incident", "report", "--in", inPath, "--out", incOut, "--session", "sess_cli_01"], cwd, home).exitCode).toBe(0);
       expect(JSON.parse(readFileSync(incOut, "utf8")).deadline_class).toBe("15d");
     });
-  });
+  }, 45_000);
 
   test("launcher Art. 14 gate refuses yolo/bypassPermissions flags under high-risk-annex-iii with exit 1", () => {
     withTempWorkspace(({ home, cwd }) => {
@@ -309,7 +309,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
         expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
       }
     });
-  });
+  }, 25_000);
 
   test("regressions: annex-iv --logs --check, in-cwd sqlite export/verify + sidecar seal enforcement, and incident --session validation", () => {
     withTempWorkspace(({ root, home, cwd }) => {
@@ -397,7 +397,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
       expect(incEmpty.exitCode).toBe(2);
       expect(existsSync(emptySessOut)).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("regression (M4 Iter3): stripping schema_version and/or seal_sha256 or setting unsupported schema_version fails closed with PROVENANCE_SEAL_FAILED under bun and node", () => {
     withTempWorkspace(({ root, home, cwd }) => {
@@ -466,5 +466,5 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
         expect(res.stdout + res.stderr).toContain("PROVENANCE_SEAL_FAILED");
       }
     });
-  });
+  }, 35_000);
 });

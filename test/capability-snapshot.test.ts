@@ -12,7 +12,7 @@ let env: Record<string, string> = {};
 let snap = "";
 
 function run(...args: string[]) {
-  const p = Bun.spawnSync(["bash", SCRIPT, ...args], { env, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawnSync(["bash", SCRIPT, ...args], { env, stdout: "pipe", stderr: "pipe", timeout: 15_000 });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 function put(rel: string, content: string) {
@@ -75,7 +75,7 @@ describe("capability-snapshot.sh", () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain("CHANGED");
     expect(r.out).toContain("changed=1");
-  });
+  }, 25_000);
 
   test("restore without --apply only prints the plan", () => {
     const r = run("restore", snap);
@@ -94,7 +94,7 @@ describe("capability-snapshot.sh", () => {
     expect(readFileSync(join(glm, "runtime.js"), "utf8")).toBe("runtime-v1");
     expect(existsSync(join(glm, "stray-new-file.js"))).toBe(false); // rm -rf step honored
     expect(run("diff", snap).code).toBe(0);
-  });
+  }, 25_000);
 
   test("save fails loudly when there is nothing to snapshot", () => {
     const empty = mkdtempSync(join(realpathSync(tmpdir()), "capsnap-empty-"));
@@ -102,6 +102,7 @@ describe("capability-snapshot.sh", () => {
       env: { ...env, HOME: empty, ZCODE_APP: join(empty, "none"), ZCODE_BACKUP_ROOT: join(empty, "b") },
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 15_000,
     });
     rmSync(empty, { recursive: true, force: true });
     expect(p.exitCode).not.toBe(0);

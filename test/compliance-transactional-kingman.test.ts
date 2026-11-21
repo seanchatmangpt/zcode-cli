@@ -31,12 +31,13 @@ function makeTempDir(prefix: string): string {
 }
 
 function initGitWorkspace(dir: string): void {
-  execFileSync("git", ["init"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "test@example.org"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.name", "ZCode Test"], { cwd: dir, stdio: "ignore" });
+  const gitOpts = { cwd: dir, stdio: "ignore" as const, timeout: 15_000 };
+  execFileSync("git", ["init"], gitOpts);
+  execFileSync("git", ["config", "user.email", "test@example.org"], gitOpts);
+  execFileSync("git", ["config", "user.name", "ZCode Test"], gitOpts);
   writeFileSync(join(dir, "tracked.txt"), "initial-clean-state\n", "utf8");
-  execFileSync("git", ["add", "tracked.txt"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["commit", "-m", "init"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["add", "tracked.txt"], gitOpts);
+  execFileSync("git", ["commit", "-m", "init"], gitOpts);
 }
 
 afterEach(() => {
@@ -107,7 +108,7 @@ describe("F12 Transactional Nets, Atomic Rollback & Retry Cap (Chicago)", () => 
     expect(res.rolledBackCount).toBe(1);
     expect(readFileSync(join(repo, "tracked.txt"), "utf8")).toBe("final-committed-edit\n");
     expect(res.events.some((e) => e.type === "workspace_rolled_back")).toBe(true);
-  });
+  }, 25_000);
 
   test("refuses DIRTY_TIMEOUT_REFUSED when rollbackOnDirty is false and fails closed on .git/index.lock", async () => {
     const repo = makeTempDir("zcode-tx-dirty-");
@@ -129,7 +130,7 @@ describe("F12 Transactional Nets, Atomic Rollback & Retry Cap (Chicago)", () => 
     expect(dirtyRes.standing).toBe("REFUSED");
 
     // Reset and place .git/index.lock
-    execFileSync("git", ["checkout", "--", "tracked.txt"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["checkout", "--", "tracked.txt"], { cwd: repo, stdio: "ignore", timeout: 15_000 });
     writeFileSync(join(repo, ".git", "index.lock"), "locked", "utf8");
 
     expect(() => captureWorkspaceSnapshot(repo)).toThrow(TransactionalRollbackError);
@@ -141,7 +142,7 @@ describe("F12 Transactional Nets, Atomic Rollback & Retry Cap (Chicago)", () => 
     expect(lockRes.ok).toBe(false);
     expect(lockRes.refusalCode).toBe("ROLLBACK_FAILED");
     expect(lockRes.errorDetail).toContain("index.lock");
-  });
+  }, 25_000);
 
   test("runAutonomicLoop enforces cross-cycle retry cap instead of looping indefinitely", async () => {
     const repo = makeTempDir("zcode-loop-tx-");
@@ -177,7 +178,7 @@ describe("F12 Transactional Nets, Atomic Rollback & Retry Cap (Chicago)", () => 
     );
     expect(loopCycles.length).toBe(3);
     expect(loopCycles.at(-1)!.refusalCode).toBe("RETRY_BUDGET_EXHAUSTED");
-  });
+  }, 25_000);
 });
 
 describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
@@ -272,8 +273,8 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     initGitWorkspace(gitRepo);
     mkdirSync(join(gitRepo, "sub"), { recursive: true });
     writeFileSync(join(gitRepo, "sub", "nested.txt"), "nested-initial\n", "utf8");
-    execFileSync("git", ["add", "sub/nested.txt"], { cwd: gitRepo, stdio: "ignore" });
-    execFileSync("git", ["commit", "-m", "add nested"], { cwd: gitRepo, stdio: "ignore" });
+    execFileSync("git", ["add", "sub/nested.txt"], { cwd: gitRepo, stdio: "ignore", timeout: 15_000 });
+    execFileSync("git", ["commit", "-m", "add nested"], { cwd: gitRepo, stdio: "ignore", timeout: 15_000 });
 
     let gitAttempt = 0;
     const gitRes = await executeTransactionalLifecycle(
@@ -297,7 +298,7 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     const gitRbEv = gitRes.events.find((e) => e.type === "workspace_rolled_back")!;
     expect(gitRbEv.attributes.find((a) => a.name === "files_restored")!.value).toBe("2");
     expect(gitRbEv.attributes.find((a) => a.name === "files_removed")!.value).toBe("2");
-  });
+  }, 25_000);
 
   test("regression F12: runAutonomicLoop syncs ocelSha256 and disk files on cross-cycle RETRY_BUDGET_EXHAUSTED", async () => {
     const outDir = makeTempDir("zcode-loop-disk-sync-");

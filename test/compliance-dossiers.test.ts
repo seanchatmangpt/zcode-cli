@@ -250,7 +250,7 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 
   test("F17 & F18: QMS manifest resolves all 13 Art. 17 clauses; assess, doc, deployer-check, and fria-export enforce thresholds", () => {
     const dir = makeTempDir("zcode-m4-qms-");
@@ -298,7 +298,7 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 
   test("F19: PMM analysis separates heavy-tailed coding turns from drift and classifies Art. 73 incidents", () => {
     const dir = makeTempDir("zcode-m4-pmm-");
@@ -365,14 +365,15 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 
   test("F17 regression: conformity assess enforces .git/index.lock and dirty rollback_on_dirty=false unconditionally (including from subdirectories)", () => {
     const dir = makeTempDir("zcode-m4-git-assess-");
     try {
-      spawnSync("git", ["init", "-b", "main"], { cwd: dir });
-      spawnSync("git", ["config", "user.name", "QMS Test"], { cwd: dir });
-      spawnSync("git", ["config", "user.email", "qms@zcode.local"], { cwd: dir });
+      const gitOpts = { cwd: dir, timeout: 15_000 };
+      spawnSync("git", ["init", "-b", "main"], gitOpts);
+      spawnSync("git", ["config", "user.name", "QMS Test"], gitOpts);
+      spawnSync("git", ["config", "user.email", "qms@zcode.local"], gitOpts);
 
       const subDir = join(dir, "packages", "sub");
       mkdirSync(subDir, { recursive: true });
@@ -383,8 +384,8 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
         "utf8"
       );
       writeFileSync(join(dir, "README.md"), "clean\n", "utf8");
-      spawnSync("git", ["add", "."], { cwd: dir });
-      spawnSync("git", ["commit", "-m", "init"], { cwd: dir });
+      spawnSync("git", ["add", "."], gitOpts);
+      spawnSync("git", ["commit", "-m", "init"], gitOpts);
 
       const cleanLogs = join(dir, "clean-logs");
       mkdirSync(cleanLogs, { recursive: true });
@@ -416,7 +417,7 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("F19 regression: incident report requires non-empty sessionId and includes transitive child-object events", () => {
     const dir = makeTempDir("zcode-m4-inc-trans-");

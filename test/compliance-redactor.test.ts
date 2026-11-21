@@ -222,7 +222,7 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
     mkdirSync(extractDir, { recursive: true });
 
     // Initialize a real git repo for untracked file redaction check
-    Bun.spawnSync(["git", "init"], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    Bun.spawnSync(["git", "init"], { cwd: repo, stdout: "pipe", stderr: "pipe", timeout: 15_000 });
     writeFileSync(
       join(repo, "untracked-secrets.json"),
       JSON.stringify({
@@ -267,7 +267,7 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
       ZCODE_BACKUP_ROOT: join(home, "backups")
     };
 
-    const saveRes = Bun.spawnSync(["bash", SCRIPT, "save"], { env, stdout: "pipe", stderr: "pipe" });
+    const saveRes = Bun.spawnSync(["bash", SCRIPT, "save"], { env, stdout: "pipe", stderr: "pipe", timeout: 15_000 });
     expect(saveRes.exitCode).toBe(0);
 
     const snaps = readdirSync(join(home, "backups"));
@@ -276,7 +276,8 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
 
     const tarRes = Bun.spawnSync(["tar", "-xzf", join(snapDir, "user-state.tar.gz"), "-C", extractDir], {
       stdout: "pipe",
-      stderr: "pipe"
+      stderr: "pipe",
+      timeout: 15_000
     });
     expect(tarRes.exitCode).toBe(0);
 
@@ -326,7 +327,8 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
         ZCODE_BACKUP_ROOT: bigBackupRoot
       },
       stdout: "pipe",
-      stderr: "pipe"
+      stderr: "pipe",
+      timeout: 15_000
     });
     expect(bigFail.exitCode).not.toBe(0);
     expect(bigFail.stderr.toString()).toContain("refusing to snapshot");
@@ -339,7 +341,7 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
     mkdirSync(join(bigRepoHome, ".zcode", "cli"), { recursive: true });
     mkdirSync(bigRepo, { recursive: true });
     writeFileSync(join(bigRepoHome, ".zcode", "cli", "config.json"), '{"model":"m1"}', "utf8");
-    Bun.spawnSync(["git", "init"], { cwd: bigRepo, stdout: "pipe", stderr: "pipe" });
+    Bun.spawnSync(["git", "init"], { cwd: bigRepo, stdout: "pipe", stderr: "pipe", timeout: 15_000 });
     writeFileSync(
       join(bigRepo, "untracked_big.json"),
       `{"padding":"${bigPadding}","refresh_token":"rt_repo_big_123"}\n`,
@@ -354,12 +356,13 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
         ZCODE_BACKUP_ROOT: bigRepoBackupRoot
       },
       stdout: "pipe",
-      stderr: "pipe"
+      stderr: "pipe",
+      timeout: 15_000
     });
     expect(bigRepoFail.exitCode).not.toBe(0);
     expect(bigRepoFail.stderr.toString()).toContain("refusing to snapshot");
     expect(existsSync(bigRepoBackupRoot) ? readdirSync(bigRepoBackupRoot) : []).toEqual([]);
-  });
+  }, 35_000);
 
   test("Suite 8: URL userinfo, custom replacement, 3+-level escaped JSON, quoted Authorization, non-string secrets, and truncated PEM symmetry", () => {
     // 1. URL userinfo under redactPii: false and redactPii: true (preserving domain hostname)

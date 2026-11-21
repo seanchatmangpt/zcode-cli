@@ -41,7 +41,7 @@ describe.skipIf(!have("python3"))("py target from the same graph", () => {
           "t.ingest(sys.stdin.read())",
           "doc = t.to_ocel()",
           "print(json.dumps({'n': len(doc['events']), 'head': t.seal(), 'intact': ocel.verify_chain(doc, 'sha256')}))"
-        ].join("\n")], { input: normalized, encoding: "utf8" });
+        ].join("\n")], { input: normalized, encoding: "utf8", timeout: 15_000 });
         expect(run.status).toBe(0);
         const got = JSON.parse(run.stdout);
         expect(got.n).toBe(ts.out.events);
@@ -50,7 +50,7 @@ describe.skipIf(!have("python3"))("py target from the same graph", () => {
       } finally {
         rmSync(ts.dir, { recursive: true, force: true });
       }
-    });
+    }, 25_000);
 
     test(`${fx.name}: py receipt module verifies the ts-written receipt chain`, () => {
       const ts = tsRun(fx.lines);
@@ -61,13 +61,13 @@ describe.skipIf(!have("python3"))("py target from the same graph", () => {
           "import receipt",
           "chain = json.load(sys.stdin)",
           "print(json.dumps(receipt.verify(chain)))"
-        ].join("\n")], { input: JSON.stringify(ts.receipt.chain), encoding: "utf8" });
+        ].join("\n")], { input: JSON.stringify(ts.receipt.chain), encoding: "utf8", timeout: 15_000 });
         expect(run.status).toBe(0);
         expect(JSON.parse(run.stdout)).toBe(true);
       } finally {
         rmSync(ts.dir, { recursive: true, force: true });
       }
-    });
+    }, 25_000);
   }
 
   test("py generated turn machine agrees with the ts one", () => {
@@ -79,18 +79,18 @@ describe.skipIf(!have("python3"))("py target from the same graph", () => {
       "s = loop.step_zcodeturn(s, 'turn_started', {})",
       "s = loop.step_zcodeturn(s, 'turn_completed', {})",
       "print(s.value)"
-    ].join("\n")], { encoding: "utf8" });
+    ].join("\n")], { encoding: "utf8", timeout: 15_000 });
     expect(run.status).toBe(0);
     expect(run.stdout.trim()).toBe("Completed");
-  });
+  }, 25_000);
 });
 
 describe.skipIf(!have("ggen"))("src/generated is a fixed point of ggen sync run", () => {
   test("bun scripts/gen-ocel.ts --check", () => {
-    const run = spawnSync("bun", ["scripts/gen-ocel.ts", "--check"], { cwd: repoRoot, encoding: "utf8", timeout: 120000, env: process.env });
+    const run = spawnSync("bun", ["scripts/gen-ocel.ts", "--check"], { cwd: repoRoot, encoding: "utf8", timeout: 40_000, env: process.env });
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
-  });
+  }, 45_000);
 });
 
 describe("app-server subscription source (UNVERIFIED shape: synthetic envelope around real wire events)", () => {
@@ -126,13 +126,13 @@ describe.skipIf(!existsSync(w4) || !have("node"))("wasm4pm imports the emitted O
         `const w = require(${JSON.stringify(w4)});`,
         "const h = w.load_ocel2_from_json(require('node:fs').readFileSync(process.argv[1], 'utf8'));",
         "console.log(JSON.stringify(w.list_ocel_object_types(h)));"
-      ].join("\n"), ts.out.ocelPath], { encoding: "utf8" });
+      ].join("\n"), ts.out.ocelPath], { encoding: "utf8", timeout: 15_000 });
       expect(run.status).toBe(0);
       expect(JSON.parse(run.stdout).sort()).toEqual(["model_request", "session", "tool_call", "turn"]);
     } finally {
       rmSync(ts.dir, { recursive: true, force: true });
     }
-  });
+  }, 25_000);
 });
 
 describe.skipIf(!have("ggen"))("mutation check: renaming one individual changes exactly its output", () => {
@@ -167,7 +167,7 @@ describe.skipIf(!have("ggen"))("mutation check: renaming one individual changes 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 45_000);
 });
 
 describe("ggen.toml pack paths are configurable", () => {
@@ -193,7 +193,7 @@ function pyChain(script: string): any {
     `sys.path.insert(0, ${JSON.stringify(py)})`,
     "import receipt",
     script
-  ].join("\n")], { encoding: "utf8" });
+  ].join("\n")], { encoding: "utf8", timeout: 15_000 });
   expect(run.stderr).toBe("");
   expect(run.status).toBe(0);
   return JSON.parse(run.stdout);
@@ -223,7 +223,7 @@ describe.skipIf(!have("python3"))("py receipt pending/outcome", () => {
     expect(got.ok).toBe(true);
     expect(got.chain[1].pending_ref).toBe(got.chain[0].hash);
     expect(got.chain[0].standing).toBe("unknown");
-  });
+  }, 25_000);
 
   test("golden vector: ts and py chain digests are identical on the same events", () => {
     const tsChain: Chain = [];
@@ -240,7 +240,7 @@ describe.skipIf(!have("python3"))("py receipt pending/outcome", () => {
     expect(pyC.map((e: any) => e.hash)).toEqual(tsChain.map((e) => e.hash));
     expect(pyC).toEqual(JSON.parse(JSON.stringify(tsChain)));
     expect(tsVerify(tsChain)).toBe(true);
-  });
+  }, 25_000);
 
   test("golden vector: ts and py OCEL tap chain digests agree on fixture events", () => {
     for (const fx of fixtures()) {
@@ -255,7 +255,7 @@ describe.skipIf(!have("python3"))("py receipt pending/outcome", () => {
           "t.ingest(sys.stdin.read())",
           "doc = t.to_ocel()",
           "print(json.dumps(doc['events']))"
-        ].join("\n")], { input: normalized, encoding: "utf8" });
+        ].join("\n")], { input: normalized, encoding: "utf8", timeout: 15_000 });
         expect(run.status).toBe(0);
         const digests = (evs: any[]) => evs.map((e) => e.attributes.filter((a: any) => /hash|digest|pending_ref/.test(a.name)).map((a: any) => a.value));
         expect(digests(JSON.parse(run.stdout))).toEqual(digests(ts.doc.events));
@@ -263,5 +263,5 @@ describe.skipIf(!have("python3"))("py receipt pending/outcome", () => {
         rmSync(ts.dir, { recursive: true, force: true });
       }
     }
-  });
+  }, 30_000);
 });

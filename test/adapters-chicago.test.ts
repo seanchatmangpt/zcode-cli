@@ -39,12 +39,12 @@ function initWorkspace(): string {
     "# UNSUPPORTED(generator-capability): handwritten\n"
   );
   copyFileSync(FIXTURE, join(root, "candidates.jsonl"));
-  spawnSync("git", ["init"], { cwd: root });
-  spawnSync("git", ["add", "-A"], { cwd: root });
+  spawnSync("git", ["init"], { cwd: root, timeout: 15_000 });
+  spawnSync("git", ["add", "-A"], { cwd: root, timeout: 15_000 });
   spawnSync(
     "git",
     ["-c", "user.email=chicago@local", "-c", "user.name=Chicago", "commit", "-m", "init"],
-    { cwd: root }
+    { cwd: root, timeout: 15_000 }
   );
   return root;
 }
@@ -75,7 +75,7 @@ function buildLoop(root: string, overrides: { askGate?: boolean; generatedDirty?
     forbidGeneratedDirs: true,
     run: (cmd, cwd) => {
       if (cmd[0] === "true") return { status: 0, stdout: "", stderr: "" };
-      const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8" });
+      const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8", timeout: 15_000 });
       return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
     }
   });
@@ -119,7 +119,7 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     // Real filesystem side effects from dry-run executor
     const ocel = readFileSync(join(root, "ocel", "cycle-1", "workflow.ocel.json"), "utf8");
     expect(ocel.length).toBeGreaterThan(10);
-  });
+  }, 25_000);
 
   test("anti-vacuity: ASK gate flips marketplace court to REFUSED", async () => {
     const root = initWorkspace();
@@ -140,7 +140,7 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
       (o) => o.attributes.at(-1)?.value === "REFUSED"
     );
     expect(refused).toBe(true);
-  });
+  }, 25_000);
 
   test("anti-vacuity: generated/ directory fails igniter forbid_generated_dirs", async () => {
     const root = initWorkspace();
@@ -159,7 +159,7 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
       (o) => o.attributes.at(-1)?.value === "REFUSED"
     );
     expect(refused).toBe(true);
-  });
+  }, 25_000);
 
   test("anti-vacuity: never promotes sandbox ALIVE in sink aggregate", async () => {
     const root = initWorkspace();

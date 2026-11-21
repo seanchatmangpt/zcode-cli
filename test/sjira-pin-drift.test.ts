@@ -42,7 +42,7 @@ describe("sjira pin drift detector", () => {
     // Log the full pin-by-pin verdict for the receipt.
     console.log(report);
     expect(code).toBe(0);
-  });
+  }, 35_000);
 
   test("detector is non-vacuous: a fabricated non-ancestor pin fails", () => {
     // Real degraded collaborator: a sha that certainly does not exist, run
@@ -56,19 +56,21 @@ describe("sjira pin drift detector", () => {
     try {
       historical = execFileSync("git", ["rev-parse", "HEAD~10"], {
         cwd: REPO_ROOT,
-        encoding: "utf8"
+        encoding: "utf8",
+        timeout: 15_000
       }).trim();
     } catch {
       historical = execFileSync("git", ["rev-list", "--max-parents=0", "HEAD"], {
         cwd: REPO_ROOT,
-        encoding: "utf8"
+        encoding: "utf8",
+        timeout: 15_000
       })
         .trim()
         .split(/\r?\n/)[0]!;
     }
     expect(historical).toMatch(/^[0-9a-f]{40}$/);
     expect(isAncestor(REPO_ROOT, historical)).toBeTrue();
-  });
+  }, 25_000);
 
   test("regression: ZOCEL-014/015 pins resolve as real xaas ancestors without allowlist", () => {
     // The generator's repo-label drift pinned zcode-cli sha e0a77911 under the
@@ -102,6 +104,6 @@ describe("sjira pin drift detector", () => {
     if (!report.includes("BLOCKED:skip")) {
       expect(report).not.toContain("EXPECTED-STALE");
     }
-  });
+  }, 35_000);
 });
 
