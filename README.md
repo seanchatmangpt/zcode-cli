@@ -102,11 +102,13 @@ bun run check
 Workspace paths are configured in `zcode-cli.toml` (no concurrency or WIP knobs):
 
 ```bash
-# Dry-run soundness & token-replay verification
+# Dry-run soundness & token-replay verification (bounded: 2 cycles; repo-relative .tmp output)
 bun scripts/powl-ecosystem-workflow.ts --dry-run
 
-# Live autonomic Z.AI execution (self-tuning AIMD equilibrium + never-empty loop)
-bun scripts/powl-ecosystem-workflow.ts
+# Live autonomic Z.AI execution (bounded: 1 cycle by default)
+# Paths: --castle-dir / ZCODE_CASTLE_DIR / zcode-cli.toml [paths].castle_dir
+# Unbounded soak requires an explicit --soak (or --max-cycles N)
+bun scripts/powl-ecosystem-workflow.ts --castle-dir "$CASTLE_DIR"
 ```
 
 ### Verification Suite (Chicago-Style, Zero-Mock)

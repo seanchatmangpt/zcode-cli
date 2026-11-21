@@ -3,20 +3,15 @@ import { spawn } from "node:child_process";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { runAutonomicLoop, type PowlNode } from "../src/powl-ocel-orchestrator.ts";
+import { resolvePowlWorkflowConfig } from "./powl-workflow-config.ts";
 
 /**
  * ECOSYSTEM-SPEC-26.11.20 — 4-Phase Autonomic POWL v2 + OCEL 2.0 Master Workflow.
  * Zero hardcoded concurrency; AIMD equilibrium + never-empty follow-up synthesis.
+ * Cycles are bounded by default (live=1, dry-run=2); pass --soak or --max-cycles N to override.
  */
 
-const CASTLE_DIR = "/Users/sac/castle";
-const ZCODE_BIN = "/Users/sac/zcode-cli/bin/zcode.js";
-const WASM4PM_COMPAT_DIR = "/Users/sac/wasm4pm-compat";
-const OUT_DIR = "/Users/sac/.gemini/antigravity-cli/brain/252547d5-87d4-4733-9760-3d18ea51dcfb/scratch/ecosystem-powl-ocel";
-
-const dryRun = process.argv.includes("--dry-run");
-const maxCyclesIdx = process.argv.indexOf("--max-cycles");
-const maxCycles = maxCyclesIdx >= 0 ? Number(process.argv[maxCyclesIdx + 1]) : (dryRun ? 2 : undefined);
+const cfg = resolvePowlWorkflowConfig({ workflowSlug: "ecosystem" });
 
 const ecosystemPowl: PowlNode = {
   kind: "partial_order",
@@ -69,19 +64,19 @@ const ecosystemPowl: PowlNode = {
   ]
 };
 
-const logDir = join(OUT_DIR, "logs");
+const logDir = join(cfg.outputDir, "logs");
 mkdirSync(logDir, { recursive: true });
 
 const results = await runAutonomicLoop(
   ecosystemPowl,
   async (t) => {
-    if (dryRun) return { ok: true, exitCode: 0 };
+    if (cfg.dryRun) return { ok: true, exitCode: 0 };
     const logFile = join(logDir, `${t.activityId ?? t.id}.log`);
     const out = createWriteStream(logFile, { flags: "w" });
-    const prompt = `ECOSYSTEM-SPEC-26.11.20 Transition ${t.id} (${t.label}). Implement in /Users/sac/castle (Pure Rust, zero Python, zero mocks).`;
+    const prompt = `ECOSYSTEM-SPEC-26.11.20 Transition ${t.id} (${t.label}). Implement in ${cfg.castleDir} (Pure Rust, zero Python, zero mocks).`;
     return await new Promise((resolve) => {
-      const child = spawn("node", [ZCODE_BIN, "--cwd", CASTLE_DIR, "-p", prompt, "--mode", "yolo", "--max-turns", "12"], {
-        cwd: CASTLE_DIR,
+      const child = spawn("node", [cfg.zcodeBin, "--cwd", cfg.castleDir, "-p", prompt, "--mode", "yolo", "--max-turns", "12"], {
+        cwd: cfg.castleDir,
         stdio: ["ignore", "pipe", "pipe"]
       });
       let stderr = "";
@@ -95,12 +90,22 @@ const results = await runAutonomicLoop(
       child.on("error", (err) => { out.end(); resolve({ ok: false, exitCode: 1, detail: err.message }); });
     });
   },
-  { maxCycles, tomlPath: join(process.cwd(), "zcode-cli.toml"), wasm4pmCompatDir: WASM4PM_COMPAT_DIR, outputDir: OUT_DIR }
+  {
+    maxCycles: cfg.maxCycles,
+    tomlPath: cfg.tomlPath,
+    wasm4pmCompatDir: cfg.wasm4pmCompatDir,
+    outputDir: cfg.outputDir
+  }
 );
 
 console.log(JSON.stringify({
   cyclesExecuted: results.length,
-  dryRun,
+  dryRun: cfg.dryRun,
+  soak: cfg.soak,
+  maxCycles: cfg.maxCycles ?? null,
+  castleDir: cfg.castleDir,
+  zcodeBin: cfg.zcodeBin,
+  artifacts: cfg.outputDir,
   cycles: results.map((r) => ({
     workflowId: r.workflowId,
     equilibriumWip: r.equilibriumWip,
