@@ -20,12 +20,13 @@ Calendar wave for **`ZCODE-CLI-SPEC-26.11.20`**: Experimentation-Through-Impleme
 
 This wave’s normative docs mandate **zero** coupling of the **core** runtime to external proprietary ecosystems or hardcoded third-party workspace paths. Configuration is self-contained in `zcode-cli.toml` (schema in the Unified ARD/PRD §8.3).
 
-## Optional I/O seam (Appendix D)
+## Optional I/O seam (Appendices D–E)
 
 | Artifact | Path |
 |---|---|
-| `SjiraIoAdapter` | [`src/io/sjira-adapter.ts`](../../../src/io/sjira-adapter.ts) |
-| Tests | [`test/sjira-adapter.test.ts`](../../../test/sjira-adapter.test.ts) |
-| Spec | Unified ARD/PRD **Appendix D** |
+| JSONL/POWL primitives | [`src/io/sjira-adapter.ts`](../../../src/io/sjira-adapter.ts) |
+| Plugin courts | [`src/adapters/`](../../../src/adapters/) (`sjira-io`, `marketplace-court`, `igniter-sync`, `receipt-sink`, `castle-publish`) |
+| Tests | [`test/sjira-adapter.test.ts`](../../../test/sjira-adapter.test.ts), [`test/adapters.test.ts`](../../../test/adapters.test.ts) |
+| Spec | Unified ARD/PRD **Appendix D** + **Appendix E** |
 
-Maps `SJIRA_CANDIDATES` / `"$GGEN_BIN" sjira frontier` → POWL `PartialOrder`, enforces optional `mix ggen_igniter.sync && git diff --exit-code`, and emits `ledger.jsonl` + `loop_receipt.json` with honest `PARTIAL_ALIVE` / `UNVERIFIED` standing (never promoted to `ALIVE`).
+Authority ceiling remains **CONSTRUCT**. Adapters map frontier JSONL → POWL, enforce marketplace/igniter courts, and emit honest `PARTIAL_ALIVE` / `UNVERIFIED` / `BLOCKED` receipts — never fake live `ALIVE`.

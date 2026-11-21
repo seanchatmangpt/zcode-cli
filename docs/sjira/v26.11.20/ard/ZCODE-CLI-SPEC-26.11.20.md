@@ -1294,8 +1294,122 @@ Falsifiers covered: PATH fallback, relative `GGEN_BIN`, cyclic `dependsOn`, dirt
 
 Treat Appendix D as **E4.1** (optional): lands beside E4 OCEL/autonomic loop. Does not gate E1–E3. Promotion toward always-on default requires Exp-4-style evidence that frontier-driven POWLs reduce manual authoring without increasing standing-promotion incidents.
 
+## Appendix E — Pluggable Adapter Courts (`src/adapters/*`) `[EXPLORE-SCOPE]`
+
+### E.1 Design Rule
+
+`zcode-cli` **authority ceiling is `CONSTRUCT`**. Protected DO (Seat AS-01 / BRCE WebAuthn seals, live treasury actuation) is never held by this process. Ecosystem-specific rules (sjira frontier I/O, marketplace qualification, igniter clean-room, castle publish redaction) are isolated behind four adapters. Core remains `PowlNode` + AIMD + OCEL only.
+
+```text
+WorkOrderSourceAdapter.ingestFrontier() ──► POWL PartialOrder
+        │
+        ▼
+TransitionCourtAdapter.validateWriteScope(files)   [pre]
+        │
+        ▼
+executeWorkflowNet / bin/zcode.js                  [CONSTRUCT only]
+        │
+        ▼
+TransitionCourtAdapter.verifyPostTransition(cwd)   [post]
+        │
+        ▼
+WorkOrderSourceAdapter.recordOutcome + ReceiptSink [honest standing]
+```
+
+### E.2 Exact Plugin Types (`src/adapters/types.ts`)
+
+```typescript
+export type ExitCode = 0 | 1 | 2 | 3; // PASS | FAIL_REFUSED | SUBJECT_MISSING | LOUD_SKIP
+export type Standing =
+  | "ALIVE" | "PARTIAL_ALIVE" | "REFUSED" | "BLOCKED" | "UNVERIFIED"
+  | "TIMED_OUT" | "UNKNOWN" | "UNSUPPORTED";
+
+export interface WorkOrderSourceAdapter {
+  readonly name: string;
+  preflightVerify(): Promise<PreflightResult>;
+  ingestFrontier(): Promise<PowlNode>;
+  recordOutcome(receipt: TransitionReceipt): Promise<void>;
+}
+
+export interface TransitionCourtAdapter {
+  readonly name: string;
+  validateWriteScope(files: string[]): Promise<ExitCode>;
+  verifyPostTransition(workspaceDir: string): Promise<CourtVerdict>;
+}
+```
+
+### E.3 Adapter Modules
+
+| Module | Role | Hard rules |
+|---|---|---|
+| `src/adapters/sjira-io.ts` | Frontier ingress + ledger egress | Absolute `GGEN_BIN` (no PATH); ban `--authority` / TTY prompts; optional hands-free ancestor `fd4f99bbd…`; JSONL → `PartialOrder` |
+| `src/adapters/marketplace-court.ts` | Pack qualification | Minimal `pack.toml` keys; refuse `ASK` gates; public-ontology scan; `marketplace.py check` ×2 identical digests; refuse consumer `[packs.*]` (FM-CONFIG-101) |
+| `src/adapters/igniter-sync.ts` | Compiler-first clean-room | Allowlist mutation globs (`.ttl`/`.rq`/`.eex`/`.tera`); `rm -rf` generated trees + sync + `git diff --exit-code`; forbid `generated/` dirs; forbid domain wall-clock |
+| `src/adapters/receipt-sink.ts` | Honest standing + dual receipt | Exit taxonomy 0/1/2/3; never promote sandbox → ALIVE; `ledger.jsonl` + `loop_receipt.json` + optional DFCM (5 Chatman fields @ HEAD) |
+| `src/adapters/castle-publish.ts` | Optional publish redaction court | Require `--public-anonymize` on linkedin/gatekeeper targets; loud skip (exit 3) when argv unset |
+
+`src/io/sjira-adapter.ts` remains the JSONL/POWL primitive library; `SjiraWorkOrderSource` wraps it behind `WorkOrderSourceAdapter`.
+
+### E.4 TOML Hook (`zcode-cli.toml`)
+
+```toml
+[engine]
+mode = "explore"                 # explore | exploit
+authority_ceiling = "CONSTRUCT"  # hard lock — never DO
+max_remediation_attempts = 3
+
+[adapters.sjira]
+enabled = true
+ggen_bin_env = "GGEN_BIN"
+min_ggen_ancestor = "fd4f99bbd4971fb1ca5a0f3a3a2382aaba32261e"
+candidates_env = "SJIRA_CANDIDATES"
+ledger_env = "SJIRA_LEDGER"
+out_dir_env = "SJIRA_OUT_DIR"
+forbid_tty_prompts = true
+enforce_twin_parity = true
+
+[adapters.ggen_marketplace]
+enabled = true
+enforce_pack_toml_minimal = true
+forbid_ask_queries_in_gates = true
+require_double_capsule_check = true
+forbid_consumer_packs_table = true
+
+[adapters.ggen_igniter]
+enabled = true
+allowed_mutation_globs = ["ontology/**/*.ttl", "queries/**/*.rq", "templates/**/*.eex", "templates/**/*.tera"]
+clean_room_sync_cmd = ["mix", "ggen_igniter.sync", "--yes"]
+require_git_diff_zero = true
+forbid_generated_dirs = true
+
+[adapters.castle_publish]
+enabled = false
+require_public_anonymize_on = ["linkedin-carousel", "linkedin-newsletter", "linkedin-post", "gatekeeper-pack"]
+```
+
+### E.5 Anti-Fake-ALIVE & Exit Taxonomy
+
+| Exit | Meaning |
+|---|---|
+| `0` | PASS / aggregate `ALIVE` |
+| `1` | FAIL / `REFUSED` |
+| `2` | SUBJECT MISSING / `BLOCKED` / honest `PARTIAL_ALIVE` |
+| `3` | LOUD SKIP / `UNVERIFIED` when evidence suite absent |
+
+Sandbox (`sjira-loop-live-sandbox`), missing `INTERNAL_API_TOKEN` / verifier suite / AS-01 DO seals → **never** narrate as live fabric `ALIVE`.
+
+### E.6 Verification
+
+```bash
+bun test test/adapters.test.ts test/sjira-adapter.test.ts
+```
+
+### E.7 Milestone
+
+Appendix E is **E4.2** (optional courts). Day-1 Explore enables `sjira-io` + `marketplace-court` + `igniter-sync` + `receipt-sink`. `castle_publish` stays opt-in. Domain pipelines (LinkedIn carousels, revops airlock, RAID commissioning) are **operator workflows** that consume these adapters — they are not compiled into the clean-room core.
+
 ---
 
 **End of ZCODE-CLI-SPEC-26.11.20**
 
-This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification. Optional I/O adapters (§Appendix D) must preserve the clean-room core boundary.
+This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification. Optional I/O adapters (Appendices D–E) must preserve the clean-room core boundary and the CONSTRUCT authority ceiling.
