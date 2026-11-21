@@ -1,6 +1,7 @@
 // Launcher-level OCEL 2.0 tap for the zcode runtime (residue: UNSUPPORTED generator-capability, see
-// HANDWRITTEN.md). It consumes the runtime's own output -- `-p --output-format stream-json` lines or
-// `app-server` notifications -- and feeds them to the ontology-generated tap in ./generated/ocel.ts.
+// HANDWRITTEN.md). It consumes the runtime's own output -- `-p`/`--prompt`/`--print`
+// `--output-format stream-json` lines or `app-server` notifications -- and feeds them to the
+// ontology-generated tap in ./generated/ocel.ts.
 // Nothing here knows an event type: mapping, hashing and receipts come from the generated modules.
 // Gated by ZCODE_OCEL=1; output directory ZCODE_OCEL_DIR (default ~/.zcode/ocel).
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -25,14 +26,31 @@ export function ocelDirectory(env: NodeJS.ProcessEnv): string {
   return env.ZCODE_OCEL_DIR?.trim() || join(homedir(), ".zcode", "ocel");
 }
 
+/**
+ * Headless prompt flags that can emit a tappable stream-json wire.
+ * Includes Claude Code `--print` and the native `--prompt`/`-p` forms:
+ * `normalizeClaudeAgentArgs` rewrites `--print <prompt>` → `--prompt <prompt>`
+ * before `startOcelTap` runs, so recognizing only `--print`/`-p` silently
+ * disabled Art.12 logging for the common agent headless path.
+ */
+export function isHeadlessPromptArg(arg: string): boolean {
+  return (
+    arg === "-p"
+    || arg === "--print"
+    || arg === "--prompt"
+    || arg.startsWith("--prompt=")
+    || (arg.startsWith("-p") && arg.length > 2)
+  );
+}
+
 /** Which source (if any) the given runtime arguments produce events for. */
 export function ocelSourceForArgs(args: readonly string[]): string | undefined {
   if (args[0] === "app-server") return APP_SERVER_SOURCE;
-  const print = args.includes("-p") || args.includes("--print");
+  const headless = args.some(isHeadlessPromptArg);
   const idx = args.findIndex((a) => a === "--output-format" || a.startsWith("--output-format="));
   if (idx < 0) return undefined;
   const value = args[idx].includes("=") ? args[idx].split("=")[1] : args[idx + 1];
-  return print && value === "stream-json" ? STREAM_SOURCE : undefined;
+  return headless && value === "stream-json" ? STREAM_SOURCE : undefined;
 }
 
 // gall-work binds its construct turn to the leased subject and work order:
