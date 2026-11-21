@@ -18,4 +18,14 @@ Calendar wave for **`ZCODE-CLI-SPEC-26.11.20`**: Experimentation-Through-Impleme
 
 ## Clean-room rule
 
-This wave’s normative docs mandate **zero** coupling to external proprietary ecosystems or hardcoded third-party workspace paths. Configuration is self-contained in `zcode-cli.toml` (schema in the Unified ARD/PRD §8.3).
+This wave’s normative docs mandate **zero** coupling of the **core** runtime to external proprietary ecosystems or hardcoded third-party workspace paths. Configuration is self-contained in `zcode-cli.toml` (schema in the Unified ARD/PRD §8.3).
+
+## Optional I/O seam (Appendix D)
+
+| Artifact | Path |
+|---|---|
+| `SjiraIoAdapter` | [`src/io/sjira-adapter.ts`](../../../src/io/sjira-adapter.ts) |
+| Tests | [`test/sjira-adapter.test.ts`](../../../test/sjira-adapter.test.ts) |
+| Spec | Unified ARD/PRD **Appendix D** |
+
+Maps `SJIRA_CANDIDATES` / `"$GGEN_BIN" sjira frontier` → POWL `PartialOrder`, enforces optional `mix ggen_igniter.sync && git diff --exit-code`, and emits `ledger.jsonl` + `loop_receipt.json` with honest `PARTIAL_ALIVE` / `UNVERIFIED` standing (never promoted to `ALIVE`).

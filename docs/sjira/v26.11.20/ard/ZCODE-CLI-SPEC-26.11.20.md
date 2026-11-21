@@ -45,6 +45,7 @@ Every architectural subsystem in this document is tagged:
 - All configuration lives in-repo (`zcode-cli.toml`, `provider.example.json`, `setting.example.json`).
 - All schemas, validators, and workflows are self-contained and domain-agnostic.
 - Optional external OCEL validators are invoked only via a configurable command hook (`ocel.validator_cmd`); absence of the hook must not block Explore.
+- Optional file-based work-order I/O adapters live under `src/io/` (Appendix D); they must not leak into core orchestrator imports. Absence of adapter env keys must not block Explore.
 - No hardcoded paths to third-party workspaces. Workspace roots are operator-configured.
 
 ---
@@ -208,6 +209,7 @@ Target layout under Explore (module split from the current monolith is an Explor
 | `src/lease-manager.ts` | Per-transition execution leases (acquire / release / tear-down) | `LeaseManager`, `TransitionLease` | (stdlib) |
 | `packages/zcode-tui/` | `@zcode/tui` live status / telemetry view | package exports | AIMD/OCEL summary types (read-only) |
 | `zcode-cli.toml` | Clean workspace, provider, retry, budget, OCEL config | (config) | — |
+| `src/io/sjira-adapter.ts` | Optional JSONL work-order I/O seam (Appendix D) | `createSjiraIoAdapter`, `SjiraIoAdapter`, standing helpers | `powl-ocel-orchestrator` types only |
 | `scripts/` | Reference POWL workflows + A/B harnesses | scripts | orchestrator |
 | `test/` | Unit + Chicago zero-mock integration | tests | all |
 
@@ -1173,6 +1175,7 @@ Receipts land under `receipts/v26.11.20/<run-id>/` as:
 | `fitness` branded as Van der Aalst conformance on own schedule | Relabel `completionHeuristic`; behavioral conformance → Exploit A* |
 | `zcode-cli.toml` domain-specific path keys | Replace with clean-room schema §8.3 |
 | External hardcoded validator path | Optional `[ocel].validator_cmd` only |
+| Manual POWL scripts only | Optional `src/io/sjira-adapter.ts` maps `candidates.jsonl` → `PartialOrder` (Appendix D) |
 
 ## Appendix C — Mathematical Notation Index
 
@@ -1187,8 +1190,112 @@ Receipts land under `receipts/v26.11.20/<run-id>/` as:
 | \(f\) (Rozinat) | Token-based replay fitness — **completion heuristic only** under enforced execution |
 | \(\gamma\) | Alignment move cost parameter (Exploit: \(0\)) |
 
+## Appendix D — Optional File-Based Work-Order I/O Seam (`src/io/sjira-adapter.ts`) `[EXPLORE-SCOPE]`
+
+### D.1 Clean-Room Rule for Adapters
+
+The core orchestrator accepts only `PowlNode` + `TransitionExecutor`. External work-order systems attach through an **optional adapter seam** under `src/io/`. Absence of the adapter (or of its env keys) MUST NOT block core Explore. The adapter MUST NOT import marketplace plugins, lease fabrics, or hardcoded third-party workspace paths into `src/powl-ocel-orchestrator.ts`.
+
+### D.2 Dataflow
+
+```text
+[INPUT]                              [ZCODE-CLI ENGINE]                     [OUTPUT]
+"$GGEN_BIN" sjira frontier    ──►    candidatesToPowl → PartialOrder  ──►  SJIRA_LEDGER
++ SJIRA_CANDIDATES (.jsonl)          AIMD + bin/zcode.js                     (ledger.jsonl)
+                                              │                                   │
+                                   verifyIgniterCleanRoom                         ▼
+                                   (mix ggen_igniter.sync                         loop_receipt.json
+                                    && git diff --exit-code)                      + OCEL 2.0
+                                              │                                   │
+                                              ▼                                   ▼
+                                   standing honesty cap                   sjira complete /
+                                   (no PARTIAL→ALIVE)                     evidence court
+```
+
+### D.3 Exact TypeScript Facade
+
+Normative implementation: `src/io/sjira-adapter.ts`. Primary surface:
+
+```typescript
+export interface SjiraIoAdapter {
+  paths: SjiraIoPaths;
+  ingestSjiraFrontier(mode?: "frontier_cmd" | "candidates_file"): IngestResult;
+  candidatesToPowl(candidates: readonly SjiraCandidate[], rootId?: string): PowlNode;
+  verifyIgniterCleanRoom(candidate: SjiraCandidate): IgniterGateResult;
+  emitSjiraLedgerEntry(args: Omit<EmitTransitionArgs, "paths">): SjiraLedgerEntry;
+  emitSjiraLedgerAndReceipt(
+    args: Omit<EmitCycleArgs, "paths" | "ingest"> & { ingest: IngestResult }
+  ): SjiraLoopReceipt;
+}
+
+export function createSjiraIoAdapter(
+  env: SjiraAdapterEnv,
+  defaults: Partial<SjiraIoPaths> & { cwd: string }
+): SjiraIoAdapter;
+```
+
+Wire types (required fields):
+
+| Type | Required fields | Notes |
+|---|---|---|
+| `SjiraCandidate` | `id` | `dependsOn[]` → edges \(u \prec v\); dangling deps outside frontier skipped |
+| `SjiraLedgerEntry` | `ts`, `cycleId`, `workOrderId`, `outcome`, `standing`, `sha256Receipt` | Append-only JSONL |
+| `SjiraLoopReceipt` | `schema: "zcode.sjira.loop_receipt/1"`, `aggregateStanding`, `exitCode` | Written to `SJIRA_OUT_DIR/loop_receipt.json` |
+
+### D.4 Fail-Closed Binary Pinning
+
+`requireGgenBin(raw)`:
+
+1. Unset/empty → `GGEN_NOT_FOUND` (exit hint `2`) — **never** `PATH` lookup of bare `ggen`.
+2. Non-absolute → `GGEN_BIN_NOT_ABSOLUTE`.
+3. Missing/non-executable → `GGEN_NOT_FOUND`.
+
+### D.5 Standing Honesty (Non-Negotiable)
+
+| Rule | Behavior |
+|---|---|
+| Sandbox / missing live env keys | Cap at `PARTIAL_ALIVE` even if the agent subprocess exited 0 |
+| Evidence / twin parity not verified | Cap at `UNVERIFIED` |
+| Prior frontier standing `PARTIAL_ALIVE` \| `UNVERIFIED` | Must not record `ALIVE` (`STANDING_PROMOTION_REFUSED`) |
+| Aggregate cycle standing | `ALIVE` iff every child is `ALIVE`; else the weakest honest standing wins |
+| Exit codes on receipt | `0` = aggregate `ALIVE`; `1` = refused/blocked; `2` = partial/unverified/config |
+
+### D.6 Compiler-First Transition Gate
+
+When `candidate.requiresIgniterCleanRoom === true`:
+
+1. Run `mix ggen_igniter.sync` (cwd = workspace).
+2. Assert `git diff --exit-code == 0`.
+3. Optionally run `candidate.verifyCmd`.
+4. On failure → transition `REFUSED` with detail; do **not** append `ALIVE`.
+
+Agent prompts for such work orders MUST instruct mutation of upstream `.ttl` / `.eex` / `.tera` only — never compiler-emitted trees that `ggen_igniter.sync` overwrites.
+
+### D.7 Optional TOML Hook
+
+```toml
+[io.sjira]
+# All keys optional. Adapter inactive unless a script/CLI enables it.
+# ggen_bin is also readable from env GGEN_BIN (absolute only).
+# candidates_path = "candidates.jsonl"   # SJIRA_CANDIDATES
+# ledger_path = "ledger.jsonl"           # SJIRA_LEDGER
+# out_dir = "sjira-out"                  # SJIRA_OUT_DIR
+```
+
+### D.8 Verification
+
+```bash
+bun test test/sjira-adapter.test.ts
+```
+
+Falsifiers covered: PATH fallback, relative `GGEN_BIN`, cyclic `dependsOn`, dirty igniter tree, `PARTIAL_ALIVE`→`ALIVE` promotion, aggregate exit-code honesty.
+
+### D.9 Explore Milestone Hook
+
+Treat Appendix D as **E4.1** (optional): lands beside E4 OCEL/autonomic loop. Does not gate E1–E3. Promotion toward always-on default requires Exp-4-style evidence that frontier-driven POWLs reduce manual authoring without increasing standing-promotion incidents.
+
 ---
 
 **End of ZCODE-CLI-SPEC-26.11.20**
 
-This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification.
+This document is the normative Unified ARD/PRD for clean-room Explore → Exploit implementation. Any README or script that contradicts §4 (conformance honesty) or §5 (transport-aware AIMD) is non-normative until updated to match this specification. Optional I/O adapters (§Appendix D) must preserve the clean-room core boundary.
