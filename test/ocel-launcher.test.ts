@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { normalizeClaudeAgentArgs } from "../src/claude-parity.ts";
 import { APP_SERVER_SOURCE, STREAM_SOURCE, ocelDirectory, ocelEnabled, ocelSourceForArgs, startOcelTap } from "../src/ocel-tap.ts";
 import { OcelRecorder } from "../src/ocel-tap.ts";
 import { declaredRuntimeEvents, fixtures, ocelProblems, repoRoot } from "./support/ocel.ts";
@@ -23,6 +24,8 @@ describe("ocel tap gating", () => {
   test("source selection from runtime arguments", () => {
     expect(ocelSourceForArgs(["-p", "hi", "--output-format", "stream-json"])).toBe(STREAM_SOURCE);
     expect(ocelSourceForArgs(["--print", "hi", "--output-format=stream-json"])).toBe(STREAM_SOURCE);
+    expect(ocelSourceForArgs(["--prompt", "hi", "--output-format", "stream-json"])).toBe(STREAM_SOURCE);
+    expect(ocelSourceForArgs(["--prompt=hi", "--output-format=stream-json"])).toBe(STREAM_SOURCE);
     expect(ocelSourceForArgs(["app-server"])).toBe(APP_SERVER_SOURCE);
     expect(ocelSourceForArgs(["-p", "hi"])).toBeUndefined();
     expect(ocelSourceForArgs(["-p", "hi", "--output-format", "json"])).toBeUndefined();
@@ -31,6 +34,16 @@ describe("ocel tap gating", () => {
     // empty blocked receipt. Only --output-format stream-json carries the NDJSON event wire.
     expect(ocelSourceForArgs(["-p", "hi", "--json"])).toBeUndefined();
     expect(ocelSourceForArgs([])).toBeUndefined();
+  });
+  // Antigravity REQUEST_CHANGES (EU AI Act Art.12 / D4): launcher runs
+  // normalizeClaudeAgentArgs before startOcelTap, rewriting --print → --prompt.
+  // Tap gating must still arm on the post-parity argv.
+  test("Claude --print parity still arms the stream tap", () => {
+    const raw = ["--print", "hi", "--output-format", "stream-json"];
+    const { args } = normalizeClaudeAgentArgs(raw);
+    expect(args).toEqual(["--prompt", "hi", "--output-format", "stream-json"]);
+    expect(ocelSourceForArgs(args)).toBe(STREAM_SOURCE);
+    expect(startOcelTap(args, { ZCODE_OCEL: "1" })).toBeDefined();
   });
   test("a gated recorder writes <session>.jsonocel and <session>.receipt.json into ZCODE_OCEL_DIR", () => {
     const dir = mkdtempSync(join(tmpdir(), "zcode-launch-"));
