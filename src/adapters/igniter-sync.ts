@@ -113,10 +113,22 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     }
 
     if (this.opts.requireGitDiffZero) {
-      const diffCmd = ["git", "diff", "--exit-code", "--", ...(this.opts.gitDiffPaths ?? ["."])];
-      const diff = run(diffCmd, workspaceDir);
-      if (diff.status !== 0) {
+      const paths = this.opts.gitDiffPaths ?? ["."];
+      // Fail-closed clean-room: unstaged + staged + untracked (excl. ignored).
+      // Plain `git diff` alone misses index-only and untracked drift.
+      const unstaged = run(["git", "diff", "--exit-code", "--", ...paths], workspaceDir);
+      if (unstaged.status !== 0) {
         diagnostics.push("igniter clean-room refused: git diff --exit-code != 0 after sync (generated drift)");
+        return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
+      }
+      const staged = run(["git", "diff", "--cached", "--exit-code", "--", ...paths], workspaceDir);
+      if (staged.status !== 0) {
+        diagnostics.push("igniter clean-room refused: git diff --cached --exit-code != 0 after sync (staged drift)");
+        return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
+      }
+      const untracked = run(["git", "ls-files", "--others", "--exclude-standard", "--", ...paths], workspaceDir);
+      if (untracked.status !== 0 || (untracked.stdout || "").trim().length > 0) {
+        diagnostics.push("igniter clean-room refused: untracked files present after sync (untracked drift)");
         return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
       }
     }

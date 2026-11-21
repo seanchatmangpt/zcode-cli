@@ -460,12 +460,30 @@ export function verifyIgniterCleanRoom(
     };
   }
 
-  const diff = run(["git", "diff", "--exit-code"], cwd);
-  if (diff.status !== 0) {
+  // Fail-closed clean-room: unstaged + staged + untracked (excl. ignored).
+  // Plain `git diff` alone misses index-only and untracked drift.
+  const unstaged = run(["git", "diff", "--exit-code"], cwd);
+  if (unstaged.status !== 0) {
     return {
       ok: false,
       status: "failed",
       detail: "igniter clean-room refused: git diff --exit-code != 0 after mix ggen_igniter.sync (generated drift)"
+    };
+  }
+  const staged = run(["git", "diff", "--cached", "--exit-code"], cwd);
+  if (staged.status !== 0) {
+    return {
+      ok: false,
+      status: "failed",
+      detail: "igniter clean-room refused: git diff --cached --exit-code != 0 after sync (staged drift)"
+    };
+  }
+  const untracked = run(["git", "ls-files", "--others", "--exclude-standard"], cwd);
+  if (untracked.status !== 0 || (untracked.stdout || "").trim().length > 0) {
+    return {
+      ok: false,
+      status: "failed",
+      detail: "igniter clean-room refused: untracked files present after sync (untracked drift)"
     };
   }
 

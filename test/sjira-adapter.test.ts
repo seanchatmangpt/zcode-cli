@@ -171,12 +171,44 @@ describe("SjiraIoAdapter — igniter clean-room gate", () => {
       required: true,
       run: (cmd) => {
         if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
-        if (cmd[0] === "git") return { status: 1, stderr: "", stdout: "M generated/x.ex" };
+        if (cmd[0] === "git" && cmd[1] === "diff" && !cmd.includes("--cached")) {
+          return { status: 1, stderr: "", stdout: "M generated/x.ex" };
+        }
         return { status: 0, stderr: "", stdout: "" };
       }
     });
     expect(r.ok).toBe(false);
     expect(r.detail).toContain("git diff");
+  });
+
+  test("fails when staged (cached) drift after sync", () => {
+    const r = verifyIgniterCleanRoom("/tmp", {
+      required: true,
+      run: (cmd) => {
+        if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
+        if (cmd[0] === "git" && cmd[1] === "diff" && cmd.includes("--cached")) {
+          return { status: 1, stderr: "", stdout: "A staged.ex" };
+        }
+        return { status: 0, stderr: "", stdout: "" };
+      }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain("staged");
+  });
+
+  test("fails when untracked files remain after sync", () => {
+    const r = verifyIgniterCleanRoom("/tmp", {
+      required: true,
+      run: (cmd) => {
+        if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
+        if (cmd[0] === "git" && cmd[1] === "ls-files") {
+          return { status: 0, stderr: "", stdout: "generated/new.ex\n" };
+        }
+        return { status: 0, stderr: "", stdout: "" };
+      }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain("untracked");
   });
 
   test("passes sync + clean tree + verifyCmd", () => {
