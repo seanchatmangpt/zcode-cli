@@ -5,6 +5,8 @@ import {
   deriveFollowUpPowl,
   executePowlWithTokenReplay,
   runAutonomicLoop,
+  transitiveClosure,
+  validateDisjointWriteScopes,
   validatePowlTree,
   type PowlNode
 } from "../src/powl-ocel-orchestrator.ts";
@@ -262,5 +264,150 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
     const refusedCycle = await executePowlWithTokenReplay(initial, async () => ({ ok: false, exitCode: 1 }));
     const followUp = deriveFollowUpPowl(refusedCycle, 2);
     expect(followUp.id).toContain("remediate-c2");
+  });
+});
+
+describe("A1 POWL AST soundness (transition-id namespace + write scopes)", () => {
+  test("falsifier: tau id enter_L inside loop L no longer collides; fitness = 1", async () => {
+    // Evidence: a1-transition-id-collision-repro.json — previously duplicate tau_enter_L → fitness 0.5
+    const powl: PowlNode = {
+      kind: "loop",
+      id: "L",
+      doBranch: { kind: "tau", id: "enter_L" },
+      redoBranch: { kind: "activity", id: "redoL", label: "Redo", objectType: "Artifact" }
+    };
+
+    const net = compilePowlToWorkflowNet(powl);
+    const ids = net.transitions.map((t) => t.id);
+    expect(ids.length).toBe(new Set(ids).size);
+    expect(net.pre.size).toBe(ids.length);
+    expect(ids.every((id) => id.startsWith("__powl_t_"))).toBe(true);
+
+    let redoFired = 0;
+    const res = await executePowlWithTokenReplay(powl, async (t) => {
+      if (t.activityId === "redoL") {
+        redoFired += 1;
+        // First redo attempt exits the loop (executor returns ok without redo flag;
+        // silent exit fires after do completes — loop body is tau then optional redo).
+        return { ok: true, exitCode: 0 };
+      }
+      return { ok: true, exitCode: 0 };
+    });
+
+    expect(res.replay.fitness).toBe(1);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.replay.missing).toBe(0);
+    expect(res.replay.remaining).toBe(0);
+    expect(redoFired).toBe(0); // exit takes silent path; redo activity never enabled without redo token path
+  });
+
+  test("falsifier: tau fork_po1 / end_po1 under PO po1 compile with unique ids + fitness 1", async () => {
+    const powl: PowlNode = {
+      kind: "partial_order",
+      id: "po1",
+      children: [
+        { kind: "tau", id: "fork_po1" },
+        { kind: "tau", id: "end_po1" }
+      ],
+      order: [["fork_po1", "end_po1"]]
+    };
+    const net = compilePowlToWorkflowNet(powl);
+    const ids = net.transitions.map((t) => t.id);
+    expect(ids.length).toBe(new Set(ids).size);
+    expect(net.pre.size).toBe(ids.length);
+
+    const res = await executePowlWithTokenReplay(powl, async () => ({ ok: true, exitCode: 0 }));
+    expect(res.replay.fitness).toBe(1);
+    expect(res.replay.soundTermination).toBe(true);
+  });
+
+  test("falsifier: tau join_P_v under ordered PO does not collide with structural join", async () => {
+    const powl: PowlNode = {
+      kind: "partial_order",
+      id: "P",
+      children: [
+        { kind: "activity", id: "u", label: "U", objectType: "Artifact" },
+        { kind: "tau", id: "join_P_v" },
+        { kind: "activity", id: "v", label: "V", objectType: "Artifact" }
+      ],
+      order: [
+        ["u", "join_P_v"],
+        ["join_P_v", "v"]
+      ]
+    };
+    const net = compilePowlToWorkflowNet(powl);
+    const ids = net.transitions.map((t) => t.id);
+    expect(ids.length).toBe(new Set(ids).size);
+    expect(net.pre.size).toBe(ids.length);
+
+    const fired: string[] = [];
+    const res = await executePowlWithTokenReplay(powl, async (t) => {
+      if (t.activityId) fired.push(t.activityId);
+      return { ok: true, exitCode: 0 };
+    });
+    expect(fired).toEqual(["u", "v"]);
+    expect(res.replay.fitness).toBe(1);
+    expect(res.replay.soundTermination).toBe(true);
+  });
+
+  test("transitiveClosure exposes ≺⁺ for covering relations", () => {
+    const closure = transitiveClosure(["a", "b", "c"], [["a", "b"], ["b", "c"]]);
+    expect(closure.has("a->b")).toBe(true);
+    expect(closure.has("b->c")).toBe(true);
+    expect(closure.has("a->c")).toBe(true);
+    expect(closure.has("c->a")).toBe(false);
+  });
+
+  test("validateDisjointWriteScopes: overlapping unordered targetFiles → WRITE_SCOPE_CONFLICT", () => {
+    const po: PowlNode = {
+      kind: "partial_order",
+      id: "conflict-po",
+      children: [
+        { kind: "activity", id: "w1", label: "W1", objectType: "Artifact", targetFile: "src/a.ts" },
+        { kind: "activity", id: "w2", label: "W2", objectType: "Artifact", targetFile: "src/a.ts" }
+      ],
+      order: []
+    };
+    expect(po.kind).toBe("partial_order");
+    if (po.kind !== "partial_order") return;
+    const violations = validateDisjointWriteScopes(po);
+    expect(violations.length).toBe(1);
+    expect(violations[0]!.overlap).toContain("src/a.ts");
+    expect(() => validatePowlTree(po)).toThrow("WRITE_SCOPE_CONFLICT");
+  });
+
+  test("validateDisjointWriteScopes: ordered or disjoint scopes pass; readonly fan-out free", () => {
+    const ordered: PowlNode = {
+      kind: "partial_order",
+      id: "ordered-po",
+      children: [
+        { kind: "activity", id: "w1", label: "W1", objectType: "Artifact", targetFile: "src/a.ts" },
+        { kind: "activity", id: "w2", label: "W2", objectType: "Artifact", targetFile: "src/a.ts" }
+      ],
+      order: [["w1", "w2"]]
+    };
+    expect(() => validatePowlTree(ordered)).not.toThrow();
+
+    const disjoint: PowlNode = {
+      kind: "partial_order",
+      id: "disjoint-po",
+      children: [
+        { kind: "activity", id: "w1", label: "W1", objectType: "Artifact", targetFile: "src/a.ts" },
+        { kind: "activity", id: "w2", label: "W2", objectType: "Artifact", targetFile: "src/b.ts" }
+      ],
+      order: []
+    };
+    expect(() => validatePowlTree(disjoint)).not.toThrow();
+
+    const readonlyFanout: PowlNode = {
+      kind: "partial_order",
+      id: "ro-po",
+      children: [
+        { kind: "activity", id: "r1", label: "R1", objectType: "Artifact" },
+        { kind: "activity", id: "r2", label: "R2", objectType: "Artifact" }
+      ],
+      order: []
+    };
+    expect(() => validatePowlTree(readonlyFanout)).not.toThrow();
   });
 });
