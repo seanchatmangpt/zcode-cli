@@ -1,521 +1,141 @@
-# zcode-app-cli
+# zcode-cli — Object-Centric Process-Mined Z.AI Code Agent Runtime
 
-[![npm version](https://img.shields.io/npm/v/zcode-app-cli.svg?label=npm)](https://www.npmjs.com/package/zcode-app-cli)
-[![npm downloads](https://img.shields.io/npm/dm/zcode-app-cli.svg)](https://www.npmjs.com/package/zcode-app-cli)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+> **Maximum Z.AI agent utilization through formal process science — not ad-hoc scripts or hardcoded concurrency.**
 
-Unofficial terminal client for the ZCode agent runtime.
+`zcode-cli` is a terminal runtime, Claude Code-compatible CLI launcher, and **autonomic POWL v2 + OCEL 2.0 workflow engine** for Z.AI coding agents. Built from first principles on the process-mining foundations of **Prof. Wil van der Aalst, Humam Kourani, Alessandro Berti, et al.** (Object-Centric Event Logs, Partially Ordered Workflow Language, Workflow-Net Soundness, and Token-Based Replay), `zcode-cli` treats multi-agent software engineering as a **measurable, sound, self-regulating industrial process** rather than an uncontrolled burst of parallel prompts.
 
-The official ZCode source is available at
-[zai-org/ZCode](https://github.com/zai-org/ZCode), with first-party source under
-Apache-2.0 and separate terms for third-party content.
+---
 
-This community client packages the runtime from a pinned ZCode Desktop release,
-applies compatibility patches, and supplies a terminal interface based on
-[`@earendil-works/pi-tui`](https://github.com/earendil-works/pi/tree/main/packages/tui),
-running as a Node.js child process in your terminal. The npm package includes
-the runtime; installing ZCode Desktop is not required for normal terminal use.
-Local development can also extract the runtime from an installed Desktop app.
+## 1. First Principles: Why Ad-Hoc Agent Concurrency Fails
 
-This project is not affiliated with or endorsed by Z.ai. Its own code is MIT;
-bundled upstream content retains its respective licenses. See
-[License and attribution](#license-and-attribution).
+Running coding agents with fixed thread pools (`--concurrency 20`) or flat task lists fails for three structural reasons well-known in process science:
 
-![zcode-app-cli TUI demo](./docs/assets/demo.svg)
+1. **Unsound Orchestration (Deadlocks & Cascade Failures):** Flat scripts fire downstream tasks before upstream contracts exist, or continue burning tokens after a foundational artifact fails.
+2. **Static Concurrency Ignores Little's Law ($L = \lambda W$):** Hardcoding `N` workers either under-utilizes the Z.AI API or saturates `api.z.ai:443` with simultaneous handshakes (`UND_ERR_CONNECT_TIMEOUT` / `429`), collapsing effective throughput $\lambda$ to zero.
+3. **Zero Process Telemetry (No Feedback Loop):** Without an **Object-Centric Event Log (OCEL 2.0)** linking events to artifacts, workflows, and stages (`E2O` and `O2O`), an orchestrator cannot measure service times, detect bottlenecks, compute conformance fitness, or synthesize follow-up work when the queue drains.
 
-## Quick start
+---
 
-```bash
-npm install -g zcode-app-cli@latest
-zcode
-```
+## 2. The Van der Aalst Architecture for Maximum Z.AI Utilization
 
-On first launch, ZCode creates `~/.zcode/cli/setting.json` (or
-`%USERPROFILE%\.zcode\cli\setting.json` on Windows) with credential-free
-defaults and opens a setup wizard in the TUI. It guides you through the three
-model-access paths in [Configuration](./docs/CONFIGURATION.md). Provider settings
-and default model selection use the same native `~/.zcode/v2/provider_config.json`
-file as ZCode Desktop.
-Reopen it anytime with `/setup`; press Esc to skip.
-
-## Host integration
-
-`zcode-app-cli` is designed to run as a normal child process of a terminal host
-or agent orchestrator. Hosts such as Herdr and Orca can launch the same
-published `zcode` command without depending on private runtime files. The
-launcher uses the host terminal without inserting a second PTY, forwards
-cancellation signals, preserves the runtime exit status, and exposes a small
-set of environment overrides.
-
-See [Host integration](./docs/HOST_INTEGRATION.md) for the versioned contract,
-Node.js example, terminal/PTY requirements, and compatibility rules.
-
-## Table of contents
-
-- [Quick start](#quick-start)
-- [Host integration](#host-integration)
-- [Relationship to the official project](#relationship-to-the-official-project)
-- [Install and update](#install-and-update)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Workspace integration](#workspace-integration)
-- [Plugin management](#plugin-management)
-- [Requirements](#requirements)
-- [Configuration](#configuration)
-- [Local development](#local-development)
-- [Contributing](#contributing)
-- [License and attribution](#license-and-attribution)
-
-## Relationship to the official project
-
-The [official repository](https://github.com/zai-org/ZCode) contains Desktop,
-Web, backend services, and the Agent CLI/runtime in `apps/zcode-cli`. It also
-contains an official TUI implemented with OpenTUI and React. Follow its README
-for official build and installation instructions.
-
-`zcode-app-cli` supplies its own pi-tui interface and npm packaging. Its release
-pipeline still extracts compiled Desktop artifacts using
-`zcode-runtime.lock.json`; it does not build the newly published source tree.
-`vendor/extraction.json` records the artifact origin and local patches. The
-public source revision and the extracted release are separate provenance records.
-
-Provider configuration is shared with Desktop by default. Session storage and
-feature compatibility depend on the runtime version and configured paths;
-sharing providers does not guarantee that every client discovers the same
-sessions. See [Configuration](./docs/CONFIGURATION.md).
-
-## Install and update
-
-```bash
-npm install -g zcode-app-cli@latest
-# or
-bun add -g zcode-app-cli@latest
-```
-
-Using `@latest` is intentional because the App-aligned release format uses a
-SemVer prerelease segment such as `3.3.5-2`. The tag always points to the
-newest validated App-plus-build release.
-
-Interactive startup checks the npm `latest` tag at most once every 20 hours
-per installed version and shows a cached newer version as a non-blocking
-update card with the exact install command and release-notes link. CI
-environments skip the check automatically. Set `ZCODE_DISABLE_UPDATE_CHECK=1`
-or `NO_UPDATE_NOTIFIER=1` to disable it.
-
-A normal installation requires only Node.js and has no native PTY addon or
-postinstall build step.
-
-## Architecture
+`zcode-cli` closes the loop between **Process Modeling (POWL v2)**, **Sound Execution (Workflow-Net Token Replay)**, **Object-Centric Telemetry (OCEL 2.0)**, and **Autonomic Equilibrium Control (AIMD)**:
 
 ```text
-Node.js npm launcher (config / login / version metadata)
-  └─ inherited stdin / stdout / stderr
-      └─ official zcode.cjs agent runtime
-          └─ local @zcode/tui adapter
-              └─ @earendil-works/pi-tui
+                  ┌──────────────────────────────────────────┐
+                  │   POWL v2 Recursive Process Tree         │
+                  │   Activity | Tau | Xor | Loop | PO(V,≺)  │
+                  │        (Sound by Construction)           │
+                  └────────────────────┬─────────────────────┘
+                                       │ compilePowlToWorkflowNet()
+                                       ▼
+                  ┌──────────────────────────────────────────┐
+                  │   Sound Workflow Net (Petri Net)         │
+                  │   (Places P, Transitions T, Marking M)   │
+                  └────────────────────┬─────────────────────┘
+                                       │ Token-Based Replay (∀p ∈ •t: M(p) ≥ 1)
+                                       ▼
+┌──────────────────────────────┐     ┌───────────────────────────────────────┐
+│ Autonomic AIMD WIP Controller│◄────┤ Z.AI Agent Transitions (zcode.js)     │
+│ • Slow-start (WIP = 1)       │     │ • Claude Code CLI parity flags        │
+│ • Clean completion -> WIP+1  │     │ • Transport timeout -> return token   │
+│ • Timeout / spike -> WIP/2   │     │   to input place (m = 0 preserved)    │
+│ • Zero hardcoded limits      │     └──────────────────┬────────────────────┘
+└──────────────────────────────┘                        │
+                                                        ▼
+                  ┌──────────────────────────────────────────┐
+                  │   IEEE OCEL 2.0 Log + Conformance Court  │
+                  │   • E2O & O2O relationships              │
+                  │   • Dynamic timestamped standing         │
+                  │   • Fitness: 0.5(1-m/c) + 0.5(1-r/p)     │
+                  │   • Validated via ~/wasm4pm-compat       │
+                  └────────────────────┬─────────────────────┘
+                                       │ deriveFollowUpPowl(R_t)
+                                       ▼
+                  ┌──────────────────────────────────────────┐
+                  │   Never-Empty Autonomic Queue            │
+                  │   • REFUSED / f < 1 -> Remediation POWL  │
+                  │   • Bottleneck > 2x -> Optimization POWL │
+                  │   • All ALIVE -> Mutation & Drift POWL   │
+                  └──────────────────────────────────────────┘
 ```
 
-`@zcode/tui` is the interface package loaded by the upstream runtime. During
-synchronization this project installs its local implementation from the local
-package declared in `packages/zcode-tui/package.json`, built on `@earendil-works/pi-tui`. This is separate from
-the official OpenTUI implementation in `apps/zcode-cli/packages/tui`.
+### Core Formalisms
 
-The official agent, model, session, tool, plugin, MCP, credential store and
-provider-configuration logic remains in the extracted runtime. The local
-package supplies the missing terminal interface and a narrow macOS callback
-bridge for Z.AI's registered Desktop OAuth flow. Node.js starts the public npm
-command and remains the compatibility host for the extracted upstream kernel.
-The official runtime directly owns raw terminal mode, IME cursor placement and
-resize handling; the launcher does not insert a second PTY or relay terminal
-bytes.
+| Mechanism | Formal Basis | Operational Effect on Z.AI Utilization |
+|---|---|---|
+| **POWL v2 AST** (`src/powl-ocel-orchestrator.ts`) | Kourani & van der Aalst (2023) | Recursive `Activity`, `Tau`, `Xor`, `Loop(do, redo)`, and strict `PartialOrder(V, ≺)` — validated for irreflexivity, asymmetry, and acyclicity. |
+| **Workflow-Net Compiler** (`compilePowlToWorkflowNet`) | Van der Aalst Soundness Theorem | Compiles any POWL tree into a sound Petri Net `(P, T, pre, post, sourcePlace, sinkPlace)` guaranteed free of deadlocks and livelocks. |
+| **Token-Based Replay** (`executePowlWithTokenReplay`) | Conformance Fitness $f = \frac{1}{2}(1 - \frac{m}{c}) + \frac{1}{2}(1 - \frac{r}{p})$ | Transitions fire strictly when input places hold tokens (`M(p) ≥ 1`). Logic refusals halt fail-closed (`f < 1.0`); transient transport timeouts return tokens to input places (`m = 0`), preserving soundness. |
+| **Autonomic AIMD Equilibrium** (`AimdWipController`) | Little's Law ($L = \lambda W$) + AIMD | Starts at `WIP = 1`, probes upward (`+1`) on clean completions within `2×` median service time, and backs off (`×0.5`) on connect timeouts, `429`s, or latency spikes. **Zero hardcoded concurrency knobs.** |
+| **IEEE OCEL 2.0 Telemetry** | Berti, Koren, van der Aalst et al. (2024) | Records `E2O` (`workflow`, `produces`, `verifies`, `blocks`), `O2O` (`part_of`), timestamped `standing` transitions (`RUNNING -> ALIVE | REFUSED`), and per-transition `serviceMs`; auto-validates against `~/wasm4pm-compat`. |
+| **Never-Empty Follow-Up Synthesis** (`runAutonomicLoop`) | Closed-Loop Recursion ($R_t \to \text{POWL}_{t+1}$) | When a cycle completes, `deriveFollowUpPowl()` immediately synthesizes the next cycle (remediation if refused, profiling/optimization if bottlenecked, or anti-vacuity mutation + drift audit if `ALIVE`). |
 
-For the coupling to the XaaS execution fabric (plugin contracts, MCP surface,
-native gall-work dispatch), see
-[C4 architecture: zcode-cli ↔ xaas coupling](./docs/c4-zcode-cli-xaas.md).
+---
 
-## Features
+## 3. Claude Code Agent Parity
 
-**Editor and input.** pi-tui differential rendering with a CJK-aware
-multi-line editor; slash-command, unified `@` workspace/Plugin references and
-`$` Skill completion; persisted prompt history through ZCode's history API;
-`--no-color` and `NO_COLOR` support.
+`zcode-cli` provides drop-in CLI parity for headless coding-agent workflows (`src/claude-parity.ts`, `src/max-turns.ts`, `src/launcher.ts`):
 
-**Streaming and conversation.** Streamed assistant text from official ZCode
-session events; `/mode`, `/model`, `/resume`, `/plugins` and other upstream
-slash commands; searchable model and reasoning-effort selectors, plus MCP and
-workflow panels; status-bar-only Shift+Tab mode cycling
-(`build` → `edit` → `yolo`), independent `/plan` toggling with an input-border indicator, Ctrl+N model and empty-prompt Tab effort
-cycling; structured session-goal status in the right side of the turn footer;
-animated active-turn timer with a static `ZCODE_TUI_REDUCED_MOTION=1`
-fallback; responsive context-remaining and session-token metrics.
+- `-p`, `--prompt <text>` and `--print <prompt>` — headless single-prompt execution
+- `--dangerously-skip-permissions` — maps to `--mode yolo`
+- `--permission-mode <default|plan|acceptEdits|bypassPermissions|dontAsk|build|edit|yolo>` — maps to native `--mode`
+- `--max-turns <N>` — enforced in the runtime turn loop (`ZCODE_MAX_TURNS`)
+- `--disallowedTools` / `--disallowed-tools <tools...>` — per-run tool restriction
+- `-c` / `--continue`, `--resume <sessionId>` — session continuation
+- `--output-format <format>`, `--json`, `--cwd <path>`, `--attach <path>`
+- `ZCODE_OCEL=1` — streams runtime output through the credential-redacted OCEL tap (`src/ocel-tap.ts`)
 
-**Login and permissions.** `/login` setup choices with masked API-key entry,
-redacted transcript/history and OAuth waiting state; suspended Z.AI browser
-login with terminal restoration and an optional `ZCODE_TUI_LOGIN_CMD`
-override; interactive tool-permission approval dialogs.
+---
 
-**Attachments and rich output.** Clipboard image attachments through Ctrl+V
-or `/paste-image`, with a keyboard-selectable attachment row; compact tool
-execution views with path, command, progress, result and image previews;
-parent/child Agent tool trees with resumable subagent metadata and expandable
-Prompt/Response details; syntax-highlighted Markdown code blocks with stable
-streaming-block rendering; Pierre-style inline diffs with line numbers,
-syntax highlighting, word-level changes and CJK wrapping; terminal-native
-Mermaid previews with source fallback for unsupported or oversized diagrams.
+## 4. Quick Start & Verification
 
-**Inspection and navigation.** `/diff` browser for current Git changes and
-per-turn file changes; `/context` prompt-composition, cache and context-usage
-details; `/status` session, runtime, goal, MCP and workspace details;
-`/activity` and a task center for background status, output, agent conversations
-and recovery; searchable transcript navigation with per-block expansion,
-selected-block copying and
-`n`/`N` match traversal; persistent active-tool, background-task and open-plan
-activity between the transcript and editor.
-
-**Steering, rewind and notifications.** Active-turn steering, cancellation
-and error reporting; double-Esc rewind with input-point selection and safe
-conversation/workspace scopes; unfocused turn-completion notifications through
-terminal-native OSC 9 or BEL, with optional desktop commands; `/copy`,
-`/cls`, `/exit`, Ctrl+C and Ctrl+D handling with token usage and resume
-guidance on exit.
-
-## Workspace integration
-
-### Referencing workspace files
-
-Type `@` at the start of the prompt or after whitespace to open project file
-completion. Continue typing a path, use Up/Down to choose a candidate, then
-press Tab or Enter to insert it. Selecting a directory lets you continue with
-the next path segment.
-
-```text
-Explain @README.md
-Compare @src/index.ts with @"docs/design notes.md"
-```
-
-Suggestions come from the official ZCode runtime, stay inside the current
-workspace and exclude common repository metadata and dependency directories.
-Paths containing spaces are inserted in the quoted `@"..."` form.
-
-### Referencing plugins
-
-The same `@` picker includes enabled, unambiguous Plugins that expose at least
-one Skill, connected MCP server or Subagent. Plugin rows are labelled with an
-`@name` and their marketplace. Selecting one inserts the runtime's native
-Markdown reference:
-
-```text
-Use [@browser-use](plugin://browser-use@zcode-plugins-official) to check this page
-```
-
-The terminal editor shows the Markdown source because it has no desktop-style
-inline chips. The runtime resolves the link against the active session and
-adds only that Plugin's live capabilities as metadata. A Plugin reference does
-not install, enable, authorize or force the use of any capability. Disabled,
-ambiguous or stale references are ignored by the runtime.
-
-### Invoking skills
-
-Type `$` at the start of the prompt or after whitespace to open the Skill
-picker. Continue typing a name, use Up/Down to choose a candidate, then press
-Tab or Enter to insert it.
-
-```text
-$audit review the current changes
-Use $browser-use:control-browser to verify the page
-```
-
-The picker uses the official runtime's Skill catalog and inserts plugin Skills
-with their qualified names. On submission, exact `$name` matches are converted
-into a request that loads each selected Skill through the runtime's `Skill`
-tool before carrying out the visible user request. Unknown `$` tokens remain
-ordinary prompt text.
-
-Use `@plugin` when the whole Plugin is relevant, including its MCP servers or
-Subagents. Use `$plugin:skill` when one exact Skill must be loaded before the
-task starts.
-
-Skill and custom-command discovery also works outside the TUI through the
-runtime's subcommands, with `--json` for scripts:
-
-```bash
-zcode skills list                 # every discovered skill, plugin-qualified
-zcode skills inspect <name>       # full description, source path and metadata
-zcode commands list               # discovered custom slash commands
-zcode commands inspect <name>     # argument hints and resolved body
-zcode parts <verb> --graph FILE   # inspect, alternatives and falsify over a semantic-parts graph
-zcode parts alternatives …        # also [--minimum-shared N] [--limit N]
-```
-
-Every `parts` payload carries a `receipt_digest` — a sha256 binding the payload
-to the exact observed graph bytes (`--graph-sha256` pins them and refuses a
-stale or substituted graph before parsing).
-
-### Active-turn input
-
-While a regular agent turn is running, press `Enter` to send the current text
-as same-turn steering. Until the official runtime reaches a safe model-step
-boundary, the steer stays in a waiting row next to the editor instead of being
-shown as committed conversation history. Once the runtime confirms injection,
-the message moves into the transcript at its actual position and uses the normal
-user-message `›` prefix. The `↪` marker is reserved for the temporary waiting
-row. `Ctrl+C` clears a non-empty editor draft first, including during an active
-turn. With an empty editor it cancels the active turn, or exits when idle.
-
-To keep a follow-up editable instead, press `Tab` while the editor contains
-text and completion is closed. The input remains in the local next-turn queue.
-Queued inputs start in FIFO order after the active turn completes normally.
-With an empty editor, press `Alt+Up` or `Shift+Left` to move the most recently
-queued input back into the editor. Accepted steers cannot be edited because
-they have already been handed to the official runtime, even while the waiting
-row is visible; use `Tab` when the text must remain changeable. A steer rejected
-or discarded before injection returns to the editable next-turn queue.
-
-### Image attachments
-
-Press `Ctrl+V` or run `/paste-image` to attach an image from the clipboard.
-Pending images appear above the editor as complete `[Image #N]` tokens.
-Submitting a prompt moves those images into that user turn immediately, so they
-are removed from the pending row and cannot leak into the next prompt.
-
-Move the editor cursor to the start of its first line and press `Up`, or run
-`/attachments`, to focus the attachment row. While it is focused:
-
-- `Left`/`Right` selects an image;
-- `Backspace` or `Delete` removes the selected image and renumbers the rest;
-- `Down`, `Esc`, `Ctrl+C`, or `Enter` returns to the editor without changing its text.
-
-Run `/attachments clear` to remove every pending image at once. `Ctrl+D`
-retains its terminal-standard empty-editor exit and forward-delete behavior.
-
-### Conversation rewind
-
-With an empty editor and no active turn, press `Esc` twice within 800 ms to
-open the conversation rewind picker. Choose the user input to return to, review
-the available workspace checkpoints, then select one of the available scopes:
-
-- **Conversation only** removes later conversation turns, keeps workspace
-  files unchanged, and restores the selected input to the editor;
-- **Conversation and workspace** also restores safe checkpointed file changes;
-- **Workspace only** restores safe checkpointed files without changing the
-  conversation.
-
-The scope picker only offers workspace restoration when the official ZCode
-runtime reports a complete safe checkpoint plan. Files changed externally are
-not overwritten, and Bash or terminal file mutations are reported as ignored
-because they do not have restorable ZCode checkpoints. Press `Esc` in the scope
-picker to return to input selection, then `Esc` again to close rewind.
-
-### TUI inspection and navigation
-
-```text
-/diff                         browse current and per-turn file changes
-/context                      inspect context usage and source composition
-/status                       inspect detailed runtime and session status
-/rename <title>               rename the current session
-/activity                     inspect every active tool and open task
-/tasks                        inspect and manage background tasks
-/tasks message <id> <text>    send guidance to a running background agent
-/tasks resume <id> [text]     resume a stopped or failed background agent
-/tasks stop <id>              stop a running background task
-/search <text>                search retained transcript blocks
-/search next|prev|clear       navigate or close transcript search
-/transcript latest            select the latest transcript block
-/transcript next|prev|close   navigate or leave transcript selection
-/copy                         copy the selected block, or the latest response
-/cls                          clear the visible transcript only
-```
-
-`/cls` clears what the TUI displays without touching the session. The
-runtime's own `/clear` is an alias of `/new` and starts a fresh session, so it
-is forwarded to the runtime unchanged.
-
-The task center keeps autonomous task output out of the foreground transcript.
-The main conversation receives only compact completion, reply and failure
-notices; select the task to inspect its output and task-scoped activity. Agent
-tasks can receive messages while running, and the official runtime resumes a
-terminal agent from its saved child session when messaged. Bash tasks expose a
-reviewable rerun request because a stopped process cannot continue from an
-execution checkpoint. Saved final task output remains available after a TUI
-restart, with large files limited to their latest 64 KiB. Workflow tasks open
-their existing run panel and controls.
-
-Agent calls that finish within one second remain ordinary foreground tools so
-their result can feed the current response directly. Longer Agent calls move to
-the task center automatically, releasing the foreground turn while they keep
-running. Set `subagents.autoBackgroundMs` to a different positive duration, or
-to `0` to disable automatic backgrounding. An explicit
-`run_in_background: true` still backgrounds an Agent immediately.
-
-While the editor is empty, `Alt+Up` and `Alt+Down` navigate selected transcript
-blocks. `Ctrl+O` expands only the selected/search-matched block; without a
-selection it toggles all expandable content. During transcript search, `n` and
-`N` move to the next and previous match. `Left`/`Right` (or `PageUp` and
-`PageDown`) page through an oversized selected block without rendering the
-entire message at once. `Esc` leaves search or transcript navigation.
-
-## Plugin management
-
-Built-in Plugins such as Browser Use, Image Search and Skill Creator are seeded
-by the official runtime. Existing installed-plugin commands continue to use the
-runtime directly:
-
-```bash
-zcode plugins list --json
-zcode plugins enable <plugin-id>
-zcode plugins disable <plugin-id>
-zcode plugins uninstall <plugin-id> --force
-```
-
-The npm package includes the document, PDF, presentation and spreadsheet skill
-Plugins with their original license files. Their bundled skills retain the
-upstream personal, educational and non-commercial use terms.
-See [Third-party content](./docs/THIRD_PARTY_CONTENT.md).
-
-The npm launcher adds marketplace operations by calling the runtime's public
-`app-server` protocol; it does not patch or reimplement the Plugin subsystem.
-Run `zcode plugins --help` for the full command list. A typical third-party
-installation is:
-
-```bash
-zcode plugins discover
-zcode plugins marketplace add owner/repository --dry-run
-zcode plugins marketplace add owner/repository
-zcode plugins describe plugin-name@marketplace-name
-zcode plugins install plugin-name@marketplace-name --dry-run
-zcode plugins install plugin-name@marketplace-name
-```
-
-Marketplace addition and installation validate first, display the Plugin's
-components and dependency closure, and ask for confirmation. Use `--yes` only
-for intentional non-interactive execution, `--json` for structured output and
-`--scope user|workspace` to choose installation scope. Marketplace Git access
-behind a proxy uses `ZCODE_HTTP_PROXY`.
-
-Plugins with configuration can load options from a JSON file without exposing
-values in the process argument list:
-
-```bash
-zcode plugins configure plugin-name@marketplace-name \
-  --options-file ./plugin-options.json --dry-run
-zcode plugins configure plugin-name@marketplace-name \
-  --options-file ./plugin-options.json
-```
-
-Keep files containing secrets private. Install, update, configure, enable and
-disable changes apply to new sessions.
-
-### Browser Use in the CLI
-
-The launcher enables the CLI-managed headless Chromium backend by default for
-TUI, `--prompt`, `--print` and `--target` sessions. This makes an enabled
-`browser-use` Plugin usable from the normal `zcode` command without a separate
-startup flag:
-
-```bash
-zcode
-zcode --prompt \
-  'Use $browser-use:control-browser to inspect https://example.com'
-```
-
-The explicit `--browser-use=headless` form remains supported, including with
-`--browser-executable <path>` when Chromium needs to be selected manually.
-The managed backend still requires a usable local Chrome/Chromium executable;
-if automatic discovery fails, pass its absolute path with
-`--browser-executable`.
-The launcher never injects Browser Use into `plugins`, `skills`, `doctor`,
-`app-server` or other management commands. Existing sessions must be restarted
-before the backend becomes available.
-
-The managed browser is an ephemeral headless context. It does not reuse the
-ZCode Desktop in-app browser profile, cookies or login state, so public search
-engines may close connections or request verification more often, especially
-on VPN, proxy or shared egress IPs. `--browser-executable` only selects the
-Chrome/Chromium binary; it does not make the browser headful or persistent.
-For general fact finding, avoid forcing Browser Use when a search capability is
-available. Use direct page URLs where possible, and use the Desktop in-app
-browser for interactive login or verification flows.
-
-## Requirements
-
-- Node.js 22.19 or newer;
-- macOS, Linux or Windows on x64 or ARM64.
-
-Z.AI browser OAuth currently requires macOS because the registered provider
-callback is `zcode://zai-auth/callback`; API-key and custom-provider access work
-on every supported platform.
-
-Set `ZCODE_NODE=/absolute/path/to/node` when the desired Node.js executable is
-not available on `PATH`.
-
-## Configuration
-
-ZCode reads configuration from `~/.zcode/cli/setting.json` (or
-`%USERPROFILE%\.zcode\cli\setting.json` on Windows), with project-level
-overrides from `zcode.json` or `.zcode/config.json` in the working directory.
-Existing files are never replaced.
-
-Provider settings and the default model are stored in
-`~/.zcode/v2/provider_config.json`, shared with ZCode Desktop by default.
-Use `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` for an independent CLI provider file.
-`/settings` saves the default model; `/model` changes only the current session.
-See [`provider.example.json`](./provider.example.json) for complete field examples
-and the [provider configuration reference](./docs/PROVIDER_CONFIG.md) for multimodal
-capabilities, native search, token limits, reasoning maps and automatic upstream
-updates. The enabled example model inherits the catalog; disabled reference
-models demonstrate explicit overrides and manual configuration.
-中文文档：[配置说明](./docs/CONFIGURATION.zh-CN.md) ·
-[Provider 配置字段参考](./docs/PROVIDER_CONFIG.zh-CN.md)。
-The project follows the current upstream runtime and configuration schema.
-
-Three model-access paths are supported: Z.AI OAuth (macOS only), Z.AI/BigModel
-Coding Plan API key, or a direct API key with a custom provider. For detailed
-setup steps, retries/timeouts, theme, and turn-completion notifications, see
-[Configuration](./docs/CONFIGURATION.md).
-
-## Local development
-
-Install dependencies and start the client with live TypeScript and auto-sync
-from the local ZCode Desktop installation:
+### Install & Build
 
 ```bash
 bun install
-bun run dev
+bun run build
+bun run check
 ```
 
-Run all validation layers:
+### Run the Autonomic POWL v2 + OCEL 2.0 Workflow
+
+Workspace paths are configured in `zcode-cli.toml` (no concurrency or WIP knobs):
 
 ```bash
-bun run typecheck
-bun test
-bun run check
-bun run check:tui
+# Dry-run soundness & token-replay verification
+bun scripts/powl-ecosystem-workflow.ts --dry-run
+
+# Live autonomic Z.AI execution (self-tuning AIMD equilibrium + never-empty loop)
+bun scripts/powl-ecosystem-workflow.ts
 ```
 
-For the OAuth path, release workflow details, CI, and the full development
-guide, see [Development](./docs/DEVELOPMENT.md). For maintainer-only release
-and publishing workflows, see [Releasing](./docs/RELEASING.md).
+### Verification Suite (Chicago-Style, Zero-Mock)
 
-## Contributing
+```bash
+# Typecheck
+bun run typecheck
 
-Issues and pull requests are welcome at
-[github.com/kingsword09/zcode-cli](https://github.com/kingsword09/zcode-cli).
-Please open an issue first to discuss substantial changes. See
-[Development](./docs/DEVELOPMENT.md) for the local setup and validation
-commands, and [Releasing](./docs/RELEASING.md) for the release flow.
+# Claude Code CLI parity + POWL/OCEL unit tests
+bun test test/claude-parity.test.ts test/powl-ocel-orchestrator.test.ts
 
-## License and attribution
+# Chicago-style tests (real bin/zcode.js subprocesses, real filesystem, SHA-256 receipt recomputation, anti-vacuity)
+bun test test/powl-ocel-chicago.test.ts
+```
 
-This project's launcher, local TUI and other original source are MIT — see
-[LICENSE](./LICENSE). That license does not relicense bundled dependencies,
-upstream code or plugin assets.
+---
 
-ZCode's public first-party source is Apache-2.0. The npm package includes
-[the license text](./LICENSES/Apache-2.0.txt), copies of upstream notices, and
-[their source revision](./LICENSES/README.md). The extracted runtime has a
-modification notice; `vendor/extraction.json` records its compatibility patches.
+## 5. Architecture & Repository Layout
 
-Plugin manifests and embedded dependencies have their own license declarations.
-The four document-related plugin packages are included in npm releases with
-their original non-commercial skill licenses. See [Third-party content](./docs/THIRD_PARTY_CONTENT.md)
-for the scope of these notices and the distribution policy.
+- `bin/zcode.ts` → `bin/zcode.js` — Node.js (`>= 22.19.0`) launcher with inherited stdio (no second PTY)
+- `src/powl-ocel-orchestrator.ts` — POWL v2 AST, Workflow-Net compiler, Token-Based Replay, AIMD equilibrium controller, OCEL 2.0 emitter, and `runAutonomicLoop`
+- `src/claude-parity.ts` — Claude Code CLI flag normalization
+- `src/launcher.ts`, `src/max-turns.ts`, `src/ocel-tap.ts`, `src/gall-work.ts` — runtime bootstrap, turn caps, OCEL tap, and lease lifecycle
+- `packages/zcode-tui/` — `@zcode/tui` built on `@earendil-works/pi-tui`
+- `scripts/powl-castle-workflow.ts`, `scripts/powl-ecosystem-workflow.ts` — executable POWL v2 workflows
+- `zcode-cli.toml` — substrate workspace paths (`castle_dir`, `wasm4pm_dir`, `wasm4pm_compat_dir`)
+
+---
+
+## License
+
+`zcode-cli` source code is MIT licensed. Bundled upstream ZCode runtime artifacts retain their respective licenses (see `LICENSES/` and `docs/THIRD_PARTY_CONTENT.md`).
