@@ -479,6 +479,21 @@ export interface OcelPowlRunResult {
   bottlenecks: Array<{ transitionId: string; serviceMs: number }>;
 }
 
+
+/** Rozinat/van der Aalst token conservation: produced + missing = consumed + remaining. */
+export function tokenConservationHolds(replay: ReplayMetrics): boolean {
+  return replay.produced + replay.missing === replay.consumed + replay.remaining;
+}
+
+/** Deep-freeze a value so post-hash OCEL snapshots cannot silently diverge from ocelSha256. */
+export function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as object)) deepFreeze(child);
+  }
+  return value;
+}
+
 export async function executePowlWithTokenReplay(
   root: PowlNode,
   executor: TransitionExecutor,
@@ -777,6 +792,13 @@ export async function executePowlWithTokenReplay(
           );
         } else {
           haltedOnFailure = true;
+          // Abort fire: restore reserved tokens to input places and undo their consume
+          // counts so Rozinat conservation (p+m = c+r) holds. Incompleteness is then
+          // carried by remaining > 0 (fitness < 1.0) without a phantom sink missing.
+          for (const p of net.pre.get(t.id) ?? []) {
+            marking.set(p, (marking.get(p) ?? 0) + 1);
+            if (consumed > 0) consumed -= 1;
+          }
           artObj.attributes.push({ name: "standing", value: "REFUSED", time: new Date().toISOString() });
           emitEvent(
             "transition_refused",
@@ -795,12 +817,13 @@ export async function executePowlWithTokenReplay(
     if (inFlight.size > 0) await Promise.race(inFlight);
   }
 
-  // Consume final token in sinkPlace if present
+  // Consume final token in sinkPlace if present. On a fail-closed halt the net never
+  // reached the sink; do not invent a missing sink token (that broke p+m=c+r).
   const sinkTokens = marking.get(net.sinkPlace) ?? 0;
   if (sinkTokens >= 1) {
     marking.set(net.sinkPlace, sinkTokens - 1);
     consumed += 1;
-  } else {
+  } else if (!haltedOnFailure) {
     missing += 1;
   }
 
@@ -839,6 +862,8 @@ export async function executePowlWithTokenReplay(
 
   const ocelJson = JSON.stringify(ocel, null, 2);
   const ocelSha256 = createHash("sha256").update(ocelJson).digest("hex");
+  // Detach + freeze so callers cannot mutate the hashed log (EU AI Act record accuracy).
+  const ocelSnapshot = deepFreeze(JSON.parse(ocelJson) as Ocel2Log);
 
   let wasm4pmCompatChecked = false;
   const compatDist = options.wasm4pmCompatDir
@@ -869,7 +894,7 @@ export async function executePowlWithTokenReplay(
   return {
     workflowId: root.id,
     replay: { produced, consumed, missing, remaining, fitness, soundTermination },
-    ocel,
+    ocel: ocelSnapshot,
     ocelSha256,
     wasm4pmCompatChecked,
     equilibriumWip: aimd.peakEquilibriumWip,
