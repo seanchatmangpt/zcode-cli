@@ -559,8 +559,27 @@ export async function executePowlWithTokenReplay(
   };
   walkLoops(root);
 
-  const loopIdFromExit = (t: Transition): string | undefined =>
-    t.id.startsWith("tau_exit_") ? t.id.slice("tau_exit_".length) : undefined;
+  /**
+   * Map τ_exit transition → PowlLoop id. A2 suffixes unique seq
+   * (`tau_exit_<loopId>_<n>`), so strip-prefix alone yields `<loopId>_<n>`.
+   */
+  const loopIdFromExit = (t: Transition): string | undefined => {
+    if (!t.id.startsWith("tau_exit_")) return undefined;
+    let best: string | undefined;
+    for (const lid of loopMaxIterations.keys()) {
+      const prefix = `tau_exit_${lid}`;
+      if (t.id === prefix || t.id.startsWith(`${prefix}_`)) {
+        const rest = t.id.slice(prefix.length);
+        if (rest === "" || /^_\d+$/.test(rest)) {
+          if (!best || lid.length > best.length) best = lid;
+        }
+      }
+    }
+    if (best) return best;
+    const body = t.id.slice("tau_exit_".length);
+    const m = body.match(/^(.*)_\d+$/);
+    return m?.[1] ?? body;
+  };
 
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const inFlight = new Set<Promise<void>>();
