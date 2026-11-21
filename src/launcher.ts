@@ -33,6 +33,7 @@ import {
 import { requestAppServer } from "./app-server-client.ts";
 import { startOcelTap } from "./ocel-tap.ts";
 import { extractMaxTurns, resolveSubagentMaxTurnsEnv } from "./max-turns.ts";
+import { normalizeClaudeAgentArgs } from "./claude-parity.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import { isGallWorkInvocation, runGallWork } from "./gall-work.ts";
 import { runGallCommand } from "./gall-cli.ts";
@@ -599,8 +600,13 @@ export async function main(args: string[]): Promise<number> {
     console.error(`Error: ${maxTurns.error}`);
     return 1;
   }
-  const login = normalizeLoginArgs(maxTurns.args);
-  const zaiOAuth = classifyZaiOAuthInvocation(maxTurns.args);
+  const claudeParity = normalizeClaudeAgentArgs(maxTurns.args);
+  if (claudeParity.error) {
+    console.error(`Error: ${claudeParity.error}`);
+    return 1;
+  }
+  const login = normalizeLoginArgs(claudeParity.args);
+  const zaiOAuth = classifyZaiOAuthInvocation(claudeParity.args);
   if (login.checkConfiguredAccess) {
     const access = await readConfiguredModelAccess();
     if (access || await hasConfiguredProviderAccess()) {

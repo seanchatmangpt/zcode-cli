@@ -1,0 +1,7 @@
+# zcode-cli.toml — ZCode CLI workspace & process-mining substrate paths
+# Equilibrium control is fully autonomic (AIMD + OCEL 2.0 service-time feedback).
+
+[paths]
+castle_dir = "/Users/sac/castle"
+wasm4pm_dir = "/Users/sac/wasm4pm"
+wasm4pm_compat_dir = "/Users/sac/wasm4pm-compat"

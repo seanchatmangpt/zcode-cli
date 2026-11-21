@@ -20,3 +20,10 @@ _build/
 target/
 _build-lane*/
 target-lane*/
+
+# Runtime POWL/OCEL workflow artifacts & logs
+*.log
+.ocel/
+workflow.ocel.json
+powl-tree.json
+replay-conformance.json
