@@ -48,31 +48,104 @@ export function getPath(raw: unknown, path: string): unknown {
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
-/** Structural OCEL 2.0 JSON validity. Returns problems (empty when valid). */
+function typeAttrNames(attrs: unknown): Set<string> | null {
+  if (!Array.isArray(attrs)) return null;
+  const names = new Set<string>();
+  for (const a of attrs) {
+    if (a && typeof a === "object" && typeof (a as { name?: unknown }).name === "string") {
+      names.add((a as { name: string }).name);
+    } else if (typeof a === "string") {
+      names.add(a);
+    } else {
+      return null;
+    }
+  }
+  return names;
+}
+
+/** Structural OCEL 2.0 JSON validity + type/attr closure. Returns problems (empty when valid). */
 export function ocelProblems(doc: OcelDoc): string[] {
   const problems: string[] = [];
   for (const key of ["objectTypes", "eventTypes", "objects", "events"] as const) {
     if (!Array.isArray((doc as any)[key])) problems.push(`missing array ${key}`);
   }
   if (problems.length) return problems;
-  const otypes = new Set(doc.objectTypes.map((t) => t.name));
-  const etypes = new Set(doc.eventTypes.map((t) => t.name));
-  if (otypes.size !== doc.objectTypes.length) problems.push("duplicate objectType");
-  if (etypes.size !== doc.eventTypes.length) problems.push("duplicate eventType");
+
+  const otypeAttrs = new Map<string, Set<string>>();
+  const etypeAttrs = new Map<string, Set<string>>();
+  for (const [i, t] of (doc.objectTypes as unknown[]).entries()) {
+    if (!t || typeof t !== "object" || typeof (t as { name?: unknown }).name !== "string") {
+      problems.push(`objectTypes[${i}] is not {name, attributes}`);
+      continue;
+    }
+    const name = (t as { name: string }).name;
+    const attrs = typeAttrNames((t as { attributes?: unknown }).attributes);
+    if (attrs === null) {
+      problems.push(`objectType ${name} lacks a valid attributes array`);
+      continue;
+    }
+    if (otypeAttrs.has(name)) problems.push("duplicate objectType");
+    otypeAttrs.set(name, attrs);
+  }
+  for (const [i, t] of (doc.eventTypes as unknown[]).entries()) {
+    if (!t || typeof t !== "object" || typeof (t as { name?: unknown }).name !== "string") {
+      problems.push(`eventTypes[${i}] is not {name, attributes}`);
+      continue;
+    }
+    const name = (t as { name: string }).name;
+    const attrs = typeAttrNames((t as { attributes?: unknown }).attributes);
+    if (attrs === null) {
+      problems.push(`eventType ${name} lacks a valid attributes array`);
+      continue;
+    }
+    if (etypeAttrs.has(name)) problems.push("duplicate eventType");
+    etypeAttrs.set(name, attrs);
+  }
+
   const objects = new Map<string, string>();
   for (const o of doc.objects) {
     if (objects.has(o.id)) problems.push(`duplicate object ${o.id}`);
     objects.set(o.id, o.type);
-    if (!otypes.has(o.type)) problems.push(`object ${o.id} has undeclared type ${o.type}`);
-    if (!Array.isArray(o.attributes) || !Array.isArray(o.relationships)) problems.push(`object ${o.id} lacks attributes/relationships arrays`);
+    if (!otypeAttrs.has(o.type)) problems.push(`object ${o.id} has undeclared type ${o.type}`);
+    if (!Array.isArray(o.attributes) || !Array.isArray(o.relationships)) {
+      problems.push(`object ${o.id} lacks attributes/relationships arrays`);
+      continue;
+    }
+    const declared = otypeAttrs.get(o.type) ?? new Set();
+    for (const a of o.attributes as { name?: unknown }[]) {
+      const n = a && typeof a === "object" ? a.name : undefined;
+      if (typeof n !== "string") {
+        problems.push(`object ${o.id} has a malformed attribute`);
+        continue;
+      }
+      if (!declared.has(n)) problems.push(`object ${o.id} attr ${n} undeclared on type ${o.type}`);
+    }
   }
   const ids = new Set<string>();
-  for (const e of doc.events) {
+  for (const e of doc.events as Array<OcelDoc["events"][number] & { objects?: unknown }>) {
     if (ids.has(e.id)) problems.push(`duplicate event ${e.id}`);
     ids.add(e.id);
-    if (!etypes.has(e.type)) problems.push(`event ${e.id} has undeclared type ${e.type}`);
+    if (!etypeAttrs.has(e.type)) problems.push(`event ${e.id} has undeclared type ${e.type}`);
     if (!ISO.test(e.time)) problems.push(`event ${e.id} time not ISO 8601: ${e.time}`);
-    if (!Array.isArray(e.attributes)) problems.push(`event ${e.id} lacks attributes`);
+    if ("objects" in e && e.objects !== undefined) {
+      problems.push(`event ${e.id} uses legacy objects[] (OCEL 2.0 requires relationships[])`);
+    }
+    if (!Array.isArray(e.attributes)) {
+      problems.push(`event ${e.id} lacks attributes`);
+      continue;
+    }
+    if (!Array.isArray(e.relationships)) {
+      problems.push(`event ${e.id} lacks relationships`);
+      continue;
+    }
+    const declared = etypeAttrs.get(e.type) ?? new Set();
+    for (const a of e.attributes) {
+      if (!a || typeof a.name !== "string") {
+        problems.push(`event ${e.id} has a malformed attribute`);
+        continue;
+      }
+      if (!declared.has(a.name)) problems.push(`event ${e.id} attr ${a.name} undeclared on type ${e.type}`);
+    }
     for (const r of e.relationships) {
       if (!objects.has(r.objectId)) problems.push(`event ${e.id} relates unknown object ${r.objectId}`);
       if (typeof r.qualifier !== "string" || r.qualifier === "") problems.push(`event ${e.id} has an unqualified e2o relation`);

@@ -1016,9 +1016,39 @@ export async function executePowlWithTokenReplay(
       { name: "Artifact", attributes: [{ name: "standing", type: "string" }] }
     ],
     eventTypes: [
-      { name: "transition_fired", attributes: [{ name: "transition", type: "string" }, { name: "label", type: "string" }] },
-      { name: "transition_completed", attributes: [{ name: "transition", type: "string" }, { name: "service_ms", type: "string" }] },
-      { name: "transition_refused", attributes: [{ name: "transition", type: "string" }, { name: "detail", type: "string" }] }
+      {
+        name: "transition_fired",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "label", type: "string" },
+          { name: "wip", type: "string" }
+        ]
+      },
+      {
+        name: "transition_completed",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "service_ms", type: "string" },
+          { name: "wip", type: "string" },
+          { name: "aimd_reason", type: "string" }
+        ]
+      },
+      {
+        name: "transition_refused",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "detail", type: "string" }
+        ]
+      },
+      {
+        name: "wip_backoff",
+        attributes: [
+          { name: "transition", type: "string" },
+          { name: "old_wip", type: "string" },
+          { name: "new_wip", type: "string" },
+          { name: "reason", type: "string" }
+        ]
+      }
     ],
     objects: [...objects.values()],
     events
