@@ -525,6 +525,11 @@ export async function executePowlWithTokenReplay(
   const isEnabled = (t: Transition): boolean =>
     (net.pre.get(t.id) ?? []).every((p) => (marking.get(p) ?? 0) >= 1);
 
+  const sharesPre = (a: Transition, b: Transition): boolean => {
+    const preA = new Set(net.pre.get(a.id) ?? []);
+    return (net.pre.get(b.id) ?? []).some((p) => preA.has(p));
+  };
+
   const fireSilent = (t: Transition) => {
     for (const p of net.pre.get(t.id) ?? []) {
       const cur = marking.get(p) ?? 0;
@@ -537,36 +542,160 @@ export async function executePowlWithTokenReplay(
     }
   };
 
+  /** Loop ids → max do-iterations (default 1: do once, then τ_exit). */
+  const loopMaxIterations = new Map<string, number>();
+  const loopDoCompletions = new Map<string, number>();
+  const walkLoops = (node: PowlNode) => {
+    if (node.kind === "loop") {
+      loopMaxIterations.set(node.id, Math.max(1, node.maxIterations ?? 1));
+      loopDoCompletions.set(node.id, 0);
+      walkLoops(node.doBranch);
+      walkLoops(node.redoBranch);
+    } else if (node.kind === "xor") {
+      node.branches.forEach(walkLoops);
+    } else if (node.kind === "partial_order") {
+      node.children.forEach(walkLoops);
+    }
+  };
+  walkLoops(root);
+
+  const loopIdFromExit = (t: Transition): string | undefined =>
+    t.id.startsWith("tau_exit_") ? t.id.slice("tau_exit_".length) : undefined;
+
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const inFlight = new Set<Promise<void>>();
   let haltedOnFailure = false;
+  /** Executor-requested redo for the next loop choice (VdA free-choice). */
+  let pendingRedo = false;
+  /** Loop ids whose choice place must yield to redo this visit. */
+  const redoArmedLoops = new Set<string>();
 
+  /**
+   * Fire silent transitions that do not resolve a free choice.
+   * A silent t fires only when no other enabled transition (silent or visible)
+   * shares an input place — otherwise drainSilent would kill redoBranch,
+   * starve XOR visibles, or livelock loop(τ,τ).
+   */
   const drainSilent = () => {
     let fired = true;
     while (fired) {
       fired = false;
-      for (const t of net.transitions) {
-        if (t.silent && isEnabled(t)) {
-          fireSilent(t);
-          fired = true;
-        }
+      const enabledAll = net.transitions.filter((t) => isEnabled(t));
+      for (const t of enabledAll) {
+        if (!t.silent) continue;
+        const lid = loopIdFromExit(t);
+        if (lid && redoArmedLoops.has(lid)) continue;
+        const contested = enabledAll.some((o) => o.id !== t.id && sharesPre(t, o));
+        if (contested) continue;
+        fireSilent(t);
+        fired = true;
+        break;
       }
     }
   };
 
+  /**
+   * Resolve PowlLoop choice places (τ_exit vs redo) and silent XOR free choices.
+   * Default: exit after each do unless pendingRedo && completions < maxIterations.
+   */
+  const resolveFreeChoices = (): boolean => {
+    let progress = false;
+
+    for (const exit of net.transitions) {
+      const loopId = loopIdFromExit(exit);
+      if (!loopId || !isEnabled(exit)) continue;
+      if (redoArmedLoops.has(loopId)) continue;
+
+      const maxIt = loopMaxIterations.get(loopId) ?? 1;
+      const done = (loopDoCompletions.get(loopId) ?? 0) + 1;
+      const allowRedo = pendingRedo && done < maxIt;
+      if (allowRedo) {
+        // Arm once; do not report progress (no marking change) to avoid spin.
+        if (!redoArmedLoops.has(loopId)) {
+          loopDoCompletions.set(loopId, done);
+          pendingRedo = false;
+          redoArmedLoops.add(loopId);
+        }
+        continue;
+      }
+      loopDoCompletions.set(loopId, done);
+      pendingRedo = false;
+      fireSilent(exit);
+      progress = true;
+    }
+
+    // Silent XOR (or silent redo τ) with no visible competitor: fire exactly one.
+    if (!net.transitions.some((t) => !t.silent && isEnabled(t))) {
+      const enabledSilent = net.transitions.filter((t) => {
+        if (!t.silent || !isEnabled(t)) return false;
+        const lid = loopIdFromExit(t);
+        if (lid && redoArmedLoops.has(lid)) return false;
+        return true;
+      });
+      if (enabledSilent.length > 0) {
+        const armedRedo = enabledSilent.find((t) =>
+          [...redoArmedLoops].some((lid) => {
+            const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+            return exit ? sharesPre(t, exit) : false;
+          })
+        );
+        const pick = armedRedo ?? enabledSilent[0]!;
+        for (const lid of [...redoArmedLoops]) {
+          const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+          if (exit && sharesPre(pick, exit)) redoArmedLoops.delete(lid);
+        }
+        fireSilent(pick);
+        progress = true;
+      }
+    }
+
+    return progress;
+  };
+
   while (!haltedOnFailure) {
     drainSilent();
+    while (resolveFreeChoices()) drainSilent();
     if ((marking.get(net.sinkPlace) ?? 0) >= 1 && inFlight.size === 0) break;
 
-    const enabledVisible = net.transitions.filter((t) => !t.silent && isEnabled(t));
-    if (enabledVisible.length === 0 && inFlight.size === 0) break;
+    // Suppress visibles that compete with an unarmed τ_exit (exit wins by default).
+    // When redo is armed, allow the competing visible redo branch.
+    const enabledVisible = net.transitions.filter((t) => {
+      if (t.silent || !isEnabled(t)) return false;
+      const blockingExit = net.transitions.find((x) => {
+        const lid = loopIdFromExit(x);
+        return Boolean(lid && isEnabled(x) && sharesPre(t, x) && !redoArmedLoops.has(lid));
+      });
+      return !blockingExit;
+    });
+    if (enabledVisible.length === 0 && inFlight.size === 0) {
+      if (redoArmedLoops.size > 0) {
+        redoArmedLoops.clear();
+        continue;
+      }
+      break;
+    }
 
     for (const t of enabledVisible) {
       if (inFlight.size >= aimd.wip) break;
+      // Re-check enablement after prior reserves in this WIP window (XOR safety).
+      if (!isEnabled(t)) continue;
       // Reserve input tokens atomically (strict Petri net firing semantics)
       for (const p of net.pre.get(t.id) ?? []) {
-        marking.set(p, (marking.get(p) ?? 1) - 1);
+        const cur = marking.get(p) ?? 0;
+        if (cur < 1) {
+          missing += 1;
+          haltedOnFailure = true;
+          break;
+        }
+        marking.set(p, cur - 1);
         consumed += 1;
+      }
+      if (haltedOnFailure) break;
+
+      // Visible redo consumed the loop-choice token.
+      for (const lid of [...redoArmedLoops]) {
+        const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+        if (exit && sharesPre(t, exit)) redoArmedLoops.delete(lid);
       }
 
       const artObj = ensureObject(`art:${t.activityId ?? t.id}`, t.objectType);
@@ -593,6 +722,7 @@ export async function executePowlWithTokenReplay(
             marking.set(p, (marking.get(p) ?? 0) + 1);
             produced += 1;
           }
+          if (res.redo) pendingRedo = true;
           const adj = aimd.onSuccess(serviceMs);
           artObj.attributes.push({ name: "standing", value: "ALIVE", time: new Date().toISOString() });
           emitEvent(
@@ -656,12 +786,17 @@ export async function executePowlWithTokenReplay(
   }
 
   let remaining = 0;
-  for (const count of marking.values()) remaining += count;
+  let negativeMarking = false;
+  for (const count of marking.values()) {
+    if (count < 0) negativeMarking = true;
+    remaining += Math.max(0, count);
+  }
 
   const fitness =
     0.5 * (1 - (consumed > 0 ? missing / consumed : 0)) +
     0.5 * (1 - (produced > 0 ? remaining / produced : 0));
-  const soundTermination = missing === 0 && remaining === 0 && !haltedOnFailure;
+  const soundTermination =
+    missing === 0 && remaining === 0 && !negativeMarking && !haltedOnFailure;
 
   wfObj.attributes.push({
     name: "standing",
