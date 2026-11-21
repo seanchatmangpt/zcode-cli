@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   REPO_ROOT,
@@ -12,9 +12,11 @@ import {
   buildPiiSecretSession,
   buildPmmLogSet,
   buildWfNetJson,
+  hermeticTempRoot,
   initGitRepo,
   inspectOcel2Sqlite,
   runBunScript,
+  runReceiptIntegrityProbe,
   runSubprocess,
   runZcodeCli,
   runZcodeCliAsync,
@@ -515,52 +517,67 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
           ...base.events.slice(-1),
         ],
       });
-      const stormPath = ws.writeJson("retry-storm.ocel.json", stormDoc);
-      const verRes = runZcodeCli(["ocel", "verify", "--in", stormPath, "--json"], ws);
-      expect(verRes.exitCode).toBe(0);
+      const artifactDir = mkdtempSync(join(hermeticTempRoot(), "zcode-e2e-retry-storm-"));
+      try {
+        const stormPath = join(artifactDir, "retry-storm.ocel.json");
+        writeFileSync(stormPath, JSON.stringify(stormDoc, null, 2) + "\n", "utf8");
+        const verRes = runZcodeCli(["ocel", "verify", "--in", stormPath, "--json"], ws);
+        expect(verRes.exitCode).toBe(0);
 
-      // 4. Emit durable v2 DfCM BLOCKED receipt recording RETRY_BUDGET_EXHAUSTED and admit via validate_receipt.py
-      const stormSha = sha256File(stormPath);
-      const receiptPath = ws.writeJson("retry-storm.receipt.json", {
-        work_order_id: "WO-E2E-RETRY-STORM-04",
-        origin_authority: { grant: "e2e-tier4", actor: "overseer-alice-eu", ceiling: "CONSTRUCT" },
-        provider: { name: "zcode-cli-e2e" },
-        provider_execution_id: "exec-retry-storm-04",
-        identity: {
-          subject: "sess_retry_storm",
-          repo: repo.cwd,
-          subject_sha: baseHead,
-          base_sha: baseHead,
-        },
-        authority: { ceiling: "CONSTRUCT", grant: "e2e-tier4", actor: "overseer-alice-eu" },
-        consequence: {
-          commits: [baseHead],
-          files_changed: ["zcode-cli.toml"],
-          remote_effects: [],
-          refusal_code: "RETRY_BUDGET_EXHAUSTED",
-          error_signature: failureSig,
-        },
-        replay: {
-          commands: [
+        // 4. Emit durable v2 DfCM BLOCKED receipt recording RETRY_BUDGET_EXHAUSTED and admit via validate_receipt.py
+        const stormSha = sha256File(stormPath);
+        const receiptPath = join(artifactDir, "retry-storm.receipt.json");
+        writeFileSync(
+          receiptPath,
+          JSON.stringify(
             {
-              cmd: "zcode ocel verify --in retry-storm.ocel.json --json",
-              exit: 0,
-              cwd: repo.cwd,
-              output_sha256: stormSha,
+              work_order_id: "WO-E2E-RETRY-STORM-04",
+              origin_authority: { grant: "e2e-tier4", actor: "overseer-alice-eu", ceiling: "CONSTRUCT" },
+              provider: { name: "zcode-cli-e2e" },
+              provider_execution_id: "exec-retry-storm-04",
+              identity: {
+                subject: "sess_retry_storm",
+                repo: repo.cwd,
+                subject_sha: baseHead,
+                base_sha: baseHead,
+              },
+              authority: { ceiling: "CONSTRUCT", grant: "e2e-tier4", actor: "overseer-alice-eu" },
+              consequence: {
+                commits: [baseHead],
+                files_changed: ["zcode-cli.toml"],
+                remote_effects: [],
+                refusal_code: "RETRY_BUDGET_EXHAUSTED",
+                error_signature: failureSig,
+              },
+              replay: {
+                commands: [
+                  {
+                    cmd: `zcode ocel verify --in ${stormPath} --json`,
+                    exit: 0,
+                    cwd: repo.cwd,
+                    output_sha256: stormSha,
+                  },
+                ],
+                durable_location: stormPath,
+              },
+              standing: {
+                value: "BLOCKED",
+                broken_term: "mu_on_O",
+                derived_from: `RETRY_BUDGET_EXHAUSTED after 3 repeats of ${failureSig} at ${baseHead}`,
+              },
             },
-          ],
-          durable_location: stormPath,
-        },
-        standing: {
-          value: "BLOCKED",
-          broken_term: "mu_on_O",
-          derived_from: `RETRY_BUDGET_EXHAUSTED after 3 repeats of ${failureSig} at ${baseHead}`,
-        },
-      });
-      const receiptCheck = validateDfcmReceipt(receiptPath, { cwd: repo.cwd });
-      expect(receiptCheck.exitCode).toBe(0);
-      expect(receiptCheck.admitted).toBe(true);
-      expect(repo.statusPorcelain()).toBe("");
+            null,
+            2,
+          ) + "\n",
+          "utf8",
+        );
+        const receiptCheck = validateDfcmReceipt(receiptPath, { cwd: repo.cwd });
+        expect(receiptCheck.exitCode).toBe(0);
+        expect(receiptCheck.admitted).toBe(true);
+        expect(repo.statusPorcelain()).toBe("");
+      } finally {
+        rmSync(artifactDir, { recursive: true, force: true });
+      }
     });
   }, 30_000);
 
@@ -906,10 +923,19 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
       expect(airoRes.exitCode).toBe(0);
       expect(airoRes.stdout + airoRes.stderr).toMatch(/\b0 fail\b/);
 
-      // 3. Committed DfCM receipts fail-closed validator
-      const receiptsRes = runBunScript("scripts/validate-receipts.ts", []);
-      expect(receiptsRes.exitCode).toBe(0);
-      expect(receiptsRes.stdout).toContain("ADMITTED");
+      // 3. Committed DfCM receipts fail-closed validator (PR #28 Option A:
+      //    refuses defective ZCODE-26923-01 while integrity floor admits clean g0.json)
+      expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
+      const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
+      expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
+      expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+
+      const receiptsRes = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
+      expect(receiptsRes.exitCode).toBe(1);
+      expect(receiptsRes.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
+      expect(receiptsRes.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
+      expect(receiptsRes.stdout).toContain("BOGUS_SHA");
+      expect(`${receiptsRes.stdout}\n${receiptsRes.stderr}`).toContain("REFUSED");
 
       // 4. Annex IV compile + --check gate
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii" }));
@@ -955,7 +981,7 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
       expect(tamperedReceiptRes.admitted).toBe(false);
       expect(tamperedReceiptRes.exitCode).not.toBe(0);
     });
-  }, 30_000);
+  }, 60_000);
 
   test("Scenario 9: Source-AppServer E2O capture verification & unified capability-snapshot.sh sanitized backup audit", async () => {
     await withIsolatedWorkspace(async (ws) => {

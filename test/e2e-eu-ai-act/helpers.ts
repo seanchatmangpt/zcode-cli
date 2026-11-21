@@ -1583,3 +1583,28 @@ export function validateDfcmReceipt(
     output: (res.stdout + "\n" + res.stderr).trim(),
   };
 }
+
+export interface ReceiptIntegrityFinding {
+  path: string;
+  rule: "ALIVE_WITH_NONZERO_EXIT" | "BOGUS_SHA" | "PARSE_ERROR";
+  detail: string;
+}
+
+export function runReceiptIntegrityProbe(receiptRelPath: string): ReceiptIntegrityFinding[] {
+  const res = runSubprocess(
+    process.execPath,
+    [
+      "-e",
+      'import { checkReceiptIntegrity } from "./scripts/validate-receipts.ts"; console.log(JSON.stringify(checkReceiptIntegrity(process.env.ZCODE_RECEIPT_PATH!)));',
+    ],
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, ZCODE_RECEIPT_PATH: receiptRelPath },
+      timeoutMs: 15_000,
+    },
+  );
+  if (res.exitCode !== 0) {
+    throw new Error(`checkReceiptIntegrity probe failed (${res.exitCode}): ${res.stderr}`);
+  }
+  return JSON.parse(res.stdout) as ReceiptIntegrityFinding[];
+}

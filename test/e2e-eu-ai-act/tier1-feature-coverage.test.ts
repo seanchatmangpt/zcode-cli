@@ -16,6 +16,7 @@ import {
   initGitRepo,
   inspectOcel2Sqlite,
   runBunScript,
+  runReceiptIntegrityProbe,
   runSubprocess,
   runZcodeCli,
   runZcodeCliAsync,
@@ -694,15 +695,23 @@ describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F
     expect(res.exitCode).toBe(0);
   });
 
-  test("A08.2: un-tampered OCEL verify and DfCM receipts:validate gates exit 0", () => {
+  test("A08.2: un-tampered OCEL verify exits 0 and fail-closed DfCM receipts:validate refuses defective ZCODE-26923-01 while admitting clean g0.json integrity", () => {
     const ocel1 = runBunScript("scripts/ocel-verify.ts", ["test/fixtures/zcode-ocel/turn-list.jsonocel"]);
     expect(ocel1.exitCode).toBe(0);
     expect(ocel1.stdout).toContain("deviations: 0");
 
-    const rec = runBunScript("scripts/validate-receipts.ts", []);
-    expect(rec.exitCode).toBe(0);
-    expect(rec.stdout).toContain("receipts ADMITTED");
-  });
+    expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
+    const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
+    expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+
+    const rec = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
+    expect(rec.exitCode).toBe(1);
+    expect(rec.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
+    expect(rec.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
+    expect(rec.stdout).toContain("BOGUS_SHA");
+    expect(`${rec.stdout}\n${rec.stderr}`).toContain("REFUSED");
+  }, 50_000);
 
   test("A08.3: compliance/dataset-manifest.json exists and all SHA-256 digests match files on disk", () => {
     const manifestPath = join(REPO_ROOT, "compliance", "dataset-manifest.json");
@@ -808,10 +817,18 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
     });
   });
 
-  test("A09.5: bun run receipts:validate admits all committed receipts AND validateDfcmReceipt admits valid v2 git-backed receipt", async () => {
-    const repoRes = runBunScript("scripts/validate-receipts.ts", []);
-    expect(repoRes.exitCode).toBe(0);
-    expect(repoRes.stdout).toContain("ADMITTED");
+  test("A09.5: receipts:validate fails closed on defective ZCODE-26923-01 (with g0.json clean) AND validateDfcmReceipt admits valid v2 git-backed receipt", async () => {
+    expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
+    const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
+    expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+
+    const repoRes = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
+    expect(repoRes.exitCode).toBe(1);
+    expect(repoRes.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
+    expect(repoRes.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
+    expect(repoRes.stdout).toContain("BOGUS_SHA");
+    expect(`${repoRes.stdout}\n${repoRes.stderr}`).toContain("REFUSED");
 
     await withIsolatedWorkspace(async (ws) => {
       const repo = initGitRepo(ws.cwd);
@@ -841,7 +858,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
       expect(v.exitCode).toBe(0);
       expect(v.admitted).toBe(true);
     });
-  });
+  }, 50_000);
 });
 
 describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Export (F02, F18)", () => {
