@@ -134,6 +134,18 @@ export function sessionOf(record: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** Path-safe session file id: redacted session strings may still carry URL
+ * punctuation (`/`, `?`, `#`) that would escape the OCEL output directory.
+ * B4 pre-fix: a secret-bearing URL sessionId was used verbatim as the
+ * `<session>.jsonocel` basename before redaction ran. */
+export function sanitizeSessionFileId(sessionId: string): string {
+  const cleaned = sessionId
+    .replace(/[/\\?%*:|"<>#&=]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  return (cleaned.slice(0, 180) || `unknown-${Date.now()}`);
+}
+
 const secretKeyRe = /^(apiKey|api_key|token|secret|password|authorization|access_token|refresh_token|refreshtoken)$/i;
 // Matches secret keys inside STRING payloads that embed JSON, including the
 // escaped forms (\", \\\") produced when a tool result quotes a config file.
@@ -148,6 +160,13 @@ const escapedSecretRe = /((?:\\{0,2}")(?:apiKey|api_key|refresh_token|access_tok
 const bearerRe = /(Bearer\s+)\S{8,}/gi;
 const authSchemeRe = /(authorization\s*[:=]\s*(?:basic|token|digest)\s+)\S{3,}/gi;
 const authRawRe = /(authorization\s*[:=]\s*)(?!basic\s|token\s|digest\s|bearer\s)\S{8,}/gi;
+// URL query/fragment credential params (B4 pre-fix, 2026-11-21): secrets in
+// `?api_key=` / `#access_token=` / `?token=` never matched a JSON key shape.
+// Same key family as secretKeyRe; longer underscored forms precede `token`.
+const urlSecretParamRe =
+  /([?&#](?:apiKey|api_key|access_token|refresh_token|token|secret|password|authorization)=)([^&#\s"']+)/gi;
+// URL userinfo password: scheme://user:password@host
+const urlUserinfoRe = /(\/\/[^:/?#\s"']+:)([^@/?#\s"']+)(@)/g;
 
 function redactNode(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactNode);
@@ -167,13 +186,16 @@ function redactNode(value: unknown): unknown {
   return value;
 }
 
-/** Scheme-shaped credentials in free text: Bearer anywhere, other schemes
- * and raw keys only behind an explicit Authorization header. */
+/** Scheme-shaped credentials and URL-embedded secrets in free text: Bearer
+ * anywhere; other Authorization schemes only behind an explicit header;
+ * credential query/fragment params and userinfo passwords in URLs. */
 function redactSchemes(text: string): string {
   return text
     .replace(bearerRe, "$1REDACTED")
     .replace(authSchemeRe, "$1REDACTED")
-    .replace(authRawRe, "$1REDACTED");
+    .replace(authRawRe, "$1REDACTED")
+    .replace(urlSecretParamRe, "$1REDACTED")
+    .replace(urlUserinfoRe, "$1REDACTED$3");
 }
 
 function redactEmbeddedSecrets(text: string): string {
@@ -285,8 +307,11 @@ export class OcelRecorder {
 
   feed(record: unknown): void {
     if (this.closed) return;
-    this.sessionId ??= sessionOf(record);
+    // Redact BEFORE binding sessionId: a pre-redaction capture let secret-
+    // bearing URL sessionIds reach receipt.session and the output basename
+    // (B4 pre-fix, 2026-11-21).
     const redacted = redactNode(normalizeRecord(record));
+    this.sessionId ??= sessionOf(redacted);
     if (this.tap.spec.kind === "stream-json") this.tap.ingest(JSON.stringify(redacted));
     else this.tap.ingest(redacted as object);
   }
@@ -297,7 +322,7 @@ export class OcelRecorder {
     if (this.carry.trim() !== "") this.feedLine(this.carry);
     this.carry = "";
     this.closed = true;
-    const sessionId = this.sessionId ?? `unknown-${Date.now()}`;
+    const sessionId = sanitizeSessionFileId(this.sessionId ?? `unknown-${Date.now()}`);
     const doc = closeEventTypeAttributes(this.tap.toOcel());
     const head = this.tap.seal();
     const ocelText = JSON.stringify(doc);
