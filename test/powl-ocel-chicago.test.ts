@@ -11,13 +11,33 @@ import {
   type PowlNode
 } from "../src/powl-ocel-orchestrator.ts";
 
-function runRealSubprocess(cmd: string, args: string[]): Promise<{ ok: boolean; exitCode: number; detail?: string }> {
+/** Per-child budget: vendor `doctor`/`--help` cold-start can exceed bun's 5s default under CI load. */
+const SUBPROCESS_TIMEOUT_MS = 25_000;
+/** Whole-case budget for the real-zcode POWL path (version → doctor∥help). */
+const REAL_ZCODE_CASE_TIMEOUT_MS = 60_000;
+
+function runRealSubprocess(
+  cmd: string,
+  args: string[],
+  timeoutMs = SUBPROCESS_TIMEOUT_MS
+): Promise<{ ok: boolean; exitCode: number; detail?: string }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
+    let settled = false;
+    const finish = (result: { ok: boolean; exitCode: number; detail?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish({ ok: false, exitCode: 1, detail: `timeout after ${timeoutMs}ms` });
+    }, timeoutMs);
     child.stderr?.on("data", (d) => { stderr += String(d); });
-    child.on("close", (code) => resolve({ ok: code === 0, exitCode: code ?? 1, detail: stderr.trim() || undefined }));
-    child.on("error", (err) => resolve({ ok: false, exitCode: 1, detail: err.message }));
+    child.on("close", (code) => finish({ ok: code === 0, exitCode: code ?? 1, detail: stderr.trim() || undefined }));
+    child.on("error", (err) => finish({ ok: false, exitCode: 1, detail: err.message }));
   });
 }
 
@@ -75,7 +95,7 @@ describe("Chicago-style (zero-mock, real subprocess + filesystem) POWL v2 + OCEL
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
-  });
+  }, REAL_ZCODE_CASE_TIMEOUT_MS);
 
   test("anti-vacuity: real failing subprocess degrades fitness < 1.0 and triggers remediation follow-up POWL", async () => {
     const powl: PowlNode = {
