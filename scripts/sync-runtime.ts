@@ -1463,6 +1463,49 @@ export function patchRuntimeSqliteBusyTimeout(runtime: string): string {
   return patched;
 }
 
+/**
+ * Desktop 3.14.x `promoteSessionInput` opens `BEGIN IMMEDIATE` then `await`s
+ * helpers that are themselves synchronous SQL (async-labeled with no internal
+ * await). Holding the write lock across an await yields the event loop while
+ * other processes still see SQLITE_BUSY — the Antigravity/Art.15 finding.
+ * Upstream 3.16.3+ made the same path fully synchronous. Strip awaits inside
+ * that promote transaction only; leave other IMMEDIATE bodies untouched.
+ */
+const sqlitePromoteImmediateTxn = /([A-Za-z_$][\w$]*)\.exec\("begin immediate"\);try\{((?:(?!\1\.exec\("(?:commit|rollback)"\)).)*?update session_input\s+set status = 'promoted',(?:(?!\1\.exec\("(?:commit|rollback)"\)).)*?)\1\.exec\("commit"\)\}catch\(([A-Za-z_$][\w$]*)\)\{throw \1\.exec\("rollback"\),\3\}/gsu;
+
+export function countRuntimeSqliteImmediateAwaitTxns(runtime: string): number {
+  const fresh = new RegExp(sqlitePromoteImmediateTxn.source, sqlitePromoteImmediateTxn.flags);
+  fresh.test(runtime);
+  fresh.lastIndex = 0;
+  let count = 0;
+  for (const match of runtime.matchAll(fresh)) {
+    if (/\bawait\b/u.test(match[2] ?? "")) count += 1;
+  }
+  return count;
+}
+
+export function hasRuntimeSqliteImmediateNoAwait(runtime: string): boolean {
+  return countRuntimeSqliteImmediateAwaitTxns(runtime) === 0;
+}
+
+export function patchRuntimeSqliteImmediateNoAwait(runtime: string): string {
+  if (hasRuntimeSqliteImmediateNoAwait(runtime)) return runtime;
+  const fresh = new RegExp(sqlitePromoteImmediateTxn.source, sqlitePromoteImmediateTxn.flags);
+  fresh.test(runtime);
+  fresh.lastIndex = 0;
+  const patched = runtime.replace(
+    fresh,
+    (_match, db: string, body: string, err: string) => {
+      const syncBody = body.replace(/\bawait\s+/gu, "");
+      return `${db}.exec("begin immediate");try{${syncBody}${db}.exec("commit")}catch(${err}){throw ${db}.exec("rollback"),${err}}`;
+    }
+  );
+  if (!hasRuntimeSqliteImmediateNoAwait(patched)) {
+    throw new Error("SQLite BEGIN IMMEDIATE no-await patch failed postcondition verification.");
+  }
+  return patched;
+}
+
 function escapeRegExpName(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -2107,6 +2150,12 @@ export const runtimePatchPlan: readonly RuntimePatchDefinition[] = [
     requirement: "required",
     apply: patchRuntimeSqliteBusyTimeout,
     verify: hasRuntimeSqliteBusyTimeout
+  },
+  {
+    id: "sqlite-immediate-no-await",
+    requirement: "required",
+    apply: patchRuntimeSqliteImmediateNoAwait,
+    verify: hasRuntimeSqliteImmediateNoAwait
   },
   {
     id: "oauth-http-errors",

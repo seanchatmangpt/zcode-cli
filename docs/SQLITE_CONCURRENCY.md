@@ -45,6 +45,16 @@ CI builds and packs once, then tests that exact artifact on Node 22.19.0, 24, an
 26 on Linux, plus Node 24 on macOS. Bun's `node:sqlite` compatibility implementation
 is not used as a substitute for Node's SQLite driver.
 
+## BEGIN IMMEDIATE must not span `await`
+
+Desktop 3.14.x `promoteSessionInput` opened `BEGIN IMMEDIATE` and then `await`ed
+helpers that perform only synchronous SQL (they are `async` functions with no
+internal `await`). That holds the write lock across an event-loop yield, so peer
+processes see `SQLITE_BUSY` for the whole microtask gap. The required
+`sqlite-immediate-no-await` runtime patch strips those awaits inside the promote
+transaction. Upstream Desktop 3.16.3+ made the same path fully synchronous; on
+those bundles the patch reports `already_present`.
+
 ## Follow-up boundary
 
 If real workloads still exceed the wait budget, investigate long transactions and
