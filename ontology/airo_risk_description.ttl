@@ -55,7 +55,7 @@ zc:Risk_ContractDrift rdf:type airo:Risk ;
     rdfs:label "Cross-repo contract fixtures drift from the pinned shas"@en ;
     dcterms:description """W356 re-verified byte-identical parity for
         test/fixtures/gall-work.contract.json (sha256
-        5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4) and
+        9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979) and
         test/fixtures/xaas-remote-relay.contract.json (sha256
         76ff551c16cea5afb40b385ecee9ab7462ce1d73bee47655c0e0c63dc0a33f89);
         silent drift across the zcode-cli/xaas boundary would invalidate the

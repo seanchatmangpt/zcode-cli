@@ -6,7 +6,7 @@
  * Contract (Explore):
  *   Ingress:  GGEN_BIN + `sjira frontier` | SJIRA_CANDIDATES (candidates.jsonl)
  *             → PowlNode PartialOrder(V, ≺)
- *   Gate:     optional `mix ggen_igniter.sync` + `git diff --exit-code`
+ *   Gate:     optional `mix ggen_igniter.sync --check` (exit 0 clean / 4 drift)
  *   Egress:   SJIRA_LEDGER (ledger.jsonl) + SJIRA_OUT_DIR/loop_receipt.json
  *
  * Standing honesty: PARTIAL_ALIVE / UNVERIFIED must never be promoted to ALIVE.
@@ -21,6 +21,10 @@ import { dirname, isAbsolute, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import type { PowlNode } from "../powl-ocel-orchestrator.ts";
+import {
+  DEFAULT_CLEAN_ROOM_CHECK_CMD,
+  evaluateCleanRoomDrift
+} from "../adapters/clean-room-drift.ts";
 
 // ---------------------------------------------------------------------------
 // Standing & work-order wire types (file-based, authority-free)
@@ -426,9 +430,13 @@ export interface IgniterGateResult {
 }
 
 /**
- * For ggen_igniter-managed workspaces: `mix ggen_igniter.sync` then
- * `git diff --exit-code` must be 0. Optional work-order verifyCmd runs after.
- * Skip (status=skipped) when the candidate does not require the gate.
+ * For ggen_igniter-managed workspaces: `mix ggen_igniter.sync --check`
+ * (exit 0 = clean, exit 4 = ontology↔artifact drift). Optional work-order
+ * verifyCmd runs after. Skip (status=skipped) when the candidate does not
+ * require the gate.
+ *
+ * Do **not** use `git diff --exit-code` as the ontology drift gate (clean
+ * index ≠ ontology match). Prefer `--check` over bare `ggen sync run --dry-run`.
  */
 export function verifyIgniterCleanRoom(
   cwd: string,
@@ -450,40 +458,26 @@ export function verifyIgniterCleanRoom(
       return { status: r.status, stderr: r.stderr || "", stdout: r.stdout || "" };
     });
 
-  const syncCmd = options.syncCmd ?? ["mix", "ggen_igniter.sync"];
+  // Jobs/C4: mix ggen_igniter.sync --check (exit 0/4) or ggen dry-run + empty
+  // planned_writes — never git-diff. Noop ["true"] → skipped (LOUD_SKIP).
+  const syncCmd =
+    options.syncCmd && options.syncCmd.length > 0
+      ? options.syncCmd
+      : [...DEFAULT_CLEAN_ROOM_CHECK_CMD];
   const sync = run(syncCmd, cwd);
-  if (sync.status !== 0) {
+  const drift = evaluateCleanRoomDrift(syncCmd, sync);
+  if (drift.kind === "loud_skip") {
     return {
-      ok: false,
-      status: "failed",
-      detail: `igniter sync exited ${sync.status}: ${(sync.stderr || sync.stdout).trim().slice(0, 500)}`
+      ok: true,
+      status: "skipped",
+      detail: drift.diagnostics.join("; ")
     };
   }
-
-  // Fail-closed clean-room: unstaged + staged + untracked (excl. ignored).
-  // Plain `git diff` alone misses index-only and untracked drift.
-  const unstaged = run(["git", "diff", "--exit-code"], cwd);
-  if (unstaged.status !== 0) {
+  if (drift.kind !== "pass") {
     return {
       ok: false,
       status: "failed",
-      detail: "igniter clean-room refused: git diff --exit-code != 0 after mix ggen_igniter.sync (generated drift)"
-    };
-  }
-  const staged = run(["git", "diff", "--cached", "--exit-code"], cwd);
-  if (staged.status !== 0) {
-    return {
-      ok: false,
-      status: "failed",
-      detail: "igniter clean-room refused: git diff --cached --exit-code != 0 after sync (staged drift)"
-    };
-  }
-  const untracked = run(["git", "ls-files", "--others", "--exclude-standard"], cwd);
-  if (untracked.status !== 0 || (untracked.stdout || "").trim().length > 0) {
-    return {
-      ok: false,
-      status: "failed",
-      detail: "igniter clean-room refused: untracked files present after sync (untracked drift)"
+      detail: drift.diagnostics.join("; ").slice(0, 500)
     };
   }
 

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,21 +9,26 @@ import {
   constructPrompt,
   defaultFabricUrl,
   discoverFabricCapabilities,
+  discoveryStageOk,
   fabricCall,
   gallWorkContractSha256,
   isGallWorkInvocation,
   leaseFilePaths,
   leaseFilePathsKeyed,
+  leaseGateReadPathsKeyed,
   leaseIdFromEnv,
   parseGallWorkArgs,
   parseGallWorkLease,
   resolveFabricTarget,
+  runConstruct,
   standingForOutcome,
+  toGallWorkResultWire,
   workOrderPath,
   workOrderPathKeyed,
   type FabricTarget,
   type FetchLike,
-  type GallWorkLease
+  type GallWorkLease,
+  type GallWorkResult
 } from "../src/gall-work.ts";
 
 const lease: GallWorkLease = {
@@ -50,7 +56,7 @@ const contract = JSON.parse(contractText) as Record<string, unknown>;
 describe("gall-work contract fixture (shared, byte-identical across repos)", () => {
   test("bytes are the pinned cross-repo digest, equal to the exported replay-binding constant", () => {
     expect(gallWorkContractSha256).toBe(
-      "5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4"
+      "9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979"
     );
     expect(createHash("sha256").update(contractText).digest("hex")).toBe(gallWorkContractSha256);
   });
@@ -112,7 +118,13 @@ describe("gall-work contract fixture (shared, byte-identical across repos)", () 
   test("encodes the capability-discovery handshake and its typed degrade", () => {
     const fabric = contract.fabric as Record<string, unknown>;
     expect(fabric.capability_discovery).toMatchObject({ handshake: ["initialize (client identity; serverInfo recorded)", "tools/list (capability surface)"] });
-    expect(String((fabric.capability_discovery as Record<string, unknown>).degrade)).toContain("degrades typed");
+    const degrade = String((fabric.capability_discovery as Record<string, unknown>).degrade);
+    expect(degrade).toContain("degrades typed");
+    // Either missing leg => stages.discovery.ok=false with a typed code
+    // (never ok:true + initialize_unsupported / tools_list_unsupported).
+    expect(degrade).toContain("ok:false");
+    expect(degrade).toContain("initialize_unsupported");
+    expect(degrade).toContain("tools_list_unsupported");
   });
 
   test("encodes the provider-neutrality cut-point registry law", () => {
@@ -132,6 +144,14 @@ describe("gall-work contract fixture (shared, byte-identical across repos)", () 
     expect(String(contract.no_fallback_law)).toContain("/xaas claim_next");
     expect(String(contract.goal_transport)).toContain("NEVER");
     expect(contract.env).toMatchObject({ XAAS_WORKER: "1", XAAS_LEASE_CWD: "<abs_cwd>" });
+  });
+
+  test("standing vocabulary admits REFUSED_PERSIST (persist-stage typed refusal)", () => {
+    const stdout = contract.stdout_final_document as Record<string, unknown>;
+    const vocab = stdout.standing_vocabulary as string[];
+    expect(vocab).toContain("REFUSED_PERSIST");
+    expect(vocab).toContain("REFUSED_LEASE_CONFLICT");
+    expect(String(stdout.field_case)).toContain("snake_case is contract-primary");
   });
 });
 
@@ -380,6 +400,15 @@ describe("capability discovery (initialize + tools/list handshake)", () => {
     expect(capabilities.discovered).toBe(true);
     expect(capabilities.tools).toEqual(["heartbeat"]);
     expect(capabilities.code).toBe("initialize_unsupported");
+    // Contract: stages.discovery.ok must be false whenever a typed degrade
+    // code is present — never equate ok with discovered alone.
+    expect(discoveryStageOk(capabilities)).toBe(false);
+  });
+
+  test("discoveryStageOk is true only for a clean full handshake", () => {
+    expect(discoveryStageOk({ discovered: true, tools: ["claim_next"] })).toBe(true);
+    expect(discoveryStageOk({ discovered: true, tools: ["heartbeat"], code: "initialize_unsupported" })).toBe(false);
+    expect(discoveryStageOk({ discovered: false, tools: [], code: "tools_list_unsupported" })).toBe(false);
   });
 });
 
@@ -391,6 +420,33 @@ describe("outcome -> standing mapping", () => {
     expect(standingForOutcome("build_broken")).toBe("BUILD_BROKEN");
     expect(standingForOutcome("unsupported")).toBe("UNSUPPORTED");
     expect(standingForOutcome("refused")).toBe("REFUSED");
+  });
+});
+
+describe("toGallWorkResultWire dual-emits contract snake_case", () => {
+  test("identity fields keep camelCase and add agreeing snake_case aliases", () => {
+    const result: GallWorkResult = {
+      schema: "gall.work-result/1",
+      standing: "ALIVE",
+      epochId: lease.epoch_id,
+      workerId: lease.worker_id,
+      provider: "zcode",
+      outcome: "alive",
+      finalHead: "a".repeat(40),
+      runtimeExitCode: 0,
+      originAuthority: "https://w3id.org/chatman/aps#operator-lease-grant",
+      stages: { discovery: { ok: true, tools: 6 } }
+    };
+    const wire = toGallWorkResultWire(result);
+    expect(wire.epochId).toBe(lease.epoch_id);
+    expect(wire.epoch_id).toBe(lease.epoch_id);
+    expect(wire.workerId).toBe(lease.worker_id);
+    expect(wire.worker_id).toBe(lease.worker_id);
+    expect(wire.finalHead).toBe(wire.final_head);
+    expect(wire.runtimeExitCode).toBe(wire.runtime_exit_code);
+    expect(wire.originAuthority).toBe(wire.origin_authority);
+    expect(wire.schema).toBe("gall.work-result/1");
+    expect(wire.standing).toBe("ALIVE");
   });
 });
 
@@ -478,5 +534,84 @@ describe("lease state file keying (XAAS_LEASE_ID)", () => {
     const b = workOrderPathKeyed(cwd, "epoch-bbb");
     expect(a).not.toBe(b);
     expect(a).not.toBe(workOrderPathKeyed(cwd, undefined));
+  });
+
+  test("persist write paths are the gate's keyed-only candidates (xaas-gate.mjs readLease parity)", () => {
+    // Source gate (fail-closed): suffixes = keyed ? [`-${id}.json`] : [".json"]
+    // — no legacy fallback when XAAS_LEASE_ID is set. Writer and gate share
+    // the exact same path set.
+    const writeKeyed = leaseFilePathsKeyed(cwd, epochId);
+    const gateOrder = leaseGateReadPathsKeyed(cwd, epochId);
+    expect(gateOrder).toEqual(writeKeyed);
+    expect(gateOrder.every((p) => p.endsWith(`-${epochId}.json`))).toBe(true);
+    // No legacy sibling in the keyed read set.
+    for (const path of gateOrder) {
+      expect(gateOrder).not.toContain(path.replace(`-${epochId}.json`, ".json"));
+    }
+    // Without the env, write path === gate read path (legacy only).
+    expect(leaseFilePathsKeyed(cwd, undefined)).toEqual(leaseGateReadPathsKeyed(cwd, undefined));
+  });
+
+  test("gate + writer share the same path-segment sanitize for foreign lease ids", () => {
+    const foreign = "../../evil/../x";
+    const sanitized = foreign.replace(/[^A-Za-z0-9._-]/g, "_");
+    const write = leaseFilePathsKeyed(cwd, foreign);
+    const gate = leaseGateReadPathsKeyed(cwd, foreign);
+    expect(write.every((p) => p.includes(`-${sanitized}.json`))).toBe(true);
+    expect(gate[0]).toBe(write[0]);
+  });
+});
+
+describe("runConstruct child env strips WorkerEnv deny_names", () => {
+  test("XAAS_ALLOW_SUBAGENTS and XAAS_SURFACE_PATH do not reach the leased child", async () => {
+    const recorded: { env: Record<string, unknown> } = { env: {} };
+    const fakeChild = new EventEmitter() as unknown as import("node:child_process").ChildProcess;
+    (fakeChild as unknown as { stdout: unknown }).stdout = null;
+    (fakeChild as unknown as { stderr: unknown }).stderr = null;
+    const priorAllow = process.env.XAAS_ALLOW_SUBAGENTS;
+    const priorSurface = process.env.XAAS_SURFACE_PATH;
+    const priorLeaseId = process.env.XAAS_LEASE_ID;
+    const fenceId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    process.env.XAAS_ALLOW_SUBAGENTS = "1";
+    process.env.XAAS_SURFACE_PATH = "/tmp/widened-surface.json";
+    process.env.XAAS_LEASE_ID = fenceId;
+    try {
+      const outcome = await runConstruct(
+        {
+          workerId: "test:strip-env",
+          epochId: lease.epoch_id,
+          cwd: "/tmp",
+          json: true,
+          heartbeatSeconds: 15,
+          constructDeadlineSeconds: 0
+        },
+        "prompt",
+        async () => {},
+        {
+          spawnImpl: ((_cmd, _args, opts) => {
+            recorded.env = (opts?.env ?? {}) as Record<string, unknown>;
+            queueMicrotask(() => {
+              fakeChild.emit("exit", 0, null);
+              fakeChild.emit("close");
+            });
+            return fakeChild;
+          }) as typeof import("node:child_process").spawn
+        }
+      );
+      expect(outcome.spawnError).toBeUndefined();
+      expect(outcome.exitCode).toBe(0);
+      expect(recorded.env.XAAS_WORKER).toBe("1");
+      // Fence key must reach the child so PreToolUse reads keyed-only.
+      expect(recorded.env.XAAS_LEASE_ID).toBe(fenceId);
+      expect(recorded.env.XAAS_ALLOW_SUBAGENTS).toBeUndefined();
+      expect(recorded.env.XAAS_SURFACE_PATH).toBeUndefined();
+    } finally {
+      if (priorAllow === undefined) delete process.env.XAAS_ALLOW_SUBAGENTS;
+      else process.env.XAAS_ALLOW_SUBAGENTS = priorAllow;
+      if (priorSurface === undefined) delete process.env.XAAS_SURFACE_PATH;
+      else process.env.XAAS_SURFACE_PATH = priorSurface;
+      if (priorLeaseId === undefined) delete process.env.XAAS_LEASE_ID;
+      else process.env.XAAS_LEASE_ID = priorLeaseId;
+    }
   });
 });

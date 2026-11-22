@@ -14,6 +14,7 @@ import { basename, join, resolve } from "node:path";
 import {
   createZcodeAgentExecutor,
   detectRepoVerifyCommands,
+  loadAdapterRegistryFromToml,
   ReceiptSink,
   RepoVerifierCourtAdapter,
   runFoundryLoop,
@@ -150,11 +151,19 @@ export async function runFoundryCommand(args: string[]): Promise<number | undefi
       ? [splitVerifyCmd(verifyCmdRaw)]
       : detectRepoVerifyCommands(repoDir);
 
-    const courts: TransitionCourtAdapter[] = [];
+    // Live call path for buildAdapterRegistry: TOML [adapters.*] → courts
+    // (including ui-layout-court). Dry-run keeps Gall spine court-free.
+    const tomlPath = resolve(process.cwd(), "zcode-cli.toml");
+    const loaded = loadAdapterRegistryFromToml(tomlPath, { cwd: repoDir });
+    const courts: TransitionCourtAdapter[] = dryRun ? [] : [...loaded.registry.courts];
     if (verifyCommands.length > 0 && !dryRun) {
-      courts.push(new RepoVerifierCourtAdapter({ commands: verifyCommands }));
+      const already = courts.some((c) => c.name === "repo-verifier");
+      if (!already) {
+        courts.push(new RepoVerifierCourtAdapter({ commands: verifyCommands }));
+      }
     }
 
+    // Run-local sjira paths (candidates/outDir) always win over TOML env defaults.
     const source = new SjiraWorkOrderSource({
       cwd: repoDir,
       candidatesPath: effectiveCandidates,
@@ -167,7 +176,9 @@ export async function runFoundryCommand(args: string[]): Promise<number | undefi
       ledgerPath: join(outDir, "sink-ledger.jsonl"),
       outDir,
       dfcmReceiptPath: join(outDir, "dfcm-receipt.json"),
-      cwd: repoDir
+      cwd: repoDir,
+      enforceTwinParity: loaded.receiptSink.enforceTwinParity,
+      twinParitySelfTestCmd: loaded.receiptSink.twinParitySelfTestCmd
     });
 
     const priorDiagnostics = new Map<string, string>();
@@ -189,6 +200,7 @@ export async function runFoundryCommand(args: string[]): Promise<number | undefi
       dryRun,
       sandbox: dryRun,
       maxCycles: dryRun ? 1 : maxCycles,
+      maxSameSignatureRetries: loaded.engine.maxRemediationAttempts,
       untilDrained: true,
       transactionalRollback: !dryRun,
       autoCommitAlive,

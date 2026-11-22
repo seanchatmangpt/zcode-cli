@@ -275,7 +275,7 @@ export function buildAnnexIvDossier(
       o2o_qualifiers: [...COMPLIANCE_O2O_QUALIFIERS]
     },
     xaas_coupling_doc: "docs/c4-zcode-cli-xaas.md",
-    gall_work_contract_sha256: "5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4",
+    gall_work_contract_sha256: "9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979",
     handwritten_residue_ledger: "HANDWRITTEN.md"
   };
 

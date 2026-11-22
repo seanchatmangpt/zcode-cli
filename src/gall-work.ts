@@ -22,10 +22,13 @@
 //              via cancel_work/refuse (execution.crash + receipt persisted);
 //              genuinely live elsewhere -> left untouched. This closes the
 //              orphan lease-to-TTL failed edge and wires clearLeaseFiles.
-//   persist    Save the lease to <tmpdir>/xaas-fabric/<sha256(cwd)>.json --
-//              the exact file and conflict guard the xaas-fabric plugin's
-//              PreToolUse gate (scripts/xaas-gate.mjs) reads -- so the host
-//              gate arms for the constructed turn.
+//   persist    Save the lease to <tmpdir>/xaas-fabric/<sha256(cwd)>[ -<XAAS_LEASE_ID> ].json
+//              -- keyed path matching the xaas-fabric PreToolUse gate
+//              (scripts/xaas-gate.mjs source law): when XAAS_LEASE_ID is set
+//              both writer and gate use `-<id>.json` only (no legacy `.json`
+//              fallback — wrong-epoch admission closed). Unkeyed sessions
+//              keep the legacy per-cwd file. Writer and gate must share the
+//              same key or a keyed worker is fenceless.
 //   construct  Spawn the vendored runtime on a fixed doctrinal prompt whose
 //              argv carries NO goal text: the goal travels in a work-order
 //              file under the lease state dir and the prompt references only
@@ -50,6 +53,13 @@
 // Fail-closed posture: every stage failure is a typed result document
 // (schema gall.work-result/1) plus the contract exit code, except where a
 // receipt was sealed. No partial silent states.
+//
+// Honesty — yolo grant is structural: construct always passes `--mode yolo`
+// because headless Bash has no permission client otherwise (see
+// runConstruct). The xaas-gate PreToolUse hook only emits deny; mute allow
+// is silent exit 0. Under yolo that mute is an effective host grant for
+// gate-allowlisted tools — required until a non-yolo headless permission
+// client exists. Do not pretend the gate "never grants" in this path.
 import { execFile } from "node:child_process";
 import { spawn as spawnChild, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -472,7 +482,9 @@ const toolsListResult = (result: Record<string, unknown> | undefined): { tools: 
  * Discovery handshake against the fabric. initialize is attempted first
  * (client identity), then tools/list. A server lacking a leg degrades typed:
  * the lifecycle continues on the static contract vocabulary and the degrade
- * lands in the result document and close evidence -- never a silent gap.
+ * lands in the result document (`stages.discovery.ok=false` + typed code) --
+ * never a silent gap. When only initialize fails, `discovered` stays true
+ * (tools/list answered) but the orchestrator still records ok=false.
  */
 export async function discoverFabricCapabilities(
   target: FabricTarget,
@@ -496,6 +508,15 @@ export async function discoverFabricCapabilities(
   };
 }
 
+/**
+ * Contract stages.discovery.ok: tools/list may populate tools when only
+ * initialize is unsupported (`discovered=true` + typed code), but any typed
+ * degrade code forces ok=false. Never equate ok with discovered alone.
+ */
+export function discoveryStageOk(capabilities: FabricCapabilities): boolean {
+  return capabilities.discovered && capabilities.code === undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Lease persistence (the exact state the plugin's PreToolUse gate reads)
 // ---------------------------------------------------------------------------
@@ -509,9 +530,11 @@ const leaseStateDir = () => join(tmpdir(), "xaas-fabric");
  * lease file (exit 65 lease_conflict); when the env is set, the lease
  * state file path gains a `-<XAAS_LEASE_ID>` suffix before the extension.
  * WITHOUT the env the path is byte-identical to the legacy per-cwd file
- * (backward compatible). Note: the xaas-fabric PreToolUse gate
- * (scripts/xaas-gate.mjs) still reads the legacy exact path -- a keyed
- * worker's file is invisible to it until the gate learns the same key.
+ * (backward compatible). The xaas-fabric PreToolUse gate
+ * (scripts/xaas-gate.mjs) reads ONLY the keyed path when XAAS_LEASE_ID
+ * is set (no legacy `.json` fallback — wrong-epoch admission closed);
+ * unkeyed sessions use the legacy per-cwd file. Both sides must share
+ * the same key or a keyed worker is fenceless.
  */
 export function leaseIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const id = env.XAAS_LEASE_ID?.trim();
@@ -532,6 +555,26 @@ export function leaseFilePathsKeyed(cwd: string, leaseId: string | undefined): s
 
 export function leaseFilePaths(cwd: string): string[] {
   return leaseFilePathsKeyed(cwd, leaseIdFromEnv());
+}
+
+/**
+ * Gate read-order candidates matching xaas-gate.mjs `readLease` source law
+ * (xaas-gate lane): for each of cwd / realpath(cwd), keyed `-<id>.json`
+ * only when leaseId is set — fail-closed, no legacy `.json` fallback.
+ * Persist writes the same set via `leaseFilePathsKeyed`. Unkeyed sessions
+ * read/write legacy `.json` only.
+ *
+ * Residual: installed cache `26.9.17` may still try keyed then legacy until
+ * reinstall/sync catches source; a keyed writer remains correct under both
+ * (gate's first hit is the keyed file we write).
+ */
+export function leaseGateReadPathsKeyed(cwd: string, leaseId: string | undefined): string[] {
+  // Writer and source-gate share one path set: keyed-only or legacy-only.
+  return leaseFilePathsKeyed(cwd, leaseId);
+}
+
+export function leaseGateReadPaths(cwd: string): string[] {
+  return leaseGateReadPathsKeyed(cwd, leaseIdFromEnv());
 }
 
 /**
@@ -669,9 +712,10 @@ export async function reconcileLeaseWindow(
 ): Promise<LeaseReconciliation> {
   const paths = leaseFilePaths(cwd);
   const graceMs = 2 * request.heartbeatSeconds * 1000;
+  // work_order / epoch / subject / base are bound by OcelRecorder from lease
+  // identity (IRI + namespaced ids) — never wo:${epoch} (Explore 21cd2acc).
   const staleFacts = (lease: PersistedLease): Record<string, unknown> => ({
     ...(typeof lease.lease_token === "string" && lease.lease_token ? { lease: lease.lease_token } : {}),
-    ...(typeof lease.epoch_id === "string" && lease.epoch_id ? { work_order_id: `wo:${lease.epoch_id}` } : {}),
     ...(typeof lease.provider_id === "string" && lease.provider_id ? { provider: lease.provider_id } : {}),
     ...(typeof lease.worker_id === "string" && lease.worker_id ? { worker: lease.worker_id } : {})
   });
@@ -857,6 +901,10 @@ export async function runConstruct(
   // falsified after the fact by the fabric's verifier court on the captured
   // head. The CLI flag (highest precedence) pins that authority explicitly
   // instead of leaving the turn to an interactive default.
+  // Residual (skeptic 95c8f80a): gate mute-allow is silent exit 0; under
+  // yolo that is an effective host grant for allowlisted tools. Removing
+  // yolo re-breaks headless Bash; closing that residual needs a non-yolo
+  // headless permission client, not an ambient-env strip.
   const permissionArgs = ["--mode", "yolo"];
   const node = resolveRuntimeNode(process.env.ZCODE_NODE?.trim() || undefined);
   const started = Date.now();
@@ -865,15 +913,30 @@ export async function runConstruct(
   // the ontology-generated tap and seals a receipt bound to the exact
   // subject and lease identity. The turn emits stream-json -- the surface
   // the tap consumes -- instead of the bare --json result envelope.
+  // XAAS_LEASE_ID must reach the child: the PreToolUse gate reads the
+  // keyed lease path only when this env is set (parity with
+  // leaseFilePathsKeyed / xaas-gate.mjs readLease; no legacy fallback).
+  // Forward the trimmed value explicitly so fence keying is not ambient.
+  const fenceLeaseId = leaseIdFromEnv(process.env);
   const leaseEnv = {
     XAAS_WORKER: "1",
     XAAS_LEASE_CWD: request.cwd,
     XAAS_EPOCH_ID: request.epochId,
+    ...(fenceLeaseId ? { XAAS_LEASE_ID: fenceLeaseId } : {}),
     ...(request.descriptor
       ? { XAAS_WORK_ORDER_IRI: request.descriptor.work_order_iri, XAAS_BASE_SHA: request.descriptor.base_sha }
       : {}),
     ...(options.replayBinding ? { XAAS_REPLAY_BINDING: JSON.stringify(options.replayBinding) } : {})
   };
+  // Match fabric WorkerEnv deny_names for these two: ambient inheritance
+  // would let a parent process re-enable Agent spawning or point the gate
+  // at a widened surface policy. Fabric may keystore XAAS_SURFACE_PATH
+  // after WorkerEnv for its own spawn; gall-work never forwards either.
+  // XAAS_LEASE_ID is intentionally kept (fence key); only the deny_names
+  // pair is stripped.
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...leaseEnv };
+  delete childEnv.XAAS_ALLOW_SUBAGENTS;
+  delete childEnv.XAAS_SURFACE_PATH;
   const ocel = ocelEnabled(process.env)
     ? new OcelRecorder(
         STREAM_SOURCE,
@@ -890,10 +953,7 @@ export async function runConstruct(
         [runtimePath, "--prompt", prompt, "--cwd", request.cwd, "--output-format", "stream-json", ...permissionArgs],
         {
           cwd: packageRoot,
-          env: {
-            ...process.env,
-            ...leaseEnv
-          },
+          env: childEnv,
           stdio: ["ignore", "pipe", "pipe"]
         }
       );
@@ -1012,6 +1072,12 @@ export function standingForOutcome(outcome: string): string {
 // Result document + orchestrator
 // ---------------------------------------------------------------------------
 
+/**
+ * Internal result document. Contract examples (`gall.work-result/1`) show
+ * snake_case identity fields; JSON stdout dual-emits both casings via
+ * {@link toGallWorkResultWire} so fixture-shaped consumers and existing
+ * camelCase callers both succeed without a fixture sha break.
+ */
 export interface GallWorkResult {
   schema: "gall.work-result/1";
   standing: string;
@@ -1039,6 +1105,21 @@ export interface GallWorkResult {
   };
 }
 
+/**
+ * Contract-primary stdout wire for gall.work-result/1.
+ * Dual-emits snake_case (contract examples) + camelCase aliases; both MUST agree.
+ */
+export function toGallWorkResultWire(result: GallWorkResult): Record<string, unknown> {
+  const wire: Record<string, unknown> = { ...result };
+  if (result.epochId !== undefined) wire.epoch_id = result.epochId;
+  wire.worker_id = result.workerId;
+  if (result.finalHead !== undefined) wire.final_head = result.finalHead;
+  if (result.runtimeExitCode !== undefined) wire.runtime_exit_code = result.runtimeExitCode;
+  if (result.runtimeSignal !== undefined) wire.runtime_signal = result.runtimeSignal;
+  if (result.originAuthority !== undefined) wire.origin_authority = result.originAuthority;
+  return wire;
+}
+
 export interface GallWorkIo {
   stdout: NodeJS.WriteStream;
   stderr: NodeJS.WriteStream;
@@ -1054,7 +1135,7 @@ export type ConstructOverride = (
 /** sha256 of the shared contract fixture (test/fixtures/gall-work.contract.json,
  * byte-identical in xaas priv/zcode_plugin/gall-work.contract.json). Pinned by
  * tests on both sides of the seam; travels in close evidence replay_binding. */
-export const gallWorkContractSha256 = "5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4";
+export const gallWorkContractSha256 = "9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979";
 
 export async function runGallWork(
   args: string[],
@@ -1071,7 +1152,7 @@ export async function runGallWork(
   const env = options.env ?? process.env;
   const io = options.io ?? { stdout: process.stdout, stderr: process.stderr };
   const emit = (result: GallWorkResult, json: boolean): void => {
-    if (json) io.stdout.write(JSON.stringify(result) + "\n");
+    if (json) io.stdout.write(JSON.stringify(toGallWorkResultWire(result)) + "\n");
     else {
       io.stderr.write(
         `gall-work: ${result.standing}` +
@@ -1167,17 +1248,16 @@ export async function runGallWork(
       console.error(`gall-work: ocel lifecycle emit failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
-  const workOrderId = `wo:${request.epochId}`;
+  // Lease identity E2O (work_order_iri / epoch / subject / base) is injected by
+  // OcelRecorder.bindLeaseIdentityObjects — never alias work_order as wo:epoch.
   emitLifecycle("provider.select", {
     provider: providerId,
-    work_order_id: workOrderId,
     ...(request.descriptor?.origin_authority ? { origin_authority: request.descriptor.origin_authority } : {})
   });
   if (selection.replaced) {
     emitLifecycle("provider.replace", {
       provider: providerId,
       from_provider: selection.replaced.providerId,
-      work_order_id: workOrderId,
       ...(request.descriptor?.origin_authority ? { origin_authority: request.descriptor.origin_authority } : {})
     });
   }
@@ -1203,11 +1283,29 @@ export async function runGallWork(
     // Needs a claimToken-free call handle: work_status/cancel_work/refuse are
     // addressed by the STALE token found in the file, not by a fresh claim.
     let claimToken = "";
+    // Ontology Source-GallWorkHook requires falsifier.run at the verifier-court
+    // boundary (close_candidate) and on typed refuse/falsify exits. Lease is
+    // omitted until claimToken is set; provider + worker always bind.
+    const emitFalsifierRun = (fields: Record<string, unknown>): void => {
+      emitLifecycle("falsifier.run", {
+        ...(claimToken ? { lease: claimToken } : {}),
+        provider: providerId,
+        worker: request.workerId,
+        ...fields
+      });
+    };
     const reconcile = await reconcileLeaseWindow(request.cwd, request, call, emitLifecycle);
 
     // -- capability discovery ------------------------------------------------
     const capabilities = await discoverFabricCapabilities(target, options.fetchImpl);
-    const discoveryStage = { ok: capabilities.discovered, tools: capabilities.tools.length, ...(capabilities.code ? { code: capabilities.code } : {}) };
+    // Contract: either handshake leg missing => stages.discovery.ok=false with a
+    // typed code (tools_list_unsupported | initialize_unsupported). tools/list
+    // may still populate `tools` when only initialize is unsupported.
+    const discoveryStage = {
+      ok: discoveryStageOk(capabilities),
+      tools: capabilities.tools.length,
+      ...(capabilities.code ? { code: capabilities.code } : {})
+    };
 
     const baseStages = () => ({
       ...(reconcile.found
@@ -1248,9 +1346,11 @@ export async function runGallWork(
         stages: { ...baseStages(), claim: { ok: false, code: "lease_token_missing" } }
       };
     }
+
     if (claimResult.epoch_id !== request.epochId) {
       // Claim-stage failure: typed refusal, exit 1, no receipt in the result;
       // nothing was persisted for this dispatch, so no lease state is cleared.
+      emitFalsifierRun({ outcome: "refused", reason: "epoch_mismatch" });
       await typedRefusal("no_authority");
       return {
         schema: "gall.work-result/1",
@@ -1265,6 +1365,7 @@ export async function runGallWork(
     }
     if (typeof claimResult.worktree === "string" && claimResult.worktree.length > 0
       && realpathSafe(claimResult.worktree) !== realpathSafe(request.cwd)) {
+      emitFalsifierRun({ outcome: "refused", reason: "worktree_mismatch" });
       await typedRefusal("no_authority");
       return {
         schema: "gall.work-result/1",
@@ -1309,7 +1410,6 @@ export async function runGallWork(
       lease: claimToken,
       provider: providerId,
       worker: request.workerId,
-      work_order_id: workOrderId,
       ...(originAuthority ? { origin_authority: originAuthority } : {})
     });
 
@@ -1323,6 +1423,10 @@ export async function runGallWork(
       });
     } catch (error) {
       const conflict = error instanceof LeaseConflictError;
+      emitFalsifierRun({
+        outcome: "refused",
+        reason: conflict ? "lease_conflict" : "persist_failed"
+      });
       const receipt = await typedRefusal(conflict ? "no_authority" : "blocked");
       return {
         schema: "gall.work-result/1",
@@ -1359,12 +1463,20 @@ export async function runGallWork(
     const construct = options.construct
       ? await options.construct(request, prompt, heartbeat, abort.signal)
       : await runConstruct(request, prompt, heartbeat, runOptions);
-    const surfacedHeartbeatFailures = heartbeatFailures.length > 0
-      ? heartbeatFailures
-      : (construct.heartbeatFailures ?? []);
+    // Union outer + construct observations; never prefer one list and drop the other.
+    const surfacedHeartbeatFailures = [
+      ...heartbeatFailures,
+      ...(construct.heartbeatFailures ?? [])
+    ];
 
     if (construct.spawnError === undefined && cancelReason !== undefined) {
       // -- cancelled (signal or internal deadline): close the lease typed, never orphan
+      emitFalsifierRun({
+        outcome: "refused",
+        reason: cancelReason === "deadline"
+          ? "construct_deadline_exceeded"
+          : `cancelled_${(cancelSignalName ?? "signal").toLowerCase()}`
+      });
       const cancel = await call("cancel_work", { lease_token: claimToken });
       const receipt = cancel.ok && cancel.result ? cancel.result : await typedRefusal("blocked");
       let cleanup = { ok: false };
@@ -1374,7 +1486,6 @@ export async function runGallWork(
           lease: claimToken,
           provider: providerId,
           worker: request.workerId,
-          work_order_id: workOrderId,
           ...(originAuthority ? { origin_authority: originAuthority } : {})
         });
         cleanup = await clearLeaseState();
@@ -1405,6 +1516,7 @@ export async function runGallWork(
     }
 
     if (construct.spawnError !== undefined) {
+      emitFalsifierRun({ outcome: "refused", reason: "spawn_failed" });
       const receipt = await typedRefusal("blocked");
       const cleanup = receipt ? await clearLeaseState() : { ok: false };
       if (receipt) {
@@ -1413,7 +1525,6 @@ export async function runGallWork(
           lease: claimToken,
           provider: providerId,
           worker: request.workerId,
-          work_order_id: workOrderId,
           ...(originAuthority ? { origin_authority: originAuthority } : {})
         });
       }
@@ -1444,6 +1555,7 @@ export async function runGallWork(
     try {
       head = await gitHead(request.cwd);
     } catch (error) {
+      emitFalsifierRun({ outcome: "refused", reason: "head_unavailable" });
       const receipt = await typedRefusal("blocked");
       const cleanup = receipt ? await clearLeaseState() : { ok: false };
       if (receipt) {
@@ -1452,7 +1564,6 @@ export async function runGallWork(
           lease: claimToken,
           provider: providerId,
           worker: request.workerId,
-          work_order_id: workOrderId,
           ...(originAuthority ? { origin_authority: originAuthority } : {})
         });
       }
@@ -1491,6 +1602,9 @@ export async function runGallWork(
           }
         }
       : {};
+    // Verifier-court boundary (close_candidate): alive or blocked.
+    // work_order/epoch/subject/base arrive via OcelRecorder.bindLeaseIdentityObjects.
+    emitFalsifierRun({ outcome, final_head: head });
     const closed = await call("close_candidate", {
       lease_token: claimToken,
       final_head: head,
@@ -1505,10 +1619,12 @@ export async function runGallWork(
         duration_ms: construct.durationMs,
         output_tail: construct.outputTail,
         heartbeat_seconds: request.heartbeatSeconds,
-        ...(heartbeatFailures.length > 0
+        // Prefer the coalesced surface (outer + construct.heartbeatFailures);
+        // never drop construct-observed failures when the outer array is empty.
+        ...(surfacedHeartbeatFailures.length > 0
           ? {
-              heartbeat_failure_count: heartbeatFailures.length,
-              heartbeat_failures: heartbeatFailures.slice(-5)
+              heartbeat_failure_count: surfacedHeartbeatFailures.length,
+              heartbeat_failures: surfacedHeartbeatFailures.slice(-5)
             }
           : {}),
         ...(construct.ocelReceiptPath ? { ocel_receipt: construct.ocelReceiptPath } : {}),
@@ -1548,7 +1664,6 @@ export async function runGallWork(
       lease: claimToken,
       provider: providerId,
       worker: request.workerId,
-      work_order_id: workOrderId,
       ...(originAuthority ? { origin_authority: originAuthority } : {})
     });
     const sealedOutcome = String(closed.result.outcome ?? outcome);

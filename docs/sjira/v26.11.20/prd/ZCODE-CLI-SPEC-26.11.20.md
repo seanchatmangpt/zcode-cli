@@ -13,5 +13,6 @@ PRD-facing sections in that document:
 | §8 | Claude Code CLI parity & clean `zcode-cli.toml` |
 | §9 | Chicago-style verification & Exp-1..4 protocol |
 | §10 | Explore (E1–E4) / Exploit (X1–X4) roadmap & exit gates |
+| Appendix E | Pluggable adapter courts — includes `ui-layout-court` (§E.5.1 / §E.8) |
 
 Do not fork product requirements into a divergent file; amend the Unified ARD/PRD instead.

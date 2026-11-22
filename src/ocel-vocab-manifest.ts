@@ -2,9 +2,11 @@
 // Provenance: CastleOcel vocabulary read from beam4pm lib/beam4pm_castle_ocel.ex
 // (closed vocabulary per its moduledoc: "It shares the OCEL wire shapes but NO
 // event names with BeamPM.GallOcel"). zcode side: src/generated/ocel.ts
-// EVENT_TYPES (35) / OBJECT_TYPES (14). The drift test
+// EVENT_TYPES (33) / OBJECT_TYPES (15). The drift test
 // test/ocel-vocab-manifest.test.ts refuses any classification that no longer
 // matches the live registries, so a new type cannot land unclassified.
+// Pack demo place_order/ship_order/order/item quarantined (process-intelligence-pack
+// examples/order-hook.ttl); falsifier_run kept — gall-work emits falsifier.run.
 
 /** zcode-cli event type -> classification vs CastleOcel event vocabulary. */
 export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "deliberate-local"> = {
@@ -20,7 +22,6 @@ export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "delib
   part_upserted: "disjoint",
   permission_requested: "disjoint",
   permission_resolved: "disjoint",
-  place_order: "disjoint",
   provider_replace: "disjoint",
   provider_select: "disjoint",
   receipt_persist: "disjoint",
@@ -32,7 +33,6 @@ export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "delib
   session_resumed: "disjoint",
   session_title_updated: "disjoint",
   session_updated: "disjoint",
-  ship_order: "disjoint",
   stream_recovery_updated: "disjoint",
   tool_updated: "disjoint",
   turn_completed: "disjoint",
@@ -48,15 +48,16 @@ export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "delib
 /** zcode-cli object type -> classification vs CastleOcel object vocabulary. */
 export const OBJECT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "deliberate-local"> = {
   authority: "disjoint",
-  item: "disjoint",
+  base: "disjoint",
+  epoch: "disjoint",
   lease: "disjoint",
   model_request: "disjoint",
-  order: "disjoint",
   permission: "disjoint",
   provider: "disjoint",
   receipt: "disjoint",
   session: "disjoint",
   subagent: "disjoint",
+  subject: "disjoint",
   tool_call: "disjoint",
   turn: "disjoint",
   work_order: "disjoint",

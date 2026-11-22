@@ -61,6 +61,31 @@ export function generateInto(work: string, ontologyPath = join(root, "ontology",
   if (run.status !== 0) throw new Error(`ggen sync run failed (${run.status}): ${(run.stderr || run.stdout).slice(-2000)}`);
 }
 
+/** Pack-demo alphabet that must never land in consumer EVENT_TYPES / SOURCES / RULES. */
+export const PACK_DEMO_ALPHABET = {
+  sources: ["order_hook"] as const,
+  events: ["place_order", "ship_order"] as const,
+  objects: ["order", "item"] as const
+};
+
+/** Refuse process-intelligence-pack demo leakage into relocated generated artifacts. */
+export function assertNoPackDemoAlphabet(dest: string): void {
+  const ocel = join(dest, "ocel.ts");
+  if (!existsSync(ocel)) return;
+  const text = readFileSync(ocel, "utf8");
+  const hits: string[] = [];
+  for (const id of [...PACK_DEMO_ALPHABET.sources, ...PACK_DEMO_ALPHABET.events, ...PACK_DEMO_ALPHABET.objects]) {
+    // Match quoted registry ids only (avoid false positives in comments).
+    if (new RegExp(`"${id}"`).test(text)) hits.push(id);
+  }
+  if (hits.length) {
+    throw new Error(
+      `pack demo alphabet polluted generated OCEL (${hits.join(", ")}); ` +
+        `quarantine lives in process-intelligence-pack/examples/order-hook.ttl — not ontology.ttl`
+    );
+  }
+}
+
 export function relocate(work: string, dest: string): string[] {
   const written: string[] = [];
   for (const [from, to] of Object.entries(RELOCATION)) {
@@ -70,6 +95,7 @@ export function relocate(work: string, dest: string): string[] {
     cpSync(src, join(dest, to));
     written.push(to);
   }
+  assertNoPackDemoAlphabet(dest);
   return written;
 }
 

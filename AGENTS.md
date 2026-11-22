@@ -91,7 +91,7 @@ file), the plugin's `hooks/hooks.json` PreToolUse gate (`$CLAUDE_PLUGIN_ROOT/scr
 defers, never grants, fails closed), and the gall-work lease contract (`src/gall-work.ts`; the
 contract is byte-identical to `~/xaas/priv/zcode_plugin/gall-work.contract.json`, sha256 pinned in
 both repos, fixture at `test/fixtures/gall-work.contract.json` — drift resolved 2026-09-26 by
-forwarding the newer contract to the xaas side; both now hash `55157758…5fc4`). The OCEL tap
+forwarding the newer contract to the xaas side; both now hash `9f722813…e979`). The OCEL tap
 (`src/ocel-tap.ts`,
 enabled with `ZCODE_OCEL=1`, output dir `ZCODE_OCEL_DIR`, default `~/.zcode/ocel`) feeds process
 mining on the xaas side. Every recorded event is credential-redacted at ingest (secret-shaped keys

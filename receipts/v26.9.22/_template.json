@@ -1,4 +1,17 @@
 {
+  "work_order_id": "REPLACE_WORK_ORDER_ID",
+  "origin_authority": {
+    "ceiling": "OBSERVE",
+    "grant": "REPLACE_ORIGIN_GRANT",
+    "actor": "REPLACE_ORIGIN_ACTOR"
+  },
+  "provider": {
+    "name": "REPLACE_PROVIDER_NAME",
+    "transport": "REPLACE_TRANSPORT",
+    "authority_ceiling": "CONSTRUCT",
+    "receipt_protocol": "https://chatmangpt.com/schema/receipt/v2"
+  },
+  "provider_execution_id": "REPLACE_PROVIDER_EXECUTION_ID",
   "identity": {
     "subject": "REPLACE_SUBJECT",
     "repo": "REPLACE_REPO_PATH",

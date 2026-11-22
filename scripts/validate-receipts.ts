@@ -9,12 +9,15 @@
  *        entry with exit !== 0 → REFUSED (nested repair sections included)
  *      - every identity.base_sha / identity.subject_sha must be 40-hex and
  *        resolve as a commit in this repository
- *   3. External schema validator:
+ *   3. External schema validator + ALOOP v1/v2 adapter (c4ca90f5 / W107):
  *      prefer ~/.zcode/dfcm/validate_receipt.py over ~/.claude/dfcm/...
  *      (legacy Claude path must not mask a zcode refusal or substitute for
  *      missing content checks). Missing external tool → REFUSED by default
  *      (fail-closed). Set DFCM_ALLOW_INTEGRITY_ONLY=1 to run the integrity
  *      floor alone on hosts without the python validator.
+ *      Pure v1 Chatman-5 corpus is admitted by the in-repo adapter when the
+ *      preferred zcode validator still requires all ALOOP v2 fields; any v2
+ *      field present routes to the full external schema (partial v2 REFUSED).
  *
  * Usage: bun scripts/validate-receipts.ts [--staged]
  *   --staged: only validate receipts staged in git (for pre-commit use).
@@ -29,11 +32,30 @@ const allowIntegrityOnly = process.env.DFCM_ALLOW_INTEGRITY_ONLY === "1";
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 
+/** ALOOP v2 execution provenance (receipt.schema.json required[]). */
+export const ALOOP_V2_FIELDS = [
+  "work_order_id",
+  "origin_authority",
+  "provider",
+  "provider_execution_id",
+] as const;
+
+/** Chatman-5 R-groups (receipt/v1 and still required on v2). */
+export const CHATMAN5_FIELDS = [
+  "identity",
+  "authority",
+  "consequence",
+  "replay",
+  "standing",
+] as const;
+
 export type IntegrityFinding = {
   path: string;
   rule: "ALIVE_WITH_NONZERO_EXIT" | "BOGUS_SHA" | "PARSE_ERROR";
   detail: string;
 };
+
+export type ReceiptSchemaKind = "v1" | "v2" | "invalid";
 
 /** Prefer product path (~/.zcode); Claude path is legacy fallback only. */
 export function resolveExternalValidator(home = HOME): {
@@ -49,6 +71,161 @@ export function resolveExternalValidator(home = HOME): {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * W107 version discrimination: any ALOOP v2 field → v2 (partial v2 is malformed
+ * v2, not v1). No v2 fields + all Chatman-5 present → v1. Else invalid.
+ */
+export function detectReceiptSchemaKind(parsed: unknown): ReceiptSchemaKind {
+  if (!isRecord(parsed)) return "invalid";
+  const missingChatman = CHATMAN5_FIELDS.filter((k) => !(k in parsed));
+  if (missingChatman.length > 0) return "invalid";
+  const hasV2 = ALOOP_V2_FIELDS.some((k) => k in parsed);
+  return hasV2 ? "v2" : "v1";
+}
+
+/** Structural Chatman-5 presence for pure-v1 admit (integrity already ran). */
+export function checkChatman5Structural(parsed: unknown): string[] {
+  if (!isRecord(parsed)) return ["<root>: receipt must be a JSON object"];
+  const errs: string[] = [];
+  for (const key of CHATMAN5_FIELDS) {
+    if (!(key in parsed)) errs.push(`<root>: '${key}' is a required Chatman-5 property`);
+  }
+  if (!isRecord(parsed.identity)) {
+    errs.push("identity: must be an object");
+  } else {
+    for (const k of ["subject", "repo", "subject_sha", "base_sha"] as const) {
+      if (typeof parsed.identity[k] !== "string" || !parsed.identity[k]) {
+        errs.push(`identity.${k}: required non-empty string`);
+      }
+    }
+  }
+  if (!isRecord(parsed.authority)) {
+    errs.push("authority: must be an object");
+  } else {
+    for (const k of ["ceiling", "grant", "actor"] as const) {
+      if (typeof parsed.authority[k] !== "string" || !parsed.authority[k]) {
+        errs.push(`authority.${k}: required non-empty string`);
+      }
+    }
+  }
+  if (!isRecord(parsed.consequence)) {
+    errs.push("consequence: must be an object");
+  } else {
+    for (const k of ["commits", "files_changed", "remote_effects"] as const) {
+      if (!Array.isArray(parsed.consequence[k])) {
+        errs.push(`consequence.${k}: required array`);
+      }
+    }
+  }
+  if (!isRecord(parsed.replay) || !Array.isArray(parsed.replay.commands)) {
+    errs.push("replay.commands: required non-empty array");
+  } else if (parsed.replay.commands.length < 1) {
+    errs.push("replay.commands: minItems 1");
+  }
+  if (!isRecord(parsed.standing)) {
+    errs.push("standing: must be an object");
+  } else {
+    if (typeof parsed.standing.value !== "string" || !parsed.standing.value) {
+      errs.push("standing.value: required non-empty string");
+    }
+    if (typeof parsed.standing.derived_from !== "string" || !parsed.standing.derived_from) {
+      errs.push("standing.derived_from: required non-empty string");
+    }
+  }
+  return errs;
+}
+
+/**
+ * Admit path after integrity: pure v1 uses in-repo Chatman-5 adapter when the
+ * preferred zcode validator still requires ALOOP v2 unconditionally; v2 (and
+ * partial v2) always hit the external schema validator.
+ */
+export function admitAfterIntegrity(args: {
+  path: string;
+  raw?: string;
+  external: { path: string | null; source: "zcode" | "claude" | "missing" };
+  allowIntegrityOnly: boolean;
+  runExternal?: (validatorPath: string, receiptPath: string) => {
+    exitCode: number | null;
+    out: string;
+  };
+}): { ok: boolean; exitCode: number | null; out: string } {
+  const { path, external, allowIntegrityOnly } = args;
+  let parsed: unknown;
+  try {
+    const text = args.raw ?? readFileSync(join(REPO_ROOT, path), "utf8");
+    parsed = JSON.parse(text);
+  } catch (err) {
+    return {
+      ok: false,
+      exitCode: 1,
+      out: `PARSE_ERROR: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  const kind = detectReceiptSchemaKind(parsed);
+  if (kind === "invalid") {
+    return {
+      ok: false,
+      exitCode: 1,
+      out: "REFUSED: missing Chatman-5 fields (identity/authority/consequence/replay/standing)",
+    };
+  }
+
+  // Pure v1 historical corpus: do not punish with zcode's unconditional v2 require.
+  if (kind === "v1" && external.source === "zcode") {
+    const structural = checkChatman5Structural(parsed);
+    if (structural.length > 0) {
+      return {
+        ok: false,
+        exitCode: 1,
+        out: structural.map((e) => `V1_ADAPTER ${e}`).join("\n"),
+      };
+    }
+    return {
+      ok: true,
+      exitCode: 0,
+      out: "ADMITTED via v1 Chatman-5 adapter (zcode validate_receipt.py still requires ALOOP v2 unconditionally; see receipts/MIGRATION-ALOOP-v2.md)",
+    };
+  }
+
+  if (!external.path) {
+    if (allowIntegrityOnly) {
+      return {
+        ok: true,
+        exitCode: 0,
+        out: "integrity floor ADMITTED (DFCM_ALLOW_INTEGRITY_ONLY=1; no external validator)",
+      };
+    }
+    return {
+      ok: false,
+      exitCode: 2,
+      out: "REFUSED: external validate_receipt.py missing (~/.zcode/dfcm preferred; ~/.claude/dfcm legacy). Integrity floor was clean for this file; set DFCM_ALLOW_INTEGRITY_ONLY=1 to admit on integrity alone.",
+    };
+  }
+
+  const run =
+    args.runExternal ??
+    ((validatorPath: string, receiptPath: string) => {
+      const proc = Bun.spawnSync(["python3", validatorPath, receiptPath], {
+        cwd: REPO_ROOT,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      return {
+        exitCode: proc.exitCode,
+        out: (proc.stdout.toString() + proc.stderr.toString()).trim(),
+      };
+    });
+
+  const result = run(external.path, path);
+  return {
+    ok: result.exitCode === 0,
+    exitCode: result.exitCode,
+    out: result.out,
+  };
 }
 
 function standingValue(node: Record<string, unknown>): string | null {
@@ -236,35 +413,12 @@ if (isMain) {
       };
     }
 
-    if (!external.path) {
-      if (allowIntegrityOnly) {
-        return {
-          path,
-          ok: true,
-          exitCode: 0,
-          out: "integrity floor ADMITTED (DFCM_ALLOW_INTEGRITY_ONLY=1; no external validator)",
-        };
-      }
-      return {
-        path,
-        ok: false,
-        exitCode: 2,
-        out: "REFUSED: external validate_receipt.py missing (~/.zcode/dfcm preferred; ~/.claude/dfcm legacy). Integrity floor was clean for this file; set DFCM_ALLOW_INTEGRITY_ONLY=1 to admit on integrity alone.",
-      };
-    }
-
-    const proc = Bun.spawnSync(["python3", external.path, path], {
-      cwd: REPO_ROOT,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const ok = proc.exitCode === 0;
-    return {
+    const admitted = admitAfterIntegrity({
       path,
-      ok,
-      exitCode: proc.exitCode,
-      out: (proc.stdout.toString() + proc.stderr.toString()).trim(),
-    };
+      external,
+      allowIntegrityOnly,
+    });
+    return { path, ...admitted };
   });
 
   let passed = 0;

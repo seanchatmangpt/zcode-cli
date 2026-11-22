@@ -1,7 +1,19 @@
 {
+  "work_order_id": "G0",
+  "origin_authority": {
+    "ceiling": "OBSERVE",
+    "grant": "G0 court of GALL-FRI-0925; operator-approved plan 2026-09-22",
+    "actor": "gall-fri-0925 integrator (zcode session)"
+  },
+  "provider": {
+    "name": "zcode-session",
+    "authority_ceiling": "OBSERVE",
+    "receipt_protocol": "https://chatmangpt.com/schema/receipt/v2"
+  },
+  "provider_execution_id": "UNRECOVERED (pre-ALOOP-v2 G0 court; no provider_execution_id recorded at issuance; migrated 2026-11-21 under receipt-sink schema-gap close)",
   "identity": {
     "subject": "zcode-cli:docs/sjira/v26.9.22/stop-court.ttl (G0: accepted Friday prose compiled into semantic propositions)",
-    "repo": "/Users/sac/dev/zcode-cli",
+    "repo": "/Users/sac/zcode-cli",
     "subject_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b",
     "base_sha": "ffe804646eb851d3d3b145d26a9557d566ada45b"
   },
@@ -19,7 +31,7 @@
     "commands": [
       {
         "cmd": "shasum -a 256 docs/sjira/v26.9.22/stop-court.ttl docs/sjira/v26.9.22/000-stop-court.md docs/sjira/v26.9.22/successors.md",
-        "cwd": "/Users/sac/dev/zcode-cli",
+        "cwd": "/Users/sac/zcode-cli",
         "exit": 0,
         "summary": "ade8152e15936cbf0113f3290f9869c11bd657425d237793b8b602fc1c60c2ce stop-court.ttl; 0561af1fb31a26d22b3f3d8a3ddd27db0eadc86d1996729c9f873b0ef76e41b7 000-stop-court.md; 9b892cac0f66fd931fe116b43aaad2678ded2297ebc371cd6c6151b3ebf2e05a successors.md"
       },

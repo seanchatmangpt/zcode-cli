@@ -79,7 +79,10 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     expect(ocelProblems(doc)).toEqual([]);
     expect(verifyChain(doc, "sha256")).toBeNull();
     expect(receipt.source).toBe(APP_SERVER_SOURCE);
+    // Dual witness: OCEL pi_hash vs ALOOP receipt seal; standing alive iff OCEL ok.
     expect(receipt.chain_intact).toBe(true);
+    expect(receipt.receipt_chain_intact).toBe(true);
+    expect((receipt.chain as { standing: string }[]).at(-1)?.standing).toBe("alive");
     expect(doc.events.map((e) => e.type)).toContain("turn_started");
     expect(doc.events.map((e) => e.type)).toContain("tool_updated");
     expect(doc.events.map((e) => e.type)).toContain("turn_failed");
@@ -104,6 +107,7 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     expect(verifyChain(doc, "sha256")).toBeNull();
     expect(receipt.source).toBe(APP_SERVER_SOURCE);
     expect(receipt.chain_intact).toBe(true);
+    expect(receipt.receipt_chain_intact).toBe(true);
     expect(receipt.event_count).toBe(30);
 
     const qualifiers = new Set(doc.events.flatMap((e) => e.relationships.map((r) => r.qualifier)));
@@ -281,5 +285,7 @@ describe.skipIf(runtimeMissing)("F03 live vendor/zcode.cjs app-server subprocess
     expect(out.events).toBeGreaterThanOrEqual(1);
     expect(receipt.source).toBe(APP_SERVER_SOURCE);
     expect(receipt.chain_intact).toBe(true);
+    expect(receipt.receipt_chain_intact).toBe(true);
+    expect((receipt.chain as { standing: string }[]).at(-1)?.standing).toBe("alive");
   }, 25_000);
 });

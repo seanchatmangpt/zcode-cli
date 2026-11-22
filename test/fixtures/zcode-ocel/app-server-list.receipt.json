@@ -6,6 +6,7 @@
   "event_count": 30,
   "head_hash": "47c70b2e660ef39514a0905490cdafc0d480cd41353031a439333d235d4e07cd",
   "chain_intact": true,
+  "receipt_chain_intact": true,
   "unpaired": [],
   "chain": [
     {

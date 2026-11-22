@@ -335,6 +335,11 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
     };
     return fn as unknown as typeof spawnChild;
   })();
+  // Ambient bleed must not reach the leased child (WorkerEnv deny_names parity).
+  // XAAS_LEASE_ID must still forward — PreToolUse keyed-first fence key.
+  setEnv("XAAS_ALLOW_SUBAGENTS", "1");
+  setEnv("XAAS_SURFACE_PATH", "/tmp/widened-surface.json");
+  setEnv("XAAS_LEASE_ID", epochId);
   const outcome = await runConstruct(
     {
       workerId, epochId, cwd: "/tmp", json: true, heartbeatSeconds: 15, constructDeadlineSeconds: 0,
@@ -366,4 +371,7 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
   expect(recorded.env.XAAS_WORK_ORDER_IRI).toBe("https://w3id.org/chatman/sjira/v26.9.22#ZOCEL-TEST");
   expect(recorded.env.XAAS_EPOCH_ID).toBe(epochId);
   expect(recorded.env.XAAS_BASE_SHA).toBe("a".repeat(40));
+  expect(recorded.env.XAAS_LEASE_ID).toBe(epochId);
+  expect(recorded.env.XAAS_ALLOW_SUBAGENTS).toBeUndefined();
+  expect(recorded.env.XAAS_SURFACE_PATH).toBeUndefined();
 });

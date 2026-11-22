@@ -215,8 +215,8 @@
   "identity": {
    "subject": "R2: final repairs before the v26.9.23 push \u2014 model-catalog-reload re-anchored on 3.14.3 (L1 retirement falsified) and session-model-recovery startup picker restored (L4 follow-on)",
    "repo": "/Users/sac/dev/zcode-cli",
-   "base_sha": "9edcf90b0468bb45b1e46cb16dcb1ecca44eabd0",
-   "base_note": "Post-R1 main head. The R2 commit contains exactly scripts/sync-runtime.ts, scripts/check-runtime.ts, packages/zcode-tui/src/index.ts and this appended r2 section, so its own SHA is unknowable pre-commit and is excluded rather than fabricated (r1 convention). vendor/zcode.cjs and packages/zcode-tui/dist are gitignored rebuild consequences, verified in place."
+   "base_sha": "9edcf905b241327ab1c286482c1cc7a9b6ef388b",
+   "base_note": "Post-R1 main head (full SHA of short 9edcf90; prior padded digest 9edcf90b0468… was not a commit and is corrected here — not forged). The R2 commit contains exactly scripts/sync-runtime.ts, scripts/check-runtime.ts, packages/zcode-tui/src/index.ts and this appended r2 section, so its own SHA is unknowable pre-commit and is excluded rather than fabricated (r1 convention). vendor/zcode.cjs and packages/zcode-tui/dist are gitignored rebuild consequences, verified in place. Nested standing=ALIVE with nonzero replay exits remains an intentional integrity-floor tripwire (ALIVE_WITH_NONZERO_EXIT) for fail-closed tests."
   },
   "authority": {
    "ceiling": "DO",

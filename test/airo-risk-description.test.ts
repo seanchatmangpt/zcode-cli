@@ -16,7 +16,7 @@ const TTL_PATH = join(REPO_ROOT, "ontology", "airo_risk_description.ttl");
 const CONTRACT_PINS: Array<[string, string]> = [
   [
     "test/fixtures/gall-work.contract.json",
-    "5515775861807cdd7394ef74b1ee38679dd24279224515178702bb6652a95fc4",
+    "9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979",
   ],
   [
     "test/fixtures/xaas-remote-relay.contract.json",

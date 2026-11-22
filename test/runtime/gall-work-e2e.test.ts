@@ -55,6 +55,8 @@ class MockFabric {
   readonly url: string;
   /** When true, initialize/tools/list fall through to the unknown-tool path (typed degrade). */
   discoveryDisabled = false;
+  /** When true, initialize returns JSON-RPC error but tools/list still answers. */
+  initializeUnsupported = false;
 
   constructor() {
     this.server = createServer((request, response) => {
@@ -100,6 +102,15 @@ class MockFabric {
     // Capability discovery (contract fabric.capability_discovery): a real
     // initialize + tools/list handshake.
     if (rpc.method === "initialize" && !this.discoveryDisabled) {
+      if (this.initializeUnsupported) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          error: { code: -32601, message: "method not found: initialize" }
+        }));
+        return;
+      }
       replyRpc({ protocolVersion: "2024-11-05", serverInfo: { name: "mock-fabric", version: "1" } });
       return;
     }
@@ -256,6 +267,13 @@ describe("gall-work end-to-end against a mocked fabric", () => {
     expect(result.provider).toBe("zcode");
     expect(result.finalHead).toBe(git(["rev-parse", "HEAD"], worktree));
     expect(String(result.finalHead)).not.toBe(baseHead);
+    // Contract field_case: snake_case primary dual-emitted with agreeing camelCase aliases.
+    expect(result.epoch_id).toBe(epochId);
+    expect(result.epoch_id).toBe(result.epochId);
+    expect(result.worker_id).toBe(workerId);
+    expect(result.worker_id).toBe(result.workerId);
+    expect(result.final_head).toBe(result.finalHead);
+    expect(result.runtime_exit_code).toBe(result.runtimeExitCode);
 
     // discovery handshake ran against the fabric; reconcile found no stale lease
     const stages = result.stages as Record<string, Record<string, unknown>>;
@@ -753,6 +771,217 @@ describe("gall-work end-to-end against a mocked fabric", () => {
     expect(result.standing).toBe("ALIVE");
     const stages = result.stages as Record<string, Record<string, unknown>>;
     expect(stages.discovery).toMatchObject({ ok: false, code: "tools_list_unsupported" });
+  });
+
+  test("initialize_unsupported sets stages.discovery.ok=false while tools still stand", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    fabric.initializeUnsupported = true;
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "heartbeat", respond: () => ({ ok: true, payload: { status: "renewed" } }) },
+      { tool: "close_candidate", respond: () => ({ ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } }) }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(
+      ["--worker-id", workerId, "--epoch-id", epochId, "--cwd", worktree, "--json"],
+      {
+        fabricTarget: { url: fabric.url },
+        construct: constructThat(worktree, { exitCode: 0, commitFile: "deliverable.txt" }),
+        io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+      }
+    );
+
+    expect(exit).toBe(0);
+    const result = JSON.parse(chunks.join("")) as Record<string, unknown>;
+    expect(result.standing).toBe("ALIVE");
+    const stages = result.stages as Record<string, Record<string, unknown>>;
+    expect(stages.discovery).toMatchObject({ ok: false, code: "initialize_unsupported" });
+    expect(Number(stages.discovery.tools)).toBeGreaterThan(0);
+  });
+
+  test("construct.heartbeatFailures reach close evidence when outer array is empty", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "close_candidate", respond: (args) => {
+          const evidence = args.evidence as Record<string, unknown>;
+          expect(evidence.heartbeat_failure_count).toBe(1);
+          expect(JSON.stringify(evidence.heartbeat_failures)).toContain("construct_interval_lost");
+          return { ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } };
+        } }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(
+      ["--worker-id", workerId, "--epoch-id", epochId, "--cwd", worktree, "--json"],
+      {
+        fabricTarget: { url: fabric.url },
+        // Do NOT call onHeartbeat: failures arrive only via ConstructOutcome.heartbeatFailures.
+        construct: async () => {
+          writeFileSync(join(worktree, "deliverable.txt"), "done\n");
+          git(["add", "."], worktree);
+          git(["commit", "-q", "-m", "gall work"], worktree);
+          return {
+            exitCode: 0,
+            signal: null,
+            outputTail: "done",
+            durationMs: 5,
+            heartbeatFailures: ["2026-11-21T00:00:00.000Z construct_interval_lost"]
+          };
+        },
+        io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+      }
+    );
+
+    expect(exit).toBe(0);
+    expect(JSON.parse(chunks.join("")).standing).toBe("ALIVE");
+  });
+
+  test("outer and construct heartbeatFailures are unioned into close evidence", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "heartbeat", respond: () => ({ ok: false, payload: { error: "outer_renewal_lost" } }) },
+      { tool: "close_candidate", respond: (args) => {
+          const evidence = args.evidence as Record<string, unknown>;
+          expect(evidence.heartbeat_failure_count).toBe(2);
+          const failures = JSON.stringify(evidence.heartbeat_failures);
+          expect(failures).toContain("outer_renewal_lost");
+          expect(failures).toContain("construct_interval_lost");
+          return { ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } };
+        } }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(
+      ["--worker-id", workerId, "--epoch-id", epochId, "--cwd", worktree, "--json"],
+      {
+        fabricTarget: { url: fabric.url },
+        construct: async (_request, _prompt, onHeartbeat) => {
+          await expect(onHeartbeat()).rejects.toThrow("heartbeat failed: outer_renewal_lost");
+          writeFileSync(join(worktree, "deliverable.txt"), "done\n");
+          git(["add", "."], worktree);
+          git(["commit", "-q", "-m", "gall work"], worktree);
+          return {
+            exitCode: 0,
+            signal: null,
+            outputTail: "done",
+            durationMs: 5,
+            heartbeatFailures: ["2026-11-21T00:00:00.000Z construct_interval_lost"]
+          };
+        },
+        io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+      }
+    );
+
+    expect(exit).toBe(0);
+    expect(JSON.parse(chunks.join("")).standing).toBe("ALIVE");
+  });
+
+  test("falsifier.run is emitted on the close/verifier-court boundary when ZCODE_OCEL=1", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    const ocelDir = mkdtempSync(join(tmpdir(), "gall-work-ocel-"));
+    // Descriptor binds work_order_iri / base so ontology E2O paths resolve
+    // (work_order qualifier "subject", plus on_epoch / about_subject / about_base).
+    const descriptorPath = join(worktree, "..", "lease-descriptor-falsifier.json");
+    writeFileSync(
+      descriptorPath,
+      JSON.stringify({
+        ...leaseDescriptor(worktree),
+        epoch_id: epochId,
+        worker_id: workerId,
+        base_sha: baseHead
+      })
+    );
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "heartbeat", respond: () => ({ ok: true, payload: { status: "renewed" } }) },
+      { tool: "close_candidate", respond: () => ({ ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } }) }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(["--lease", descriptorPath, "--json"], {
+      env: { ...process.env, ZCODE_OCEL: "1", ZCODE_OCEL_DIR: ocelDir },
+      fabricTarget: { url: fabric.url },
+      construct: constructThat(worktree, { exitCode: 0, commitFile: "deliverable.txt" }),
+      io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+    });
+
+    expect(exit).toBe(0);
+    const ocelPath = join(ocelDir, `gall-work-${epochId}.jsonocel`);
+    expect(existsSync(ocelPath)).toBe(true);
+    const doc = JSON.parse(readFileSync(ocelPath, "utf8")) as {
+      objects: Array<{ id: string; type: string }>;
+      events: Array<{ type?: string; relationships?: Array<{ objectId?: string; qualifier?: string }> }>;
+    };
+    const falsifier = doc.events.find((event) => event.type === "falsifier_run");
+    expect(falsifier).toBeDefined();
+    const quals = new Set((falsifier?.relationships ?? []).map((rel) => rel.qualifier));
+    expect(quals.has("on_lease")).toBe(true);
+    expect(quals.has("provider")).toBe(true);
+    expect(quals.has("worker")).toBe(true);
+    expect(quals.has("subject")).toBe(true); // work_order via work_order_iri
+    expect(quals.has("on_epoch")).toBe(true);
+    expect(quals.has("about_subject")).toBe(true);
+    expect(quals.has("about_base")).toBe(true);
+    // Distinct case notions: IRI work_order, namespaced epoch/subject/base — never wo:epoch.
+    const byType = new Map<string, string[]>();
+    for (const o of doc.objects) {
+      const list = byType.get(o.type) ?? [];
+      list.push(o.id);
+      byType.set(o.type, list);
+    }
+    expect(byType.get("work_order")).toEqual(["urn:gall:work-order:xaas:e2e"]);
+    expect(byType.get("epoch")).toEqual([`epoch:${epochId}`]);
+    expect(byType.get("base")).toEqual([`base:${baseHead}`]);
+    expect(byType.get("subject")?.[0]).toMatch(/^subj:[0-9a-f]{40}$/);
+    expect(doc.objects.some((o) => o.id.startsWith("wo:"))).toBe(false);
+    rmSync(ocelDir, { recursive: true, force: true });
+  });
+
+  test("falsifier.run is emitted on the spawn refuse path when ZCODE_OCEL=1", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    const ocelDir = mkdtempSync(join(tmpdir(), "gall-work-ocel-refuse-"));
+    const descriptorPath = join(worktree, "..", "lease-descriptor-falsifier-refuse.json");
+    writeFileSync(
+      descriptorPath,
+      JSON.stringify({
+        ...leaseDescriptor(worktree),
+        epoch_id: epochId,
+        worker_id: workerId,
+        base_sha: baseHead
+      })
+    );
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "refuse", respond: () => ({ ok: true, payload: { status: "refused", epoch_id: epochId, outcome: "refused" } }) }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(["--lease", descriptorPath, "--json"], {
+      env: { ...process.env, ZCODE_OCEL: "1", ZCODE_OCEL_DIR: ocelDir },
+      fabricTarget: { url: fabric.url },
+      construct: constructThat(worktree, { spawnError: "runtime missing" }),
+      io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+    });
+
+    expect(exit).toBe(0);
+    expect(JSON.parse(chunks.join("")).standing).toBe("REFUSED");
+    const ocelPath = join(ocelDir, `gall-work-${epochId}.jsonocel`);
+    expect(existsSync(ocelPath)).toBe(true);
+    const doc = JSON.parse(readFileSync(ocelPath, "utf8")) as {
+      events: Array<{ type?: string; relationships?: Array<{ qualifier?: string }> }>;
+    };
+    const falsifier = doc.events.find((event) => event.type === "falsifier_run");
+    expect(falsifier).toBeDefined();
+    const quals = new Set((falsifier?.relationships ?? []).map((rel) => rel.qualifier));
+    expect(quals.has("on_lease")).toBe(true);
+    expect(quals.has("provider")).toBe(true);
+    expect(quals.has("worker")).toBe(true);
+    expect(quals.has("subject")).toBe(true);
+    expect(doc.events.some((event) => event.type === "receipt_persist")).toBe(true);
+    rmSync(ocelDir, { recursive: true, force: true });
   });
 
   test("the binary accepts the native command and refuses usage without touching the fabric", async () => {

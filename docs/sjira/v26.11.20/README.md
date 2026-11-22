@@ -29,11 +29,11 @@ This wave’s normative docs mandate **zero** coupling of the **core** runtime t
 | Artifact | Path |
 |---|---|
 | JSONL/POWL primitives | [`src/io/sjira-adapter.ts`](../../../src/io/sjira-adapter.ts) |
-| Plugin courts | [`src/adapters/`](../../../src/adapters/) (`sjira-io`, `marketplace-court`, `igniter-sync`, `receipt-sink`, `castle-publish`) |
-| Tests | [`test/sjira-adapter.test.ts`](../../../test/sjira-adapter.test.ts), [`test/adapters.test.ts`](../../../test/adapters.test.ts) |
-| Spec | Unified ARD/PRD **Appendix D** + **Appendix E** |
+| Plugin courts | [`src/adapters/`](../../../src/adapters/) (`sjira-io`, `marketplace-court`, `igniter-sync`, `receipt-sink`, `castle-publish`, `ui-layout-court`) |
+| Tests | [`test/sjira-adapter.test.ts`](../../../test/sjira-adapter.test.ts), [`test/adapters.test.ts`](../../../test/adapters.test.ts), [`test/ui-layout-court.test.ts`](../../../test/ui-layout-court.test.ts) |
+| Spec | Unified ARD/PRD **Appendix D** + **Appendix E** (incl. **E.5.1** / **E.8** spatial court) |
 
-Authority ceiling remains **CONSTRUCT**. Adapters map frontier JSONL → POWL, enforce marketplace/igniter courts, and emit honest `PARTIAL_ALIVE` / `UNVERIFIED` / `BLOCKED` receipts — never fake live `ALIVE`.
+Authority ceiling remains **CONSTRUCT**. Adapters map frontier JSONL → POWL, enforce marketplace/igniter/ui-layout courts, and emit honest `PARTIAL_ALIVE` / `UNVERIFIED` / `BLOCKED` receipts — never fake live `ALIVE`. Spatial defects refuse with exit `1` and remediation capped at `max_remediation_attempts = 3`; anti-vacuity mutations (360-in-320 / 18px) must flip the court before pack `ALIVE`.
 
 ## Gall's Law spine (Appendix F)
 

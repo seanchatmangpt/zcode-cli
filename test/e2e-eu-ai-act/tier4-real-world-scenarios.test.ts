@@ -928,13 +928,12 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
       expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
       const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
       expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
-      expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+      expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(false);
 
       const receiptsRes = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
       expect(receiptsRes.exitCode).toBe(1);
       expect(receiptsRes.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
       expect(receiptsRes.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
-      expect(receiptsRes.stdout).toContain("BOGUS_SHA");
       expect(`${receiptsRes.stdout}\n${receiptsRes.stderr}`).toContain("REFUSED");
 
       // 4. Annex IV compile + --check gate

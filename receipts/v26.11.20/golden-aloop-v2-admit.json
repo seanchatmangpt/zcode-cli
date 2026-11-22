@@ -1,0 +1,55 @@
+{
+  "work_order_id": "WO-GOLDEN-ALOOP-V2-ADMIT-001",
+  "origin_authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "schema-drift-fix-c4ca90f5",
+    "actor": "zcode-cli-construct"
+  },
+  "provider": {
+    "name": "zcode-cli",
+    "transport": "local",
+    "authority_ceiling": "CONSTRUCT",
+    "receipt_protocol": "https://chatmangpt.com/schema/receipt/v2"
+  },
+  "provider_execution_id": "golden-aloop-v2-admit-001",
+  "identity": {
+    "subject": "receipts/v26.11.20/golden-aloop-v2-admit",
+    "repo": "/Users/sac/zcode-cli",
+    "subject_sha": "ba62ef33fc8f9eb941ce8c82cfdd8c75df0dd9f4",
+    "base_sha": "ba62ef33fc8f9eb941ce8c82cfdd8c75df0dd9f4"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "schema-drift-fix-c4ca90f5",
+    "actor": "zcode-cli-construct"
+  },
+  "consequence": {
+    "commits": [
+      "ba62ef33fc8f9eb941ce8c82cfdd8c75df0dd9f4"
+    ],
+    "files_changed": [
+      "receipts/v26.9.22/_template.json",
+      "src/adapters/receipt-sink.ts",
+      "receipts/v26.11.20/golden-aloop-v2-admit.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "python3 ~/.zcode/dfcm/validate_receipt.py receipts/v26.11.20/golden-aloop-v2-admit.json",
+        "exit": 0,
+        "cwd": "/Users/sac/zcode-cli"
+      }
+    ],
+    "durable_location": "receipts/v26.11.20/golden-aloop-v2-admit.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "validate_receipt.py admits this golden at ba62ef33fc8f9eb941ce8c82cfdd8c75df0dd9f4"
+  },
+  "provider_ext.zcode_cli": {
+    "fixture": "golden-aloop-v2-admit",
+    "purpose": "schema-contract witness for ALOOP v2 required fields; not Exp-4 pilot evidence"
+  }
+}

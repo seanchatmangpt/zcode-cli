@@ -52,18 +52,23 @@ describe("recorded real runtime turns -> generated OCEL 2.0", () => {
 
     test(`${fx.name}: chain replays and receipt agrees with the files on disk`, () => {
       const { doc, receipt, out } = record(fx.name, fx.lines, 4096);
-      expect(verifyChain(doc, "sha256")).toBeNull();
+      const ocelOk = verifyChain(doc, "sha256") === null && doc.events.length > 0;
+      expect(ocelOk).toBe(true);
       expect(doc.events.at(-1)!.attributes.find((a) => a.name === "pi_hash")!.value).toBe(out.head);
       expect(receipt.head_hash).toBe(out.head);
       expect(receipt.event_count).toBe(doc.events.length);
-      expect(receipt.chain_intact).toBe(true);
-      expect(verifyReceiptChain(receipt.chain)).toBe(true);
+      // chain_intact witnesses OCEL pi_hash (verifyChain), not ALOOP seal theater.
+      expect(receipt.chain_intact).toBe(ocelOk);
+      expect(receipt.receipt_chain_intact).toBe(verifyReceiptChain(receipt.chain));
+      expect(receipt.receipt_chain_intact).toBe(true);
       expect(receipt.chain.map((e: any) => e.phase)).toEqual(["pending", "outcome", "outcome"]);
       expect(receipt.chain.at(-1).seal).toBe(true);
       expect(receipt.chain.at(-1).standing).toBe("alive");
       expect(new Bun.CryptoHasher("sha256").update(readFileSync(out.ocelPath, "utf8")).digest("hex")).toBe(receipt.ocel_file_sha256);
       for (const entry of receipt.chain) {
-        const { seal: _seal, ...fields } = entry;
+        // seal + pending_ref are runtime chain fields; SHACL ReceiptEntry is the
+        // primary-output identity only (additionalProperties: false).
+        const { seal: _seal, pending_ref: _pendingRef, ...fields } = entry;
         expect(schemaProblems(schemas, "ReceiptEntry", fields)).toEqual([]);
       }
       // OcelEventRecord is the SHACL primary-output identity triple only; full events

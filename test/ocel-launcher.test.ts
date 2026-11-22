@@ -213,7 +213,10 @@ describe("recorded live 3.14.3 stream-json slice (2026-09-23 smoke)", () => {
     try {
       const { out } = run(dir);
       const receipt = JSON.parse(readFileSync(out.receiptPath, "utf8"));
+      // chain_intact = OCEL verifyChain (pi_hash); receipt_chain_intact = ALOOP seal.
       expect(receipt.chain_intact).toBe(true);
+      expect(receipt.receipt_chain_intact).toBe(true);
+      expect(receipt.chain.at(-1).standing).toBe("alive");
       expect(receipt.unpaired).toEqual([]);
       expect(receipt.event_count).toBe(6);
       expect(receipt.source).toBe("zcode_stream");

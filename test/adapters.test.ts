@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  adapterOptionsFromTomlDoc,
   assertPublicAnonymize,
   CastlePublishCourtAdapter,
   IgniterSyncCourtAdapter,
+  loadAdapterRegistryFromToml,
   MarketplaceCourtAdapter,
   ReceiptSink,
+  isDfcmStubNonAdmit,
   SjiraWorkOrderSource,
   assertNoInteractiveFrontierArgs,
   validatePackTomlMinimal,
@@ -16,9 +19,11 @@ import {
   standingFromExit,
   exitCodeForStanding
 } from "../src/adapters/index.ts";
+import { parseTomlDocument } from "../src/compliance/config.ts";
 import { minimatch as mm } from "../src/adapters/minimatch-lite.ts";
 import { SjiraAdapterError } from "../src/io/sjira-adapter.ts";
 import { validatePowlTree } from "../src/powl-ocel-orchestrator.ts";
+import { resolve } from "node:path";
 
 const FIXTURE_CANDIDATES = join(import.meta.dir, "fixtures/sjira/candidates.jsonl");
 
@@ -137,12 +142,15 @@ describe("adapters/igniter-sync", () => {
     expect(await court.validateWriteScope(["src/foo_generated.rs"])).toBe(1);
   });
 
-  test("post-transition requires clean git diff after sync", async () => {
+  test("post-transition refuses sync --check drift (exit 4)", async () => {
     const court = new IgniterSyncCourtAdapter({
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
-        if (cmd[0] === "git" && cmd[1] === "diff" && !cmd.includes("--cached")) {
-          return { status: 1, stdout: "M generated", stderr: "" };
+        if (cmd[0] === "mix" && cmd.includes("ggen_igniter.sync") && cmd.includes("--check")) {
+          return {
+            status: 4,
+            stdout: "ggen_igniter.sync --check: DRIFT -- 1 file(s) differ",
+            stderr: ""
+          };
         }
         return { status: 0, stdout: "", stderr: "" };
       },
@@ -150,39 +158,112 @@ describe("adapters/igniter-sync", () => {
     });
     const v = await court.verifyPostTransition("/tmp");
     expect(v.exitCode).toBe(1);
-    expect(v.diagnostics.join(" ")).toContain("git diff");
+    expect(v.diagnostics.join(" ")).toMatch(/sync --check.*exit 4|ontology↔artifact drift/);
   });
 
-  test("post-transition refuses staged drift (cached diff)", async () => {
+  test("post-transition passes when sync --check exits 0", async () => {
     const court = new IgniterSyncCourtAdapter({
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
-        if (cmd[0] === "git" && cmd[1] === "diff" && cmd.includes("--cached")) {
-          return { status: 1, stdout: "A staged", stderr: "" };
+        if (cmd[0] === "mix" && cmd.includes("--check")) {
+          return {
+            status: 0,
+            stdout: "ggen_igniter.sync --check: clean (0 drifted files)",
+            stderr: ""
+          };
         }
         return { status: 0, stdout: "", stderr: "" };
       },
       forbidGeneratedDirs: false
     });
     const v = await court.verifyPostTransition("/tmp");
-    expect(v.exitCode).toBe(1);
-    expect(v.diagnostics.join(" ")).toContain("staged");
+    expect(v.exitCode).toBe(0);
+    expect(v.standing).toBe("ALIVE");
   });
 
-  test("post-transition refuses untracked drift", async () => {
+  test("post-transition LOUD_SKIPs when requireSyncCheck=false", async () => {
+    const court = new IgniterSyncCourtAdapter({
+      requireSyncCheck: false,
+      forbidGeneratedDirs: false
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(3);
+    expect(v.standing).toBe("UNVERIFIED");
+    expect(v.diagnostics.join(" ")).toMatch(/LOUD_SKIP/);
+  });
+
+  test("noop cleanRoomSyncCmd=['true'] LOUD_SKIPs (never fake ALIVE)", async () => {
+    const court = new IgniterSyncCourtAdapter({
+      cleanRoomSyncCmd: ["true"],
+      forbidGeneratedDirs: false,
+      run: (cmd) => {
+        if (cmd[0] === "true") return { status: 0, stdout: "", stderr: "" };
+        return { status: 0, stdout: "", stderr: "" };
+      }
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(3);
+    expect(v.standing).toBe("UNVERIFIED");
+    expect(v.diagnostics.join(" ")).toMatch(/LOUD_SKIP|noop/);
+  });
+
+  test("does not invoke git diff as ontology drift gate", async () => {
+    const seen: string[][] = [];
     const court = new IgniterSyncCourtAdapter({
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stdout: "", stderr: "" };
-        if (cmd[0] === "git" && cmd[1] === "ls-files") {
-          return { status: 0, stdout: "lib/generated/leak.ex\n", stderr: "" };
+        seen.push(cmd);
+        if (cmd[0] === "mix") {
+          return { status: 0, stdout: "clean", stderr: "" };
         }
         return { status: 0, stdout: "", stderr: "" };
       },
       forbidGeneratedDirs: false
     });
+    await court.verifyPostTransition("/tmp");
+    expect(seen.some((c) => c[0] === "git")).toBe(false);
+    expect(seen.some((c) => c[0] === "mix" && c.includes("--check"))).toBe(true);
+  });
+
+  test("ggen sync --dry-run refuses non-empty planned_writes", async () => {
+    const court = new IgniterSyncCourtAdapter({
+      cleanRoomSyncCmd: ["ggen", "sync", "run", "--dry-run"],
+      forbidGeneratedDirs: false,
+      run: (cmd) => {
+        if (cmd[0] === "ggen") {
+          return {
+            status: 0,
+            stdout: JSON.stringify({ planned_writes: ["lib/generated/x.ex"] }),
+            stderr: ""
+          };
+        }
+        return { status: 0, stdout: "", stderr: "" };
+      }
+    });
     const v = await court.verifyPostTransition("/tmp");
     expect(v.exitCode).toBe(1);
-    expect(v.diagnostics.join(" ")).toContain("untracked");
+    expect(v.diagnostics.join(" ")).toMatch(/planned_writes non-empty/);
+  });
+
+  test("gitDiffDiagnostic is non-gating after Jobs/C4 pass", async () => {
+    const seen: string[][] = [];
+    const court = new IgniterSyncCourtAdapter({
+      gitDiffDiagnostic: true,
+      forbidGeneratedDirs: false,
+      run: (cmd) => {
+        seen.push(cmd);
+        if (cmd[0] === "mix") {
+          return { status: 0, stdout: "clean", stderr: "" };
+        }
+        if (cmd[0] === "git") {
+          return { status: 1, stdout: "M", stderr: "" };
+        }
+        return { status: 0, stdout: "", stderr: "" };
+      }
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(0);
+    expect(v.standing).toBe("ALIVE");
+    expect(seen.some((c) => c[0] === "git")).toBe(true);
+    expect(v.diagnostics.join(" ")).toMatch(/non-gating/);
   });
 });
 
@@ -234,7 +315,126 @@ describe("adapters/receipt-sink", () => {
     expect(result.aggregateStanding).toBe("PARTIAL_ALIVE");
     expect(result.exitCode).toBe(2);
     expect(readFileSync(result.loopReceiptPath, "utf8")).toContain("PARTIAL_ALIVE");
-    expect(readFileSync(result.dfcmPath!, "utf8")).toContain("subject_sha");
+    const dfcm = JSON.parse(readFileSync(result.dfcmPath!, "utf8")) as {
+      schema: string;
+      admit?: boolean;
+      non_admit?: boolean;
+      subject_sha?: string;
+      work_order_id?: string;
+    };
+    // Stub honesty: cycle-close DFCM is zcode.dfcm.receipt/1, not Chatman-5 / receipt/v2.
+    expect(dfcm.schema).toBe("zcode.dfcm.receipt/1");
+    expect(dfcm.admit).toBe(false);
+    expect(dfcm.non_admit).toBe(true);
+    expect(dfcm.subject_sha).toBeTruthy();
+    expect(dfcm.work_order_id).toBeUndefined();
+    expect(isDfcmStubNonAdmit(dfcm)).toBe(true);
+  });
+
+  test("TOML enforce_twin_parity=true arms twinParity.hands_free via ReceiptSink", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-parity-toml-"));
+    const toml = `
+[adapters.sjira]
+enabled = true
+enforce_twin_parity = true
+twin_parity_self_test_cmd = ["true"]
+`;
+    const doc = parseTomlDocument(toml);
+    const { receiptSink } = adapterOptionsFromTomlDoc(doc, dir);
+    expect(receiptSink.enforceTwinParity).toBe(true);
+    expect(receiptSink.twinParitySelfTestCmd).toEqual(["true"]);
+
+    const sink = new ReceiptSink({
+      ledgerPath: join(dir, "ledger.jsonl"),
+      outDir: join(dir, "out"),
+      cwd: dir,
+      ...receiptSink
+    });
+    const result = sink.closeCycle({
+      cycleId: "twin-1",
+      startedAt: new Date().toISOString(),
+      receipts: [
+        {
+          cycleId: "twin-1",
+          workOrderId: "WO-TWIN",
+          outcome: "ALIVE",
+          standing: "ALIVE",
+          sha256Receipt: "beef"
+        }
+      ]
+    });
+    const loop = JSON.parse(readFileSync(result.loopReceiptPath, "utf8")) as {
+      twinParity?: { hands_free?: string };
+      aggregateStanding?: string;
+    };
+    expect(loop.twinParity?.hands_free).toBe("self-test-ok");
+    expect(result.aggregateStanding).toBe("ALIVE");
+  });
+
+  test("workspace zcode-cli.toml enforce_twin_parity loads into receiptSink for foundry", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-parity-foundry-"));
+    const tomlPath = resolve(import.meta.dir, "../zcode-cli.toml");
+    const loaded = loadAdapterRegistryFromToml(tomlPath, { cwd: dir });
+    expect(loaded.receiptSink.enforceTwinParity).toBe(true);
+    // Default pin arms twin_parity_self_test_cmd=["true"] — foundry-cli spreads
+    // this into ReceiptSink (src/foundry-cli.ts); hands_free must auto-arm.
+    expect(loaded.receiptSink.twinParitySelfTestCmd).toEqual(["true"]);
+    const sink = new ReceiptSink({
+      ledgerPath: join(dir, "sink-ledger.jsonl"),
+      outDir: join(dir, "out"),
+      cwd: dir,
+      enforceTwinParity: loaded.receiptSink.enforceTwinParity,
+      twinParitySelfTestCmd: loaded.receiptSink.twinParitySelfTestCmd
+    });
+    const result = sink.closeCycle({
+      cycleId: "foundry-pin",
+      startedAt: new Date().toISOString(),
+      sandbox: true,
+      receipts: [
+        {
+          cycleId: "foundry-pin",
+          workOrderId: "WO-PIN",
+          outcome: "ALIVE",
+          standing: "ALIVE",
+          sha256Receipt: "pin"
+        }
+      ]
+    });
+    const loop = JSON.parse(readFileSync(result.loopReceiptPath, "utf8")) as {
+      twinParity?: { hands_free?: string };
+      aggregateStanding?: string;
+    };
+    expect(loop.twinParity?.hands_free).toBe("self-test-ok");
+    // sandbox still caps ALIVE → PARTIAL_ALIVE; twin parity no longer fail-closes.
+    expect(result.aggregateStanding).toBe("PARTIAL_ALIVE");
+  });
+
+  test("enforceTwinParity without self-test cmd fail-closes hands_free=FAILED", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-parity-nocmd-"));
+    const sink = new ReceiptSink({
+      ledgerPath: join(dir, "ledger.jsonl"),
+      outDir: join(dir, "out"),
+      cwd: dir,
+      enforceTwinParity: true
+    });
+    const result = sink.closeCycle({
+      cycleId: "twin-fail",
+      startedAt: new Date().toISOString(),
+      receipts: [
+        {
+          cycleId: "twin-fail",
+          workOrderId: "WO-TWIN",
+          outcome: "ALIVE",
+          standing: "ALIVE",
+          sha256Receipt: "cafe"
+        }
+      ]
+    });
+    const loop = JSON.parse(readFileSync(result.loopReceiptPath, "utf8")) as {
+      twinParity?: { hands_free?: string };
+    };
+    expect(loop.twinParity?.hands_free).toBe("FAILED");
+    expect(result.aggregateStanding).toBe("UNVERIFIED");
   });
 });
 

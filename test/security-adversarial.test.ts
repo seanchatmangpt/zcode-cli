@@ -258,13 +258,15 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
     const { checkReceiptIntegrity } = await import("../scripts/validate-receipts.ts");
     // Clean historical v26.9.22 receipt passes in-repo SHA + ALIVE integrity floor
     expect(checkReceiptIntegrity("receipts/v26.9.22/g0.json")).toEqual([]);
-    // Defective ZCODE-26923-01 is caught fail-closed (PR #28 integrity floor)
+    // Defective ZCODE-26923-01 is caught fail-closed (PR #28 integrity floor):
+    // nested r2 standing=ALIVE with nonzero replay exits. (Padded bogus r2.base_sha
+    // was corrected to the real post-R1 commit; BOGUS_SHA is no longer the tripwire.)
     const defectiveFindings = checkReceiptIntegrity("receipts/v26.9.23/ZCODE-26923-01.json");
     expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
-    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(false);
 
     // scripts/validate-receipts.ts accepts only --staged (no positional file filter) and scans all
-    // 27 non-partial receipts/**/*.json files via git cat-file + sequential python3 validator runs.
+    // non-partial receipts/**/*.json files via git cat-file + sequential python3 validator runs.
     const res = spawnSync(
       process.execPath,
       ["scripts/validate-receipts.ts"],

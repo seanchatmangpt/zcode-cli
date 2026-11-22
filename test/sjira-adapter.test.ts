@@ -153,69 +153,84 @@ describe("SjiraIoAdapter — igniter clean-room gate", () => {
     expect(r.ok).toBe(true);
   });
 
-  test("fails when sync non-zero", () => {
+  test("fails when sync --check non-zero (non-drift)", () => {
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 1, stderr: "sync boom", stdout: "" };
+        if (cmd[0] === "mix" && cmd.includes("--check")) {
+          return { status: 1, stderr: "sync boom", stdout: "" };
+        }
         return { status: 0, stderr: "", stdout: "" };
       }
     });
     expect(r.ok).toBe(false);
     expect(r.status).toBe("failed");
-    expect(r.detail).toContain("igniter sync");
+    expect(r.detail).toMatch(/clean-room check exited 1|sync boom/);
   });
 
-  test("fails when git diff dirty after sync", () => {
+  test("fails when sync --check reports drift (exit 4)", () => {
+    const seen: string[][] = [];
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
-        if (cmd[0] === "git" && cmd[1] === "diff" && !cmd.includes("--cached")) {
-          return { status: 1, stderr: "", stdout: "M generated/x.ex" };
+        seen.push(cmd);
+        if (cmd[0] === "mix" && cmd.includes("--check")) {
+          return {
+            status: 4,
+            stderr: "",
+            stdout: "ggen_igniter.sync --check: DRIFT -- 1 file(s) differ"
+          };
         }
         return { status: 0, stderr: "", stdout: "" };
       }
     });
     expect(r.ok).toBe(false);
-    expect(r.detail).toContain("git diff");
+    expect(r.detail).toMatch(/exit 4|ontology↔generated drift|DRIFT/);
+    expect(seen.some((c) => c[0] === "git")).toBe(false);
   });
 
-  test("fails when staged (cached) drift after sync", () => {
+  test("noop ['true'] syncCmd skips (LOUD_SKIP — never fake pass)", () => {
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,
+      syncCmd: ["true"],
       run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
-        if (cmd[0] === "git" && cmd[1] === "diff" && cmd.includes("--cached")) {
-          return { status: 1, stderr: "", stdout: "A staged.ex" };
-        }
+        if (cmd[0] === "true") return { status: 0, stderr: "", stdout: "" };
         return { status: 0, stderr: "", stdout: "" };
       }
     });
-    expect(r.ok).toBe(false);
-    expect(r.detail).toContain("staged");
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("skipped");
+    expect(r.detail).toMatch(/LOUD_SKIP|noop/);
   });
 
-  test("fails when untracked files remain after sync", () => {
+  test("ggen dry-run refuses non-empty planned_writes", () => {
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,
-      run: (cmd) => {
-        if (cmd[0] === "mix") return { status: 0, stderr: "", stdout: "" };
-        if (cmd[0] === "git" && cmd[1] === "ls-files") {
-          return { status: 0, stderr: "", stdout: "generated/new.ex\n" };
-        }
-        return { status: 0, stderr: "", stdout: "" };
-      }
+      syncCmd: ["ggen", "sync", "run", "--dry-run", "--format", "json"],
+      run: () => ({
+        status: 0,
+        stderr: "",
+        stdout: JSON.stringify({ planned_writes: ["lib/foo.ex"] })
+      })
     });
     expect(r.ok).toBe(false);
-    expect(r.detail).toContain("untracked");
+    expect(r.detail).toMatch(/planned_writes non-empty/);
   });
 
-  test("passes sync + clean tree + verifyCmd", () => {
+  test("passes sync --check exit 0 + verifyCmd", () => {
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,
       verifyCmd: "true",
-      run: () => ({ status: 0, stderr: "", stdout: "" })
+      run: (cmd) => {
+        if (cmd[0] === "mix" && cmd.includes("--check")) {
+          return {
+            status: 0,
+            stderr: "",
+            stdout: "ggen_igniter.sync --check: clean (0 drifted files)"
+          };
+        }
+        return { status: 0, stderr: "", stdout: "" };
+      }
     });
     expect(r).toEqual({ ok: true, status: "passed" });
   });

@@ -12,6 +12,7 @@ const REQUIRED_RESIDUE = [
   "src/ocel-tap.ts",
   "src/powl-ocel-orchestrator.ts",
   "src/ocel-vocab-manifest.ts",
+  "src/ui-ocel-summary.ts",
   "src/research-runtime/sa2a/ocel-feedback.ts",
   "src/gall-work.ts",
   "scripts/gen-ocel.ts",

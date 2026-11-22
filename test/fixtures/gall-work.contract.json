@@ -120,7 +120,8 @@
       "code": "no_ready_work",
       "detail": "<server reason text>"
     },
-    "standing_vocabulary": ["ALIVE", "PARTIAL_ALIVE", "BLOCKED", "BUILD_BROKEN", "UNSUPPORTED", "REFUSED", "REFUSED_CLAIM", "REFUSED_CLOSE", "REFUSED_LEASE_CONFLICT", "REFUSED_NO_FABRIC", "REFUSED_NO_HEAD", "REFUSED_PROVIDER_DISABLED", "REFUSED_PROVIDER_REGISTRY", "REFUSED_SUBJECT_MISMATCH"]
+    "standing_vocabulary": ["ALIVE", "PARTIAL_ALIVE", "BLOCKED", "BUILD_BROKEN", "UNSUPPORTED", "REFUSED", "REFUSED_CLAIM", "REFUSED_CLOSE", "REFUSED_LEASE_CONFLICT", "REFUSED_NO_FABRIC", "REFUSED_NO_HEAD", "REFUSED_PERSIST", "REFUSED_PROVIDER_DISABLED", "REFUSED_PROVIDER_REGISTRY", "REFUSED_SUBJECT_MISMATCH"],
+    "field_case": "snake_case is contract-primary (epoch_id, worker_id, final_head, runtime_exit_code, origin_authority); implementations may dual-emit camelCase aliases that MUST agree on value — never drop the snake_case primary"
   },
   "exit_codes": {
     "0": "a fabric receipt was sealed (close_candidate, refuse, or cancel_work succeeded); the epoch is terminal",

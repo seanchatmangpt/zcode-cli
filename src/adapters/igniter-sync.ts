@@ -1,6 +1,11 @@
 /**
  * Compiler-first & ggen_igniter clean-room gate.
  * Upstream-only write scope + ephemeral regeneration + purity guards.
+ *
+ * Jobs/C4 drift gate: `mix ggen_igniter.sync --check` (exit 0/4) OR
+ * `ggen sync run --dry-run` with `planned_writes: []` — never
+ * `git diff --exit-code` as refuse (optional `gitDiffDiagnostic` only).
+ * LOUD_SKIP when `requireSyncCheck: false` or noop `["true"]` stub.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -9,6 +14,20 @@ import { spawnSync } from "node:child_process";
 import { minimatch } from "./minimatch-lite.ts";
 
 import type { CourtVerdict, ExitCode, TransitionCourtAdapter } from "./types.ts";
+import { standingFromExit } from "./types.ts";
+import {
+  DEFAULT_CLEAN_ROOM_CHECK_CMD,
+  IGNITER_CHECK_DRIFT_EXIT,
+  collectGitDiffDiagnostic,
+  evaluateCleanRoomDrift
+} from "./clean-room-drift.ts";
+
+export {
+  DEFAULT_CLEAN_ROOM_CHECK_CMD,
+  IGNITER_CHECK_DRIFT_EXIT,
+  evaluateCleanRoomDrift,
+  collectGitDiffDiagnostic
+} from "./clean-room-drift.ts";
 
 export const DEFAULT_ALLOWED_MUTATION_GLOBS = [
   "ontology/**/*.ttl",
@@ -23,19 +42,32 @@ export const DEFAULT_ALLOWED_MUTATION_GLOBS = [
 
 export const DEFAULT_FORBID_DOMAIN_WALL_CLOCK = ["DateTime.utc_now", "System.os_time"];
 
+/** @deprecated Prefer DEFAULT_CLEAN_ROOM_CHECK_CMD from clean-room-drift.ts */
+export const DEFAULT_IGNITER_SYNC_CHECK_CMD = DEFAULT_CLEAN_ROOM_CHECK_CMD;
+
+/** @deprecated Prefer IGNITER_CHECK_DRIFT_EXIT from clean-room-drift.ts */
+export const IGNITER_SYNC_CHECK_DRIFT_EXIT = IGNITER_CHECK_DRIFT_EXIT;
+
 export interface IgniterSyncOptions {
   allowedMutationGlobs?: string[];
+  /**
+   * Jobs/C4 drift-gate argv. Default: `mix ggen_igniter.sync --check`.
+   * Alternate: `ggen sync run --dry-run` (require `planned_writes: []`).
+   * Noop `["true"]` → LOUD_SKIP (never fake ALIVE).
+   */
   cleanRoomSyncCmd?: string[];
-  requireGitDiffZero?: boolean;
+  /**
+   * When false, verifyPostTransition LOUD_SKIPs (exit 3) instead of running
+   * the Jobs/C4 check. Default true.
+   */
+  requireSyncCheck?: boolean;
+  /** Attach non-gating git-diff diagnostics after Jobs/C4 check (default false). */
+  gitDiffDiagnostic?: boolean;
   forbidGeneratedDirs?: boolean;
   forbidDomainWallClock?: string[];
   /** Paths (relative) to rm -rf before sync (generated trees). */
   generatedTrees?: string[];
-  /**
-   * Paths passed to `git diff --exit-code` after sync. Defaults exclude upstream
-   * ontology/query/template mutations (Gall: agents edit sources; sync must not
-   * leave generated drift).
-   */
+  /** Pathspecs for optional git-diff diagnostic only. */
   gitDiffPaths?: string[];
   run?: (cmd: string[], cwd: string) => { status: number | null; stdout: string; stderr: string };
 }
@@ -47,7 +79,8 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
       IgniterSyncOptions,
       | "allowedMutationGlobs"
       | "cleanRoomSyncCmd"
-      | "requireGitDiffZero"
+      | "requireSyncCheck"
+      | "gitDiffDiagnostic"
       | "forbidGeneratedDirs"
       | "forbidDomainWallClock"
     >
@@ -55,16 +88,20 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     IgniterSyncOptions;
 
   constructor(opts: IgniterSyncOptions = {}) {
+    const requireSyncCheck = opts.requireSyncCheck !== false;
+    const gitDiffDiagnostic = opts.gitDiffDiagnostic === true;
     this.opts = {
       allowedMutationGlobs: DEFAULT_ALLOWED_MUTATION_GLOBS,
-      cleanRoomSyncCmd: ["mix", "ggen_igniter.sync", "--yes"],
-      requireGitDiffZero: true,
+      cleanRoomSyncCmd: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      requireSyncCheck,
+      gitDiffDiagnostic,
       forbidGeneratedDirs: true,
       forbidDomainWallClock: DEFAULT_FORBID_DOMAIN_WALL_CLOCK,
       generatedTrees: [],
-      // Pathspecs: ignore upstream sources; catch generated drift only.
-      gitDiffPaths: [":(exclude)ontology", ":(exclude)queries", ":(exclude)templates", "."],
-      ...opts
+      gitDiffPaths: ["."],
+      ...opts,
+      requireSyncCheck,
+      gitDiffDiagnostic
     };
   }
 
@@ -96,6 +133,17 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
         return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
       });
 
+    if (!this.opts.requireSyncCheck) {
+      return {
+        exitCode: 3,
+        standing: standingFromExit(3),
+        diagnostics: [
+          "igniter sync --check skipped — LOUD_SKIP (requireSyncCheck=false; not a git-diff gate)"
+        ],
+        artifactDigests: digests
+      };
+    }
+
     for (const tree of this.opts.generatedTrees ?? []) {
       const rm = run(["rm", "-rf", tree], workspaceDir);
       if (rm.status !== 0) {
@@ -104,33 +152,24 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
       }
     }
 
-    const sync = run(this.opts.cleanRoomSyncCmd, workspaceDir);
-    if (sync.status !== 0) {
-      diagnostics.push(
-        `igniter sync exited ${sync.status}: ${(sync.stderr || sync.stdout).trim().slice(0, 500)}`
-      );
-      return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
+    const syncCmd = this.opts.cleanRoomSyncCmd;
+    const sync = run(syncCmd, workspaceDir);
+    digests["igniter_sync_check"] = `${sync.status}`;
+    const drift = evaluateCleanRoomDrift(syncCmd, sync);
+    diagnostics.push(...drift.diagnostics);
+    if (drift.kind !== "pass") {
+      return {
+        exitCode: drift.exitCode,
+        standing: standingFromExit(drift.exitCode),
+        diagnostics,
+        artifactDigests: digests
+      };
     }
 
-    if (this.opts.requireGitDiffZero) {
-      const paths = this.opts.gitDiffPaths ?? ["."];
-      // Fail-closed clean-room: unstaged + staged + untracked (excl. ignored).
-      // Plain `git diff` alone misses index-only and untracked drift.
-      const unstaged = run(["git", "diff", "--exit-code", "--", ...paths], workspaceDir);
-      if (unstaged.status !== 0) {
-        diagnostics.push("igniter clean-room refused: git diff --exit-code != 0 after sync (generated drift)");
-        return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
-      }
-      const staged = run(["git", "diff", "--cached", "--exit-code", "--", ...paths], workspaceDir);
-      if (staged.status !== 0) {
-        diagnostics.push("igniter clean-room refused: git diff --cached --exit-code != 0 after sync (staged drift)");
-        return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
-      }
-      const untracked = run(["git", "ls-files", "--others", "--exclude-standard", "--", ...paths], workspaceDir);
-      if (untracked.status !== 0 || (untracked.stdout || "").trim().length > 0) {
-        diagnostics.push("igniter clean-room refused: untracked files present after sync (untracked drift)");
-        return { exitCode: 1, standing: "REFUSED", diagnostics, artifactDigests: digests };
-      }
+    if (this.opts.gitDiffDiagnostic) {
+      diagnostics.push(
+        ...collectGitDiffDiagnostic(run, workspaceDir, this.opts.gitDiffPaths ?? ["."])
+      );
     }
 
     if (this.opts.forbidGeneratedDirs) {

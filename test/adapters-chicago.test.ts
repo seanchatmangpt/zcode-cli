@@ -71,10 +71,17 @@ function buildLoop(root: string, overrides: { askGate?: boolean; generatedDirty?
     runCheck: () => ({ status: 0, stdout: "capsule-stable", stderr: "" })
   });
   const igniter = new IgniterSyncCourtAdapter({
-    cleanRoomSyncCmd: ["true"],
+    // Honest sync --check stub (argv matches production gate; not ["true"]).
+    cleanRoomSyncCmd: ["mix", "ggen_igniter.sync", "--check"],
     forbidGeneratedDirs: true,
     run: (cmd, cwd) => {
-      if (cmd[0] === "true") return { status: 0, stdout: "", stderr: "" };
+      if (cmd[0] === "mix" && cmd.includes("ggen_igniter.sync") && cmd.includes("--check")) {
+        return {
+          status: 0,
+          stdout: "ggen_igniter.sync --check: clean (0 drifted files)",
+          stderr: ""
+        };
+      }
       const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8", timeout: 15_000 });
       return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
     }
@@ -115,6 +122,9 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     expect(dfcm.subject_sha).toMatch(/^[0-9a-f]{40}$/);
     expect(dfcm.authority).toBe("NONE");
     expect(dfcm.external_do_count).toBe(0);
+    expect(dfcm.admit).toBe(false);
+    expect(dfcm.non_admit).toBe(true);
+    expect(dfcm.schema).toBe("zcode.dfcm.receipt/1");
 
     // Real filesystem side effects from dry-run executor
     const ocel = readFileSync(join(root, "ocel", "cycle-1", "workflow.ocel.json"), "utf8");

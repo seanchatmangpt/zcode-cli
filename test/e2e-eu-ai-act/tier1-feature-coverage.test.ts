@@ -703,13 +703,13 @@ describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F
     expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
     const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
     expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
-    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+    // r2.base_sha corrected to real post-R1 commit; BOGUS_SHA no longer the tripwire
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(false);
 
     const rec = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
     expect(rec.exitCode).toBe(1);
     expect(rec.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
     expect(rec.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
-    expect(rec.stdout).toContain("BOGUS_SHA");
     expect(`${rec.stdout}\n${rec.stderr}`).toContain("REFUSED");
   }, 50_000);
 
@@ -821,13 +821,12 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
     expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
     const defectiveFindings = runReceiptIntegrityProbe("receipts/v26.9.23/ZCODE-26923-01.json");
     expect(defectiveFindings.some((f) => f.rule === "ALIVE_WITH_NONZERO_EXIT")).toBe(true);
-    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(true);
+    expect(defectiveFindings.some((f) => f.rule === "BOGUS_SHA")).toBe(false);
 
     const repoRes = runBunScript("scripts/validate-receipts.ts", [], { timeoutMs: 45_000 });
     expect(repoRes.exitCode).toBe(1);
     expect(repoRes.stdout).toContain("FAIL receipts/v26.9.23/ZCODE-26923-01.json");
     expect(repoRes.stdout).toContain("ALIVE_WITH_NONZERO_EXIT");
-    expect(repoRes.stdout).toContain("BOGUS_SHA");
     expect(`${repoRes.stdout}\n${repoRes.stderr}`).toContain("REFUSED");
 
     await withIsolatedWorkspace(async (ws) => {

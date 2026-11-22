@@ -27,3 +27,4 @@ target-lane*/
 workflow.ocel.json
 powl-tree.json
 replay-conformance.json
+dist/

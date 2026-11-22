@@ -1,7 +1,67 @@
 # zcode-cli.toml — ZCode CLI workspace & process-mining substrate paths
 # Equilibrium control is fully autonomic (AIMD + OCEL 2.0 service-time feedback).
+# Adapter courts: Appendix E of docs/sjira/v26.11.20/ard/ZCODE-CLI-SPEC-26.11.20.md
 
 [paths]
 castle_dir = "/Users/sac/castle"
 wasm4pm_dir = "/Users/sac/wasm4pm"
 wasm4pm_compat_dir = "/Users/sac/wasm4pm-compat"
+
+[engine]
+mode = "explore"                 # explore | exploit
+authority_ceiling = "CONSTRUCT"  # hard lock — never DO
+max_remediation_attempts = 3
+
+[adapters.sjira]
+enabled = true
+ggen_bin_env = "GGEN_BIN"
+min_ggen_ancestor = "fd4f99bbd4971fb1ca5a0f3a3a2382aaba32261e"
+candidates_env = "SJIRA_CANDIDATES"
+ledger_env = "SJIRA_LEDGER"
+out_dir_env = "SJIRA_OUT_DIR"
+forbid_tty_prompts = true
+enforce_twin_parity = true
+# Safe stub: exit 0 arms twinParity.hands_free=self-test-ok (ReceiptSink spawnSync).
+# No heavier twin court exists in-tree yet; ["true"] matches test/adapters.test.ts.
+twin_parity_self_test_cmd = ["true"]
+
+[adapters.ggen_marketplace]
+enabled = true
+enforce_pack_toml_minimal = true
+forbid_ask_queries_in_gates = true
+require_double_capsule_check = true
+forbid_consumer_packs_table = true
+
+[adapters.ggen_igniter]
+enabled = true
+allowed_mutation_globs = ["ontology/**/*.ttl", "queries/**/*.rq", "templates/**/*.eex", "templates/**/*.tera"]
+# Drift gate: process exit 0 clean / 4 drift — never git diff --exit-code
+clean_room_sync_cmd = ["mix", "ggen_igniter.sync", "--check"]
+require_sync_check = true
+forbid_generated_dirs = true
+
+[adapters.castle_publish]
+enabled = false
+require_public_anonymize_on = ["linkedin-carousel", "linkedin-newsletter", "linkedin-post", "gatekeeper-pack"]
+
+[adapters.ui_layout]
+enabled = true
+# Adapter registry key; TransitionCourtAdapter.name remains "ui-layout-court"
+name = "ui-layout-court"
+# Inherit engine max; spatial remediation never exceeds this bound
+max_remediation_attempts = 3
+# Viewport SoT (9-wide CSS px) — one list with UI_LAYOUT_VIEWPORTS / Playwright.
+# AOT Taffy (`ggen-layout-court::VIEWPORTS` / UI_LAYOUT_AOT_VIEWPORTS) stays
+# 6-wide [320,375,393,600,840,1280] as a proper subset — not a second SoT.
+viewports = [320, 375, 393, 414, 600, 768, 840, 1024, 1280]
+# Full court: `--bin layout_court` + JSON subject (interactive metrics + WCAG
+# text → compute_with). Never bare `cargo run -p ggen-layout-court --` (cargo
+# on PATH ≠ court subject; overflow falsifier false-refuse). Never production
+# `--bin overflow_viewport_sweep`. Missing bin/subject → SUBJECT_MISSING.
+# Alternate (built-in fixtures): --bin ggen-layout-court -- product
+taffy_cmd = ["cargo", "run", "-p", "ggen-layout-court", "--bin", "layout_court", "--", "fixtures/ui-layout-court/product-subject.json"]
+playwright_court_glob = "**/*.spatial-court.spec.ts"
+# After spatial PASS: mix ggen_igniter.sync --check (exit 0/4), not git diff
+require_clean_room = true
+# LOUD_SKIP (exit 3) when false / suite absent
+suite_enabled = true

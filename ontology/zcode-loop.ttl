@@ -40,7 +40,23 @@ zl:Qualifier-about_model_request a pi:Qualifier ; pi:qualifierId "about_model_re
 zl:Qualifier-by_subagent a pi:Qualifier ; pi:qualifierId "by_subagent" .
 zl:Qualifier-about_permission a pi:Qualifier ; pi:qualifierId "about_permission" .
 
+# ===== lease identity objects (stream + gall; Explore 21cd2acc) =====
+# work_order id = work_order_iri; epoch/subject/base use epoch:/subj:/base: namespaces.
+zl:ObjectType-work_order a pi:ObjectType ; pi:typeId "work_order" .
+zl:ObjectType-epoch a pi:ObjectType ; pi:typeId "epoch" .
+zl:ObjectType-subject a pi:ObjectType ; pi:typeId "subject" .
+zl:ObjectType-base a pi:ObjectType ; pi:typeId "base" .
+zl:Qualifier-on_epoch a pi:Qualifier ; pi:qualifierId "on_epoch" .
+zl:Qualifier-about_subject a pi:Qualifier ; pi:qualifierId "about_subject" .
+zl:Qualifier-about_base a pi:Qualifier ; pi:qualifierId "about_base" .
+
 # ===== event types (one per wire event) =====
+# Completeness tradeoff (discovery FILTER_BIAS, deliberate): every wire name has a
+# pi:EventType so EVENT_TYPES is a closed wire alphabet. RuntimeEvents for
+# part.delta / result are pi:Unmapped (no MappingRule) — the Tap drops them and
+# they never enter the sealed log. Prefer this over deleting the EventTypes
+# (would hide known wire names) or mapping them (would flood the log with
+# token deltas / duplicate the turn.completed outcome envelope).
 zl:EventType-session-created a pi:EventType ; pi:typeId "session_created" .
 zl:EventType-session-resumed a pi:EventType ; pi:typeId "session_resumed" .
 zl:EventType-session-updated a pi:EventType ; pi:typeId "session_updated" .
@@ -54,7 +70,8 @@ zl:EventType-turn-failed a pi:EventType ; pi:typeId "turn_failed" .
 zl:EventType-message-upserted a pi:EventType ; pi:typeId "message_upserted" .
 zl:EventType-message-removed a pi:EventType ; pi:typeId "message_removed" .
 zl:EventType-part-started a pi:EventType ; pi:typeId "part_started" .
-zl:EventType-part-delta a pi:EventType ; pi:typeId "part_delta" .
+zl:EventType-part-delta a pi:EventType ; pi:typeId "part_delta" ;
+  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits part_delta into the sealed log (see unmappedReason on RuntimeEvent-*-part-delta)." .
 zl:EventType-part-upserted a pi:EventType ; pi:typeId "part_upserted" .
 zl:EventType-part-removed a pi:EventType ; pi:typeId "part_removed" .
 zl:EventType-model-streaming a pi:EventType ; pi:typeId "model_streaming" .
@@ -66,7 +83,8 @@ zl:EventType-userInput-resolved a pi:EventType ; pi:typeId "user_input_resolved"
 zl:EventType-checkpoint-created a pi:EventType ; pi:typeId "checkpoint_created" .
 zl:EventType-rewind-triggered a pi:EventType ; pi:typeId "rewind_triggered" .
 zl:EventType-streamRecovery-updated a pi:EventType ; pi:typeId "stream_recovery_updated" .
-zl:EventType-result a pi:EventType ; pi:typeId "result" .
+zl:EventType-result a pi:EventType ; pi:typeId "result" ;
+  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits result into the sealed log (see unmappedReason on RuntimeEvent-Stream-result)." .
 
 # ===== e2o relations (path into the raw record) =====
 zl:Rel-Stream-session a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-session ; pi:hasQualifier zl:Qualifier-in_session ; pi:objectIdPath "sessionId" .
@@ -81,154 +99,162 @@ zl:Rel-App-tool_call a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_
 zl:Rel-App-model_request a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-model_request ; pi:hasQualifier zl:Qualifier-about_model_request ; pi:objectIdPath "params.payload.requestId" .
 zl:Rel-App-subagent a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subagent ; pi:hasQualifier zl:Qualifier-by_subagent ; pi:objectIdPath "params.payload.agentId" .
 zl:Rel-App-permission a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-permission ; pi:hasQualifier zl:Qualifier-about_permission ; pi:objectIdPath "params.payload.requestId" .
+zl:Rel-Stream-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_iri" .
+zl:Rel-Stream-epoch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-epoch ; pi:hasQualifier zl:Qualifier-on_epoch ; pi:objectIdPath "epoch" .
+zl:Rel-Stream-subject a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subject ; pi:hasQualifier zl:Qualifier-about_subject ; pi:objectIdPath "subject" .
+zl:Rel-Stream-base a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-base ; pi:hasQualifier zl:Qualifier-about_base ; pi:objectIdPath "base" .
+zl:Rel-App-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "params.work_order_iri" .
+zl:Rel-App-epoch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-epoch ; pi:hasQualifier zl:Qualifier-on_epoch ; pi:objectIdPath "params.epoch" .
+zl:Rel-App-subject a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subject ; pi:hasQualifier zl:Qualifier-about_subject ; pi:objectIdPath "params.subject" .
+zl:Rel-App-base a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-base ; pi:hasQualifier zl:Qualifier-about_base ; pi:objectIdPath "params.base" .
 
 # ===== mapping rules and runtime events =====
 zl:Rule-Stream-session-created a pi:MappingRule ; pi:ruleId "stream-session_created" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "session.created" ;
-  pi:emitsEventType zl:EventType-session-created ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-session-created ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-session-created a pi:RuntimeEvent ; pi:runtimeEventName "session.created" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-session-resumed a pi:MappingRule ; pi:ruleId "stream-session_resumed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "session.resumed" ;
-  pi:emitsEventType zl:EventType-session-resumed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-session-resumed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-session-resumed a pi:RuntimeEvent ; pi:runtimeEventName "session.resumed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-session-updated a pi:MappingRule ; pi:ruleId "stream-session_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "session.updated" ;
-  pi:emitsEventType zl:EventType-session-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-model_request , zl:Rel-Stream-subagent .
+  pi:emitsEventType zl:EventType-session-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-model_request , zl:Rel-Stream-subagent , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-session-updated a pi:RuntimeEvent ; pi:runtimeEventName "session.updated" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-session-titleUpdated a pi:MappingRule ; pi:ruleId "stream-session_title_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "session.titleUpdated" ;
-  pi:emitsEventType zl:EventType-session-titleUpdated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-session-titleUpdated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-session-titleUpdated a pi:RuntimeEvent ; pi:runtimeEventName "session.titleUpdated" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-session-closed a pi:MappingRule ; pi:ruleId "stream-session_closed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "session.closed" ;
-  pi:emitsEventType zl:EventType-session-closed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-session-closed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-session-closed a pi:RuntimeEvent ; pi:runtimeEventName "session.closed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-turn-started a pi:MappingRule ; pi:ruleId "stream-turn_started" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "turn.started" ;
-  pi:emitsEventType zl:EventType-turn-started ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-turn-started ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-turn-started a pi:RuntimeEvent ; pi:runtimeEventName "turn.started" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-turn-steerQueued a pi:MappingRule ; pi:ruleId "stream-turn_steer_queued" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "turn.steerQueued" ;
-  pi:emitsEventType zl:EventType-turn-steerQueued ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-turn-steerQueued ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-turn-steerQueued a pi:RuntimeEvent ; pi:runtimeEventName "turn.steerQueued" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-turn-steerDrained a pi:MappingRule ; pi:ruleId "stream-turn_steer_drained" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "turn.steerDrained" ;
-  pi:emitsEventType zl:EventType-turn-steerDrained ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-turn-steerDrained ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-turn-steerDrained a pi:RuntimeEvent ; pi:runtimeEventName "turn.steerDrained" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-turn-completed a pi:MappingRule ; pi:ruleId "stream-turn_completed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "turn.completed" ;
-  pi:emitsEventType zl:EventType-turn-completed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-turn-completed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-turn-completed a pi:RuntimeEvent ; pi:runtimeEventName "turn.completed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-turn-failed a pi:MappingRule ; pi:ruleId "stream-turn_failed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "turn.failed" ;
-  pi:emitsEventType zl:EventType-turn-failed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-turn-failed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-turn-failed a pi:RuntimeEvent ; pi:runtimeEventName "turn.failed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-message-upserted a pi:MappingRule ; pi:ruleId "stream-message_upserted" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "message.upserted" ;
-  pi:emitsEventType zl:EventType-message-upserted ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-message-upserted ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-message-upserted a pi:RuntimeEvent ; pi:runtimeEventName "message.upserted" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-message-removed a pi:MappingRule ; pi:ruleId "stream-message_removed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "message.removed" ;
-  pi:emitsEventType zl:EventType-message-removed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-message-removed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-message-removed a pi:RuntimeEvent ; pi:runtimeEventName "message.removed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-part-started a pi:MappingRule ; pi:ruleId "stream-part_started" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "part.started" ;
-  pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-part-started a pi:RuntimeEvent ; pi:runtimeEventName "part.started" ; pi:emittedBy zl:Source-StreamJson .
-zl:RuntimeEvent-Stream-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "token-level content delta; the surrounding part.upserted and tool.updated events carry the process step" .
+zl:RuntimeEvent-Stream-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "token-level content delta; surrounding part.upserted/tool.updated carry the process step. EventType-part-delta kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-Stream-part-upserted a pi:MappingRule ; pi:ruleId "stream-part_upserted" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "part.upserted" ;
-  pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-part-upserted a pi:RuntimeEvent ; pi:runtimeEventName "part.upserted" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-part-removed a pi:MappingRule ; pi:ruleId "stream-part_removed" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "part.removed" ;
-  pi:emitsEventType zl:EventType-part-removed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-part-removed ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-part-removed a pi:RuntimeEvent ; pi:runtimeEventName "part.removed" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-model-streaming a pi:MappingRule ; pi:ruleId "stream-model_streaming" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "model.streaming" ;
-  pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-model-streaming a pi:RuntimeEvent ; pi:runtimeEventName "model.streaming" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-tool-updated a pi:MappingRule ; pi:ruleId "stream-tool_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "tool.updated" ;
-  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call .
+  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-tool-updated a pi:RuntimeEvent ; pi:runtimeEventName "tool.updated" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-permission-requested a pi:MappingRule ; pi:ruleId "stream-permission_requested" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "permission.requested" ;
-  pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission .
+  pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-permission-requested a pi:RuntimeEvent ; pi:runtimeEventName "permission.requested" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-permission-resolved a pi:MappingRule ; pi:ruleId "stream-permission_resolved" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "permission.resolved" ;
-  pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission .
+  pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-permission-resolved a pi:RuntimeEvent ; pi:runtimeEventName "permission.resolved" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-userInput-requested a pi:MappingRule ; pi:ruleId "stream-user_input_requested" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "userInput.requested" ;
-  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission .
+  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-userInput-requested a pi:RuntimeEvent ; pi:runtimeEventName "userInput.requested" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-userInput-resolved a pi:MappingRule ; pi:ruleId "stream-user_input_resolved" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "userInput.resolved" ;
-  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission .
+  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-userInput-resolved a pi:RuntimeEvent ; pi:runtimeEventName "userInput.resolved" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-checkpoint-created a pi:MappingRule ; pi:ruleId "stream-checkpoint_created" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "checkpoint.created" ;
-  pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-checkpoint-created a pi:RuntimeEvent ; pi:runtimeEventName "checkpoint.created" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-rewind-triggered a pi:MappingRule ; pi:ruleId "stream-rewind_triggered" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "rewind.triggered" ;
-  pi:emitsEventType zl:EventType-rewind-triggered ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn .
+  pi:emitsEventType zl:EventType-rewind-triggered ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-rewind-triggered a pi:RuntimeEvent ; pi:runtimeEventName "rewind.triggered" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-streamRecovery-updated a pi:MappingRule ; pi:ruleId "stream-stream_recovery_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "streamRecovery.updated" ;
-  pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call .
+  pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-streamRecovery-updated a pi:RuntimeEvent ; pi:runtimeEventName "streamRecovery.updated" ; pi:emittedBy zl:Source-StreamJson .
-zl:RuntimeEvent-Stream-result a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "result" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "end-of-run summary envelope; duplicates turn.completed and adds no process step" .
+zl:RuntimeEvent-Stream-result a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "result" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "end-of-run summary envelope; duplicates turn.completed and adds no process step. EventType-result kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-App-session-created a pi:MappingRule ; pi:ruleId "app-session_created" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.created" ;
-  pi:emitsEventType zl:EventType-session-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-session-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-created a pi:RuntimeEvent ; pi:runtimeEventName "session.created" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-session-resumed a pi:MappingRule ; pi:ruleId "app-session_resumed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.resumed" ;
-  pi:emitsEventType zl:EventType-session-resumed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-session-resumed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-resumed a pi:RuntimeEvent ; pi:runtimeEventName "session.resumed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-session-updated a pi:MappingRule ; pi:ruleId "app-session_updated" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.updated" ;
-  pi:emitsEventType zl:EventType-session-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-model_request , zl:Rel-App-subagent .
+  pi:emitsEventType zl:EventType-session-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-model_request , zl:Rel-App-subagent , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-updated a pi:RuntimeEvent ; pi:runtimeEventName "session.updated" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-session-titleUpdated a pi:MappingRule ; pi:ruleId "app-session_title_updated" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.titleUpdated" ;
-  pi:emitsEventType zl:EventType-session-titleUpdated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-session-titleUpdated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-titleUpdated a pi:RuntimeEvent ; pi:runtimeEventName "session.titleUpdated" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-session-closed a pi:MappingRule ; pi:ruleId "app-session_closed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.closed" ;
-  pi:emitsEventType zl:EventType-session-closed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-session-closed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-closed a pi:RuntimeEvent ; pi:runtimeEventName "session.closed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-turn-started a pi:MappingRule ; pi:ruleId "app-turn_started" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "turn.started" ;
-  pi:emitsEventType zl:EventType-turn-started ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-turn-started ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-turn-started a pi:RuntimeEvent ; pi:runtimeEventName "turn.started" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-turn-steerQueued a pi:MappingRule ; pi:ruleId "app-turn_steer_queued" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "turn.steerQueued" ;
-  pi:emitsEventType zl:EventType-turn-steerQueued ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-turn-steerQueued ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-turn-steerQueued a pi:RuntimeEvent ; pi:runtimeEventName "turn.steerQueued" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-turn-steerDrained a pi:MappingRule ; pi:ruleId "app-turn_steer_drained" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "turn.steerDrained" ;
-  pi:emitsEventType zl:EventType-turn-steerDrained ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-turn-steerDrained ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-turn-steerDrained a pi:RuntimeEvent ; pi:runtimeEventName "turn.steerDrained" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-turn-completed a pi:MappingRule ; pi:ruleId "app-turn_completed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "turn.completed" ;
-  pi:emitsEventType zl:EventType-turn-completed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-turn-completed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-turn-completed a pi:RuntimeEvent ; pi:runtimeEventName "turn.completed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-turn-failed a pi:MappingRule ; pi:ruleId "app-turn_failed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "turn.failed" ;
-  pi:emitsEventType zl:EventType-turn-failed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-turn-failed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-turn-failed a pi:RuntimeEvent ; pi:runtimeEventName "turn.failed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-message-upserted a pi:MappingRule ; pi:ruleId "app-message_upserted" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "message.upserted" ;
-  pi:emitsEventType zl:EventType-message-upserted ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-message-upserted ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-message-upserted a pi:RuntimeEvent ; pi:runtimeEventName "message.upserted" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-message-removed a pi:MappingRule ; pi:ruleId "app-message_removed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "message.removed" ;
-  pi:emitsEventType zl:EventType-message-removed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-message-removed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-message-removed a pi:RuntimeEvent ; pi:runtimeEventName "message.removed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-part-started a pi:MappingRule ; pi:ruleId "app-part_started" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "part.started" ;
-  pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-part-started a pi:RuntimeEvent ; pi:runtimeEventName "part.started" ; pi:emittedBy zl:Source-AppServer .
-zl:RuntimeEvent-App-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-AppServer ; pi:unmappedReason "token-level content delta; the surrounding part.upserted and tool.updated events carry the process step" .
+zl:RuntimeEvent-App-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-AppServer ; pi:unmappedReason "token-level content delta; surrounding part.upserted/tool.updated carry the process step. EventType-part-delta kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-App-part-upserted a pi:MappingRule ; pi:ruleId "app-part_upserted" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "part.upserted" ;
-  pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-part-upserted a pi:RuntimeEvent ; pi:runtimeEventName "part.upserted" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-part-removed a pi:MappingRule ; pi:ruleId "app-part_removed" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "part.removed" ;
-  pi:emitsEventType zl:EventType-part-removed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-part-removed ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-part-removed a pi:RuntimeEvent ; pi:runtimeEventName "part.removed" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-model-streaming a pi:MappingRule ; pi:ruleId "app-model_streaming" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "model.streaming" ;
-  pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-model-streaming a pi:RuntimeEvent ; pi:runtimeEventName "model.streaming" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-tool-updated a pi:MappingRule ; pi:ruleId "app-tool_updated" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "tool.updated" ;
-  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call .
+  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-tool-updated a pi:RuntimeEvent ; pi:runtimeEventName "tool.updated" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-permission-requested a pi:MappingRule ; pi:ruleId "app-permission_requested" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "permission.requested" ;
-  pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission .
+  pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-permission-requested a pi:RuntimeEvent ; pi:runtimeEventName "permission.requested" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-permission-resolved a pi:MappingRule ; pi:ruleId "app-permission_resolved" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "permission.resolved" ;
-  pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission .
+  pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-permission-resolved a pi:RuntimeEvent ; pi:runtimeEventName "permission.resolved" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-userInput-requested a pi:MappingRule ; pi:ruleId "app-user_input_requested" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "userInput.requested" ;
-  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission .
+  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-userInput-requested a pi:RuntimeEvent ; pi:runtimeEventName "userInput.requested" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-userInput-resolved a pi:MappingRule ; pi:ruleId "app-user_input_resolved" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "userInput.resolved" ;
-  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission .
+  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-userInput-resolved a pi:RuntimeEvent ; pi:runtimeEventName "userInput.resolved" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-checkpoint-created a pi:MappingRule ; pi:ruleId "app-checkpoint_created" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "checkpoint.created" ;
-  pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-checkpoint-created a pi:RuntimeEvent ; pi:runtimeEventName "checkpoint.created" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-rewind-triggered a pi:MappingRule ; pi:ruleId "app-rewind_triggered" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "rewind.triggered" ;
-  pi:emitsEventType zl:EventType-rewind-triggered ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn .
+  pi:emitsEventType zl:EventType-rewind-triggered ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-rewind-triggered a pi:RuntimeEvent ; pi:runtimeEventName "rewind.triggered" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-streamRecovery-updated a pi:MappingRule ; pi:ruleId "app-stream_recovery_updated" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "streamRecovery.updated" ;
-  pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call .
+  pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-streamRecovery-updated a pi:RuntimeEvent ; pi:runtimeEventName "streamRecovery.updated" ; pi:emittedBy zl:Source-AppServer .
 
 # ===== execution-provider / worker lifecycle (ALOOP vocabulary, gall-work hook) =====
@@ -236,11 +262,12 @@ zl:RuntimeEvent-App-streamRecovery-updated a pi:RuntimeEvent ; pi:runtimeEventNa
 # lifecycle transition: {event, id, ts, epoch_id, worker_id, ...}. The dotted
 # sourceEvent names are the ALOOP canonical verbs; the OCEL event type ids are
 # their snake_case projections, matching the repo convention.
+# work_order object id is work_order_iri (sjira IRI); epoch/subject/base are
+# distinct E2O targets — never wo:${epoch} (Explore 21cd2acc).
 zl:Source-GallWorkHook a pi:EventSource ; pi:sourceId "gall_work" ; pi:sourceKind "hook" ;
   pi:nameField "event" ; pi:idField "id" ; pi:timeField "ts" ; pi:chainPolicy zl:ChainPolicy ;
   rdfs:comment "gall-work orchestrator lifecycle: provider selection, worker claim, execution crash, receipt persistence, falsifier run, provider replacement, stale-lease reobservation (ALOOP-ZCODE-DOGFOOD-001)" .
 
-zl:ObjectType-work_order a pi:ObjectType ; pi:typeId "work_order" .
 zl:ObjectType-lease a pi:ObjectType ; pi:typeId "lease" .
 zl:ObjectType-provider a pi:ObjectType ; pi:typeId "provider" .
 zl:ObjectType-worker a pi:ObjectType ; pi:typeId "worker" .
@@ -254,7 +281,10 @@ zl:Qualifier-on_lease a pi:Qualifier ; pi:qualifierId "on_lease" .
 zl:Qualifier-origin_authority a pi:Qualifier ; pi:qualifierId "originAuthority" .
 zl:Qualifier-replaces_from a pi:Qualifier ; pi:qualifierId "replaces_from" .
 
-zl:Rel-Gall-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_id" .
+zl:Rel-Gall-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_iri" .
+zl:Rel-Gall-epoch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-epoch ; pi:hasQualifier zl:Qualifier-on_epoch ; pi:objectIdPath "epoch" .
+zl:Rel-Gall-subject a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subject ; pi:hasQualifier zl:Qualifier-about_subject ; pi:objectIdPath "subject" .
+zl:Rel-Gall-base a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-base ; pi:hasQualifier zl:Qualifier-about_base ; pi:objectIdPath "base" .
 zl:Rel-Gall-provider a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-provider ; pi:hasQualifier zl:Qualifier-provider ; pi:objectIdPath "provider" .
 zl:Rel-Gall-worker a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-worker ; pi:hasQualifier zl:Qualifier-worker ; pi:objectIdPath "worker" .
 zl:Rel-Gall-receipt a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-receipt ; pi:hasQualifier zl:Qualifier-receipt ; pi:objectIdPath "receipt" .
@@ -271,25 +301,25 @@ zl:EventType-falsifier-run a pi:EventType ; pi:typeId "falsifier_run" .
 zl:EventType-reobserve a pi:EventType ; pi:typeId "reobserve" .
 
 zl:Rule-Gall-provider-select a pi:MappingRule ; pi:ruleId "gall-provider_select" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "provider.select" ;
-  pi:emitsEventType zl:EventType-provider-select ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+  pi:emitsEventType zl:EventType-provider-select ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base , zl:Rel-Gall-authority .
 zl:RuntimeEvent-Gall-provider-select a pi:RuntimeEvent ; pi:runtimeEventName "provider.select" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-provider-replace a pi:MappingRule ; pi:ruleId "gall-provider_replace" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "provider.replace" ;
-  pi:emitsEventType zl:EventType-provider-replace ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-replaces-from , zl:Rel-Gall-work_order .
+  pi:emitsEventType zl:EventType-provider-replace ; pi:hasRelation zl:Rel-Gall-provider , zl:Rel-Gall-replaces-from , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base .
 zl:RuntimeEvent-Gall-provider-replace a pi:RuntimeEvent ; pi:runtimeEventName "provider.replace" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-worker-claim a pi:MappingRule ; pi:ruleId "gall-worker_claim" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "worker.claim" ;
-  pi:emitsEventType zl:EventType-worker-claim ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+  pi:emitsEventType zl:EventType-worker-claim ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base , zl:Rel-Gall-authority .
 zl:RuntimeEvent-Gall-worker-claim a pi:RuntimeEvent ; pi:runtimeEventName "worker.claim" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-execution-crash a pi:MappingRule ; pi:ruleId "gall-execution_crash" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "execution.crash" ;
-  pi:emitsEventType zl:EventType-execution-crash ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order .
+  pi:emitsEventType zl:EventType-execution-crash ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base .
 zl:RuntimeEvent-Gall-execution-crash a pi:RuntimeEvent ; pi:runtimeEventName "execution.crash" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-receipt-persist a pi:MappingRule ; pi:ruleId "gall-receipt_persist" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "receipt.persist" ;
-  pi:emitsEventType zl:EventType-receipt-persist ; pi:hasRelation zl:Rel-Gall-receipt , zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-authority .
+  pi:emitsEventType zl:EventType-receipt-persist ; pi:hasRelation zl:Rel-Gall-receipt , zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base , zl:Rel-Gall-authority .
 zl:RuntimeEvent-Gall-receipt-persist a pi:RuntimeEvent ; pi:runtimeEventName "receipt.persist" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-falsifier-run a pi:MappingRule ; pi:ruleId "gall-falsifier_run" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "falsifier.run" ;
-  pi:emitsEventType zl:EventType-falsifier-run ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order .
+  pi:emitsEventType zl:EventType-falsifier-run ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-worker , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base .
 zl:RuntimeEvent-Gall-falsifier-run a pi:RuntimeEvent ; pi:runtimeEventName "falsifier.run" ; pi:emittedBy zl:Source-GallWorkHook .
 zl:Rule-Gall-reobserve a pi:MappingRule ; pi:ruleId "gall-reobserve" ; pi:fromSource zl:Source-GallWorkHook ; pi:sourceEvent "reobserve" ;
-  pi:emitsEventType zl:EventType-reobserve ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order .
+  pi:emitsEventType zl:EventType-reobserve ; pi:hasRelation zl:Rel-Gall-lease , zl:Rel-Gall-provider , zl:Rel-Gall-work_order , zl:Rel-Gall-epoch , zl:Rel-Gall-subject , zl:Rel-Gall-base .
 zl:RuntimeEvent-Gall-reobserve a pi:RuntimeEvent ; pi:runtimeEventName "reobserve" ; pi:emittedBy zl:Source-GallWorkHook .
 
 # ===== internal enum W -> wire projection (documentation of what each wire event folds) =====
@@ -343,6 +373,7 @@ zl:Internal-ToolBatchComplete a zl:InternalEvent ; zl:internalName "tool_batch_c
 zl:Internal-BackgroundTaskStarted a zl:InternalEvent ; zl:internalName "background_task_started" ; zl:foldsToWire "session.updated" .
 zl:Internal-BackgroundTaskUpdated a zl:InternalEvent ; zl:internalName "background_task_updated" ; zl:foldsToWire "session.updated" .
 zl:Internal-BackgroundTaskCompleted a zl:InternalEvent ; zl:internalName "background_task_completed" ; zl:foldsToWire "session.updated" .
+zl:Internal-DynamicWorkflowRunProgress a zl:InternalEvent ; zl:internalName "dynamic_workflow_run_progress" ; zl:foldsToWire "session.updated" .
 zl:Internal-PermissionRequested a zl:InternalEvent ; zl:internalName "permission_requested" ; zl:foldsToWire "permission.requested" .
 zl:Internal-PermissionResolved a zl:InternalEvent ; zl:internalName "permission_resolved" ; zl:foldsToWire "permission.resolved" .
 zl:Internal-PermissionDenied a zl:InternalEvent ; zl:internalName "permission_denied" ; zl:foldsToWire "permission.resolved" .
@@ -372,7 +403,6 @@ zl:Internal-Interrupt a zl:InternalEvent ; zl:internalName "interrupt" ; zl:fold
 zl:Internal-Cancel a zl:InternalEvent ; zl:internalName "cancel" ; zl:foldsToWire "session.updated" .
 zl:Internal-Resume a zl:InternalEvent ; zl:internalName "resume" ; zl:foldsToWire "session.updated" .
 zl:Internal-Error a zl:InternalEvent ; zl:internalName "error" ; zl:foldsToWire "session.updated" .
-zl:Internal-DynamicWorkflowRunProgress a zl:InternalEvent ; zl:internalName "dynamic_workflow_run_progress" ; zl:foldsToWire "session.updated" .
 
 # ===== loop states: turn machine. Transition names equal OCEL event type ids, so replay folds the log. =====
 zl:TurnMachine a st:Machine ; st:machineName "ZcodeTurn" ; st:initial zl:TurnIdle .
@@ -394,7 +424,6 @@ ex:ReceiptEntryShape a sh:NodeShape ;
     [ sh:path ex:standing ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:subject ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:action ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
-    [ sh:path ex:pending_ref ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] ,
     [ sh:path ex:hash ; sh:datatype xsd:string ; sp:isPrimaryOutput true ] .
 zl:ReceiptEntry a sp:SchemaModel ; sp:className "ReceiptEntry" ; sp:derivedFromShape ex:ReceiptEntryShape .
 ex:OcelEventShape a sh:NodeShape ;

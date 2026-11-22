@@ -1204,8 +1204,8 @@ The core orchestrator accepts only `PowlNode` + `TransitionExecutor`. External w
 + SJIRA_CANDIDATES (.jsonl)          AIMD + bin/zcode.js                     (ledger.jsonl)
                                               │                                   │
                                    verifyIgniterCleanRoom                         ▼
-                                   (mix ggen_igniter.sync                         loop_receipt.json
-                                    && git diff --exit-code)                      + OCEL 2.0
+                                   (mix ggen_igniter.sync --check                  loop_receipt.json
+                                    exit 0 clean / 4 drift)                       + OCEL 2.0
                                               │                                   │
                                               ▼                                   ▼
                                    standing honesty cap                   sjira complete /
@@ -1264,10 +1264,13 @@ Wire types (required fields):
 
 When `candidate.requiresIgniterCleanRoom === true`:
 
-1. Run `mix ggen_igniter.sync` (cwd = workspace).
-2. Assert `git diff --exit-code == 0`.
-3. Optionally run `candidate.verifyCmd`.
-4. On failure → transition `REFUSED` with detail; do **not** append `ALIVE`.
+1. Run Jobs/C4 drift gate (cwd = workspace), **either**:
+   - `mix ggen_igniter.sync --check` — process exit **0** (clean); exit **4** = ontology↔artifact drift → refuse; **or**
+   - `ggen sync run --dry-run` — JSON stdout must carry `planned_writes: []` (non-empty → refuse).
+2. Optionally run `candidate.verifyCmd`.
+3. On failure → transition `REFUSED` with detail; do **not** append `ALIVE`.
+
+Do **not** use `git diff --exit-code == 0` as the ontology drift gate (clean index ≠ ontology match). `git diff` may appear only as a non-gating diagnostic. Documented LOUD_SKIP (exit 3) applies when the sync-check suite is not in force or when a noop `["true"]` stub is injected (never fake ALIVE).
 
 Agent prompts for such work orders MUST instruct mutation of upstream `.ttl` / `.eex` / `.tera` only — never compiler-emitted trees that `ggen_igniter.sync` overwrites.
 
@@ -1298,7 +1301,7 @@ Treat Appendix D as **E4.1** (optional): lands beside E4 OCEL/autonomic loop. Do
 
 ### E.1 Design Rule
 
-`zcode-cli` **authority ceiling is `CONSTRUCT`**. Protected DO (Seat AS-01 / BRCE WebAuthn seals, live treasury actuation) is never held by this process. Ecosystem-specific rules (sjira frontier I/O, marketplace qualification, igniter clean-room, castle publish redaction) are isolated behind four adapters. Core remains `PowlNode` + AIMD + OCEL only.
+`zcode-cli` **authority ceiling is `CONSTRUCT`**. Protected DO (Seat AS-01 / BRCE WebAuthn seals, live treasury actuation) is never held by this process. Ecosystem-specific rules (sjira frontier I/O, marketplace qualification, igniter clean-room, castle publish redaction, mobile UI spatial courts) are isolated behind adapters. Core remains `PowlNode` + AIMD + OCEL only.
 
 ```text
 WorkOrderSourceAdapter.ingestFrontier() ──► POWL PartialOrder
@@ -1311,6 +1314,7 @@ executeWorkflowNet / bin/zcode.js                  [CONSTRUCT only]
         │
         ▼
 TransitionCourtAdapter.verifyPostTransition(cwd)   [post]
+  (marketplace | igniter | castle | ui-layout-court)
         │
         ▼
 WorkOrderSourceAdapter.recordOutcome + ReceiptSink [honest standing]
@@ -1338,15 +1342,18 @@ export interface TransitionCourtAdapter {
 }
 ```
 
+`UiLayoutCourtAdapter` (`name = "ui-layout-court"`) implements `TransitionCourtAdapter` unchanged — spatial verdicts map through the same `ExitCode` / `standingFromExit` seam as marketplace and igniter courts.
+
 ### E.3 Adapter Modules
 
 | Module | Role | Hard rules |
 |---|---|---|
 | `src/adapters/sjira-io.ts` | Frontier ingress + ledger egress | Absolute `GGEN_BIN` (no PATH); ban `--authority` / TTY prompts; optional hands-free ancestor `fd4f99bbd…`; JSONL → `PartialOrder` |
 | `src/adapters/marketplace-court.ts` | Pack qualification | Minimal `pack.toml` keys; refuse `ASK` gates; public-ontology scan; `marketplace.py check` ×2 identical digests; refuse consumer `[packs.*]` (FM-CONFIG-101) |
-| `src/adapters/igniter-sync.ts` | Compiler-first clean-room | Allowlist mutation globs (`.ttl`/`.rq`/`.eex`/`.tera`); `rm -rf` generated trees + sync + `git diff --exit-code`; forbid `generated/` dirs; forbid domain wall-clock |
+| `src/adapters/igniter-sync.ts` | Compiler-first clean-room | Allowlist mutation globs (`.ttl`/`.rq`/`.eex`/`.tera`); `rm -rf` generated trees + Jobs/C4 (`mix ggen_igniter.sync --check` exit 0/4 **or** `ggen sync run --dry-run` with `planned_writes:[]`); forbid `generated/` dirs; forbid domain wall-clock; LOUD_SKIP when `require_sync_check = false` or noop `["true"]`; git-diff optional diagnostic only |
 | `src/adapters/receipt-sink.ts` | Honest standing + dual receipt | Exit taxonomy 0/1/2/3; never promote sandbox → ALIVE; `ledger.jsonl` + `loop_receipt.json` + optional DFCM (5 Chatman fields @ HEAD) |
 | `src/adapters/castle-publish.ts` | Optional publish redaction court | Require `--public-anonymize` on linkedin/gatekeeper targets; loud skip (exit 3) when argv unset |
+| `src/adapters/ui-layout-court.ts` | Mobile UI spatial court (Zero-HITL) | Taffy AOT pre-flight + Playwright rRLG/WCAG/Gestalt post-checks; Jobs/C4 clean-room (`--check` / `planned_writes:[]`); spatial defects → exit `1` with remediation capped at `max_remediation_attempts = 3`; missing binaries → exit `2`; suite disabled / noop stub → exit `3` |
 
 `src/io/sjira-adapter.ts` remains the JSONL/POWL primitive library; `SjiraWorkOrderSource` wraps it behind `WorkOrderSourceAdapter`.
 
@@ -1367,6 +1374,8 @@ ledger_env = "SJIRA_LEDGER"
 out_dir_env = "SJIRA_OUT_DIR"
 forbid_tty_prompts = true
 enforce_twin_parity = true
+# Safe stub arms twinParity.hands_free; no heavier twin court in-tree yet
+twin_parity_self_test_cmd = ["true"]
 
 [adapters.ggen_marketplace]
 enabled = true
@@ -1378,14 +1387,33 @@ forbid_consumer_packs_table = true
 [adapters.ggen_igniter]
 enabled = true
 allowed_mutation_globs = ["ontology/**/*.ttl", "queries/**/*.rq", "templates/**/*.eex", "templates/**/*.tera"]
-clean_room_sync_cmd = ["mix", "ggen_igniter.sync", "--yes"]
-require_git_diff_zero = true
+# Drift gate: process exit 0 clean / 4 drift — never git diff --exit-code
+clean_room_sync_cmd = ["mix", "ggen_igniter.sync", "--check"]
+require_sync_check = true
 forbid_generated_dirs = true
 
 [adapters.castle_publish]
 enabled = false
 require_public_anonymize_on = ["linkedin-carousel", "linkedin-newsletter", "linkedin-post", "gatekeeper-pack"]
+
+[adapters.ui_layout]
+enabled = true
+# Adapter registry key; TransitionCourtAdapter.name remains "ui-layout-court"
+name = "ui-layout-court"
+# Inherit engine max; spatial remediation never exceeds this bound
+max_remediation_attempts = 3
+# Canonical viewport sweep (CSS px); Playwright court may extend the set
+viewports = [320, 375, 393, 414, 600, 768, 840, 1024, 1280]
+# Stub-invoke paths — missing binary ⇒ ExitCode 2 (SUBJECT_MISSING), never fake ALIVE
+taffy_cmd = ["cargo", "run", "-p", "ggen-layout-court", "--"]
+playwright_court_glob = "**/*.spatial-court.spec.ts"
+# After spatial PASS: mix ggen_igniter.sync --check (exit 0/4), not git diff
+require_clean_room = true
+# LOUD_SKIP (exit 3) when false / suite absent
+suite_enabled = true
 ```
+
+`[engine].max_remediation_attempts = 3` is normative for **all** courts, including `ui-layout-court`. `[adapters.ui_layout].max_remediation_attempts` MUST NOT exceed the engine ceiling; loaders reject a higher value with exit `2` (`STATIC_CONCURRENCY_FORBIDDEN`-class fail-closed). Spatial defects (exit `1`) synthesize Case-A remediation POWLs (§7.1) scoped to upstream `.ttl` / `.toml` / `.eex`/`.tera` only — never LLM CSS patches, never generated trees.
 
 ### E.5 Anti-Fake-ALIVE & Exit Taxonomy
 
@@ -1398,16 +1426,60 @@ require_public_anonymize_on = ["linkedin-carousel", "linkedin-newsletter", "link
 
 Sandbox (`sjira-loop-live-sandbox`), missing `INTERNAL_API_TOKEN` / verifier suite / AS-01 DO seals → **never** narrate as live fabric `ALIVE`.
 
+#### E.5.1 Spatial-defect mapping (`ui-layout-court`)
+
+| Exit | Spatial meaning | Standing |
+|---|---|---|
+| `0` | PASS — Taffy pre-flight + Playwright rRLG + WCAG (1.4.10 / 1.4.12 / 2.5.8) + Gestalt checks green **and** `mix ggen_igniter.sync --check` exit 0 | `ALIVE` (non-sandbox) or `PARTIAL_ALIVE` (sandbox) |
+| `1` | FAIL_REFUSED — spatial defect (overflow, collision/protrusion, undersized touch target, Gestalt ratio breach, text-spacing clip) | `REFUSED` → Case-A remediation ≤ `max_remediation_attempts = 3` |
+| `2` | SUBJECT_MISSING — Taffy CLI / Playwright / pinned browser binary absent, or court subject path missing | `BLOCKED` (honest; never promote to `ALIVE`) |
+| `3` | LOUD_SKIP — `[adapters.ui_layout].suite_enabled = false` or spatial evidence suite not configured | `UNVERIFIED` |
+
 ### E.6 Verification
 
 ```bash
 bun test test/adapters.test.ts test/sjira-adapter.test.ts
+bun test test/ui-layout-court.test.ts
 ```
 
 ### E.7 Milestone
 
-Appendix E is **E4.2** (optional courts). Day-1 Explore enables `sjira-io` + `marketplace-court` + `igniter-sync` + `receipt-sink`. `castle_publish` stays opt-in. Domain pipelines (LinkedIn carousels, revops airlock, RAID commissioning) are **operator workflows** that consume these adapters — they are not compiled into the clean-room core.
+Appendix E is **E4.2** (optional courts). Day-1 Explore enables `sjira-io` + `marketplace-court` + `igniter-sync` + `receipt-sink`. `castle_publish` stays opt-in. `ui-layout-court` is Day-1 Explore for Zero-HITL mobile UI packs (enabled by default when `[adapters.ui_layout]` is present; loud-skip when suite disabled). Domain pipelines (LinkedIn carousels, revops airlock, RAID commissioning, mobile UI layout packs) are **operator workflows** that consume these adapters — they are not compiled into the clean-room core.
 
+### E.8 Ui-Layout Court Contract (`src/adapters/ui-layout-court.ts`)
+
+Normative registration for Step 4 of the Zero-HITL Mobile-First UI Loop. The adapter is a `TransitionCourtAdapter` peer of marketplace / igniter / castle — it does **not** raise the authority ceiling above `CONSTRUCT`.
+
+#### E.8.1 Pre / post duties
+
+| Phase | Duty |
+|---|---|
+| `validateWriteScope` | Refuse mutation of generated UI trees / hand-patched CSS under generated globs (fail-closed like igniter); allow upstream `.ttl` / `*.brand.toml` / `.eex`/`.tera` layout templates |
+| `verifyPostTransition` | (1) Invoke Taffy AOT bbox sweep across configured viewports; (2) invoke Playwright spatial court (rRLG-lite + WCAG + Gestalt); (3) require Jobs/C4 clean-room (`mix ggen_igniter.sync --check` exit 0 / exit 4 → REFUSED, **or** `ggen sync run --dry-run` with `planned_writes:[]`) when `require_clean_room = true`; git-diff is non-gating diagnostic only |
+
+Missing Taffy or Playwright binaries MUST return exit `2` (SUBJECT_MISSING) via stub-invoke paths — never silent pass, never fabricated digests.
+
+#### E.8.2 Remediation bound
+
+Spatial `REFUSED` (exit `1`) triggers §7.1 Case-A follow-up POWLs that mutate **only** upstream ontology grouping, brand tokens, or layout templates, then re-run `rm -rf` + clean-room sync. Attempts are capped by `[engine].max_remediation_attempts = 3` (mirrored on `[adapters.ui_layout]`). Exhaustion leaves honest `REFUSED` / `BLOCKED` standing — no HITL visual override path inside `zcode-cli`.
+
+#### E.8.3 Anti-vacuity mutations (mandatory per UI pack)
+
+Before a UI pack may narrate aggregate `ALIVE`, Chicago anti-vacuity MUST flip the court to exit `1` under each seeded defect (pair with `test/ui-layout-court*.test.ts`):
+
+| Mutation | Injected fault | Required court exit |
+|---|---|---|
+| **360-in-320** | Temporarily inject a `360px`-wide child into a `320px` viewport (WCAG 1.4.10 reflow breach / viewport protrusion) | `1` |
+| **18px primary** | Shrink a primary interactive control to `18×18` CSS px (below WCAG 2.5.8 / HIG–Material touch floors) | `1` |
+| **Gestalt ratio** | Supply `interGroupGapPx < 2 · intraGroupGapPx` (ggen-layout-court `GESTALT_RATIO`) | `1` |
+| **Adjacent gap &lt; 8** | Two interactive targets with edge gap &lt; `DEFAULT_MIN_TOUCH_GAP_PX` (8) | `1` |
+| **SUBJECT_MISSING** | Unset / remove Taffy or Playwright subject binary | `2` |
+
+A court that stays at exit `0` under either spatial mutation is **vacuous** and MUST NOT admit the pack as `ALIVE`. Restore fixtures after the flip; both defect→`1` and restore→`0` outcomes are required (anti-vacuity witnessed). Missing Taffy/Playwright subjects MUST NOT silent-pass: adapter exit `2` (`SUBJECT_MISSING`) or suite `enabled=false` exit `3` (`LOUD_SKIP`). Pack Playwright spatial court uses `test.skip(…, "LOUD_SKIP: …")` when CCS DOM hooks are absent — never an early `return` that greens the matrix. Viewport SoT is the TOML 9-wide list (`UI_LAYOUT_VIEWPORTS`; Playwright alias; AOT 6-wide is `UI_LAYOUT_AOT_VIEWPORTS` ⊂ SoT).
+
+#### E.8.4 What does *not* belong in this adapter
+
+LLM / VLM CSS patching, editorial art-direction, and Plane-1 perimeter transduction stay outside `ui-layout-court`. FFB WebGPU keyless canvas geometry remains Taffy-authoritative (DOM rRLG cannot observe draw lists); the adapter still reports SUBJECT_MISSING or LOUD_SKIP honestly when a DOM court is inapplicable.
 ## Appendix F — Gall's Law Autonomic Foundry Spine `[EXPLORE-SCOPE]`
 
 ### F.1 Law
@@ -1429,12 +1501,13 @@ SjiraWorkOrderSource.ingestFrontier → POWL PartialOrder(V, ≺)
 runFoundryLoop (src/adapters/foundry-loop.ts)
   • TransitionCourtAdapter.validateWriteScope
   • dry-run touch | bin/zcode.js (CONSTRUCT)
-  • marketplace + igniter verifyPostTransition
+  • marketplace + igniter + ui-layout-court verifyPostTransition
         │
         ▼
 ReceiptSink + ledger.jsonl + loop_receipt.json + DFCM
   • sandbox ⇒ PARTIAL_ALIVE (never fake ALIVE)
   • authority = NONE, external_do_count = 0
+  • spatial REFUSED ⇒ Case-A remediation ≤ max_remediation_attempts=3
 ```
 
 ### F.3 Implementation Surface
@@ -1442,8 +1515,10 @@ ReceiptSink + ledger.jsonl + loop_receipt.json + DFCM
 | Path | Role |
 |---|---|
 | `src/adapters/foundry-loop.ts` | `runFoundryLoop` — Gall spine |
+| `src/adapters/ui-layout-court.ts` | Spatial `TransitionCourtAdapter` (Appendix E.8) |
 | `scripts/powl-foundry-loop.ts` | Dry-run driver (`--dry-run` default) |
 | `test/adapters-chicago.test.ts` | Zero-mock Chicago court + anti-vacuity |
+| `test/ui-layout-court.test.ts` | Spatial anti-vacuity (360-in-320 / 18px → exit `1`) |
 
 ### F.4 Chicago Exit Criteria
 
@@ -1458,6 +1533,7 @@ Pass when:
 2. Sandbox aggregate standing is `PARTIAL_ALIVE` with exit `2` (honest).
 3. Anti-vacuity: ASK gate → refused; `generated/` dir → refused; sink never promotes sandbox → `ALIVE`.
 4. DFCM receipt binds `subject_sha` to HEAD with `authority: "NONE"`.
+5. When `ui-layout-court` is enabled: 360-in-320 and 18px-primary mutations each flip exit to `1`; missing Taffy/Playwright subject yields exit `2` (Appendix E.8.3).
 
 ### F.5 What Does *Not* Belong in Core
 

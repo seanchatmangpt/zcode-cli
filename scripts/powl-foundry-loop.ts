@@ -16,8 +16,8 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import {
-  IgniterSyncCourtAdapter,
-  MarketplaceCourtAdapter,
+  buildAdapterRegistry,
+  loadAdapterRegistryFromToml,
   ReceiptSink,
   SjiraWorkOrderSource,
   runFoundryLoop
@@ -56,7 +56,8 @@ async function main(): Promise<number> {
     "# UNSUPPORTED(generator-capability): handwritten\n@prefix ex: <https://www.w3.org/2001/XMLSchema#> .\n"
   );
 
-  // Init git so igniter git-diff court can run
+  // Init git for realistic workspace provenance (drift gate is sync --check /
+  // planned_writes=[], not git-diff; git remains for optional diagnostics).
   if (!existsSync(join(root, ".git"))) {
     spawnSync("git", ["init"], { cwd: root, encoding: "utf8" });
     spawnSync("git", ["add", "-A"], { cwd: root, encoding: "utf8" });
@@ -95,35 +96,62 @@ async function main(): Promise<number> {
     enforceMinGgenAncestor: false
   });
 
-  const marketplace = new MarketplaceCourtAdapter({
-    packDirs: [join(root, "packs", "demo")],
-    requireDoubleCapsuleCheck: true,
-    runCheck: () => ({ status: 0, stdout: "capsule-stable", stderr: "" })
+  // Gall spine uses buildAdapterRegistry (same factory as foundry-cli TOML path).
+  // ui_layout stays disabled here so dry-run does not SUBJECT_MISSING on missing Taffy/PW.
+  const registry = buildAdapterRegistry({
+    cwd: root,
+    maxRemediationAttempts: 3,
+    ggen_marketplace: {
+      enabled: true,
+      packDirs: [join(root, "packs", "demo")],
+      requireDoubleCapsuleCheck: true,
+      runCheck: () => ({ status: 0, stdout: "capsule-stable", stderr: "" })
+    },
+    ggen_igniter: {
+      enabled: true,
+      // Dry-run stub: argv matches production sync --check (never ["true"]).
+      cleanRoomSyncCmd: ["mix", "ggen_igniter.sync", "--check"],
+      forbidGeneratedDirs: true,
+      run: (cmd, cwd) => {
+        if (
+          cmd[0] === "mix" &&
+          cmd.includes("ggen_igniter.sync") &&
+          cmd.includes("--check")
+        ) {
+          return {
+            status: 0,
+            stdout: "ggen_igniter.sync --check: clean (0 drifted files)",
+            stderr: ""
+          };
+        }
+        if (cmd[0] === "mix" && dryRun) {
+          return { status: 0, stdout: "", stderr: "" };
+        }
+        const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8" });
+        return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
+      }
+    },
+    ui_layout: { enabled: false }
   });
 
-  const igniter = new IgniterSyncCourtAdapter({
-    // Dry-run: sync is a no-op identity; court still requires clean tree.
-    cleanRoomSyncCmd: ["true"],
-    forbidGeneratedDirs: true,
-    run: (cmd, cwd) => {
-      if (cmd[0] === "true" || (cmd[0] === "mix" && dryRun)) {
-        return { status: 0, stdout: "", stderr: "" };
-      }
-      const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8" });
-      return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
-    }
-  });
+  // Twin parity: same TOML → ReceiptSink path as foundry-cli (repo pin if present).
+  const pinToml = resolve(import.meta.dir, "../zcode-cli.toml");
+  const twinParity = existsSync(pinToml)
+    ? loadAdapterRegistryFromToml(pinToml, { cwd: root }).receiptSink
+    : {};
 
   const sink = new ReceiptSink({
     ledgerPath: join(root, "sink-ledger.jsonl"),
     outDir: join(root, "out"),
     dfcmReceiptPath: join(root, "out", "dfcm-receipt.json"),
-    cwd: root
+    cwd: root,
+    enforceTwinParity: twinParity.enforceTwinParity,
+    twinParitySelfTestCmd: twinParity.twinParitySelfTestCmd
   });
 
   const result = await runFoundryLoop({
     source,
-    courts: [marketplace, igniter],
+    courts: registry.courts,
     sink,
     workspaceDir: root,
     dryRun,

@@ -29,4 +29,24 @@ describe("gen-zcode-loop preserves GallWorkHook", () => {
     expect(ttl).toContain("zl:Source-GallWorkHook");
     expect(ttl).toContain('pi:sourceId "gall_work"');
   });
+
+  test("lease identity E2O uses work_order_iri — never work_order_id / wo:epoch", () => {
+    const src = readFileSync(join(root, "scripts", "gen-zcode-loop.ts"), "utf8");
+    const ttl = readFileSync(join(root, "ontology", "zcode-loop.ttl"), "utf8");
+    // Generator source: identity catalog + IRI path (templates emit pi:typeId).
+    expect(src).toContain('IDENTITY_OBJECTS = ["work_order", "epoch", "subject", "base"]');
+    expect(src).toContain('work_order: "work_order_iri"');
+    expect(src).toContain('pi:objectIdPath "work_order_iri"');
+    expect(src).not.toContain('pi:objectIdPath "work_order_id"');
+    // Committed ontology: concrete individuals (regen via gen-zcode-loop + gen-ocel).
+    expect(ttl).toContain('pi:objectIdPath "work_order_iri"');
+    expect(ttl).toContain('pi:objectIdPath "params.work_order_iri"'); // App source
+    expect(ttl).not.toContain('pi:objectIdPath "work_order_id"');
+    expect(ttl).toContain("zl:Rel-Stream-work_order");
+    expect(ttl).toContain("zl:Rel-App-work_order");
+    expect(ttl).toContain("zl:Rel-Gall-work_order");
+    for (const typeId of ["epoch", "subject", "base", "lease", "work_order"]) {
+      expect(ttl).toContain(`pi:typeId "${typeId}"`);
+    }
+  });
 });
