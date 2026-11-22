@@ -177,7 +177,7 @@ export class KingmanScheduler {
     const ca2 = arrStats.count >= 2 ? arrStats.cs2 : 1;
     const rho =
       arrStats.count >= 1 && arrStats.meanMs > 0
-        ? Math.min(0.99, meanSvc / (arrStats.meanMs * Math.max(1, this.wip)))
+        ? meanSvc / (arrStats.meanMs * Math.max(1, this.wip))
         : Math.min(0.95, this.wip / Math.max(2, this.maxWip));
     return computeKingmanQueueEstimate(
       rho,
@@ -199,7 +199,7 @@ export class KingmanScheduler {
           ? Math.max(1, nowMs - this.lastCompletionTimestampMs)
           : undefined;
     this.lastCompletionTimestampMs = nowMs;
-    if (interArrival !== undefined) {
+    if (interArrival !== undefined && interArrival > 0) {
       this.pushBounded(this.interArrivalSamples, interArrival, this.serviceWindow);
     }
 
@@ -229,7 +229,9 @@ export class KingmanScheduler {
 
     if (ttftSpike || rpmLow || tpmLow) {
       this.wip = Math.max(this.minWip, Math.floor(this.wip * 0.5));
-      this.ttftMdTriggered = true;
+      if (ttftSpike) {
+        this.ttftMdTriggered = true;
+      }
       this.mdCount += 1;
       const reason = ttftSpike
         ? "ttft_spike_md"
@@ -241,7 +243,7 @@ export class KingmanScheduler {
         oldWip,
         newWip: this.wip,
         reason,
-        ttftMdTriggered: true,
+        ttftMdTriggered: ttftSpike,
         heavyTailedProtected: false,
         estimate: this.currentEstimate()
       };
@@ -255,6 +257,18 @@ export class KingmanScheduler {
 
     if (heavyTailed) {
       this.heavyTailedProtectedCount += 1;
+    }
+
+    if (estimate.saturated) {
+      return {
+        changed: false,
+        oldWip,
+        newWip: this.wip,
+        reason: "saturated_hold",
+        ttftMdTriggered: false,
+        heavyTailedProtected: heavyTailed,
+        estimate
+      };
     }
 
     // Cap AI growth using Kingman recommendedMaxRho when combined arrival/service variability is high
@@ -282,14 +296,13 @@ export class KingmanScheduler {
   onTransportBackpressure(): KingmanStepDecision {
     const oldWip = this.wip;
     this.wip = Math.max(this.minWip, Math.floor(this.wip * 0.5));
-    this.ttftMdTriggered = true;
     this.mdCount += 1;
     return {
       changed: this.wip !== oldWip,
       oldWip,
       newWip: this.wip,
       reason: "transport_timeout_md",
-      ttftMdTriggered: true,
+      ttftMdTriggered: false,
       heavyTailedProtected: false,
       estimate: this.currentEstimate()
     };

@@ -666,8 +666,9 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
 
       const logsDir = ws.path("assess-logs");
       mkdirSync(logsDir, { recursive: true });
-      const doc = buildConformingHighRiskSession({ sessionId: "sess_assess_doc" });
+      const doc = buildConformingHighRiskSession({ sessionId: "sess_assess_doc", includeWorkOrder: true });
       writeFileSync(join(logsDir, "sess_assess_doc.ocel.json"), JSON.stringify(doc, null, 2), "utf8");
+      writeFileSync(join(ws.ocelDir, "sess_assess_doc.ocel.json"), JSON.stringify(doc, null, 2), "utf8");
 
       const assessRes = runZcodeCli(["compliance", "assess", "--logs", logsDir, "--json"], ws);
       expect(assessRes.exitCode).toBe(0);
@@ -778,7 +779,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const friaRes = runZcodeCli(
         ["compliance", "fria-export", "--out", friaPath, "--format", "json"],
         ws,
-        { env: { ZCODE_OCEL_DIR: logsDir } },
+        { env: { ZCODE_OCEL_DIR: logsDir, ZCODE_OVERSEER_ID: undefined } },
       );
       expect(friaRes.exitCode).toBe(0);
       const friaRaw = readFileSync(friaPath, "utf8");
@@ -789,6 +790,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const friaMdRes = runZcodeCli(
         ["compliance", "fria-export", "--out", friaMdPath, "--format", "md"],
         ws,
+        { env: { ZCODE_OVERSEER_ID: undefined } },
       );
       expect(friaMdRes.exitCode).toBe(0);
       expect(readFileSync(friaMdPath, "utf8")).toContain("overseer-fria-eu");

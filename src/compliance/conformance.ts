@@ -401,6 +401,7 @@ export function normalizeWorkflowNet(input: WorkflowNetLike | PowlNode): Normali
 interface HeapItem {
   f: number;
   g: number;
+  traceIdx: number;
   seq: number;
   stateIdx: number;
 }
@@ -455,7 +456,8 @@ class MinHeap {
 
   private compare(a: HeapItem, b: HeapItem): number {
     if (a.f !== b.f) return a.f - b.f;
-    if (a.g !== b.g) return a.g - b.g;
+    if (a.g !== b.g) return b.g - a.g;
+    if (a.traceIdx !== b.traceIdx) return b.traceIdx - a.traceIdx;
     return a.seq - b.seq;
   }
 }
@@ -538,8 +540,22 @@ function computeReachableLabelsFromMarking(
 }
 
 function isEnabled(marking: readonly number[], preIdx: readonly number[]): boolean {
-  for (let i = 0; i < preIdx.length; i++) {
-    if (marking[preIdx[i]!]! < 1) return false;
+  const len = preIdx.length;
+  if (len === 1) {
+    return marking[preIdx[0]!]! >= 1;
+  }
+  if (len === 2) {
+    const p0 = preIdx[0]!;
+    const p1 = preIdx[1]!;
+    return p0 === p1 ? marking[p0]! >= 2 : marking[p0]! >= 1 && marking[p1]! >= 1;
+  }
+  for (let i = 0; i < len; i++) {
+    const p = preIdx[i]!;
+    let needed = 1;
+    for (let j = i + 1; j < len; j++) {
+      if (preIdx[j] === p) needed += 1;
+    }
+    if (marking[p]! < needed) return false;
   }
   return true;
 }
@@ -552,7 +568,9 @@ function applyTransition(
 ): number[] | null {
   const next = marking.slice();
   for (let i = 0; i < preIdx.length; i++) {
-    next[preIdx[i]!]! -= 1;
+    const p = preIdx[i]!;
+    next[p]! -= 1;
+    if (next[p]! < 0) return null;
   }
   for (let i = 0; i < postIdx.length; i++) {
     const p = postIdx[i]!;
@@ -984,7 +1002,7 @@ function runAStarCore(
 
   const heap = new MinHeap();
   let seq = 0;
-  heap.push({ f: heuristic(initMarking, initMarkingKey, 0), g: 0, seq: seq++, stateIdx: 0 });
+  heap.push({ f: heuristic(initMarking, initMarkingKey, 0), g: 0, traceIdx: 0, seq: seq++, stateIdx: 0 });
 
   let goalIdx = -1;
   let goalCost = Number.POSITIVE_INFINITY;
@@ -1044,7 +1062,7 @@ function runAStarCore(
                 cost: silentCost
               }
             });
-            heap.push({ f: ng + h, g: ng, seq: seq++, stateIdx: sIdx });
+            heap.push({ f: ng + h, g: ng, traceIdx: node.traceIdx, seq: seq++, stateIdx: sIdx });
           }
         }
         continue;
@@ -1077,7 +1095,7 @@ function runAStarCore(
                   cost: syncCost
                 }
               });
-              heap.push({ f: ng + h, g: ng, seq: seq++, stateIdx: sIdx });
+              heap.push({ f: ng + h, g: ng, traceIdx: nextTrace, seq: seq++, stateIdx: sIdx });
             }
           }
         }
@@ -1106,7 +1124,7 @@ function runAStarCore(
                 cost: modelMoveCost
               }
             });
-            heap.push({ f: ng + h, g: ng, seq: seq++, stateIdx: sIdx });
+            heap.push({ f: ng + h, g: ng, traceIdx: node.traceIdx, seq: seq++, stateIdx: sIdx });
           }
         }
       }
@@ -1136,7 +1154,7 @@ function runAStarCore(
               cost: logMoveCost
             }
           });
-          heap.push({ f: ng + h, g: ng, seq: seq++, stateIdx: sIdx });
+          heap.push({ f: ng + h, g: ng, traceIdx: nextTrace, seq: seq++, stateIdx: sIdx });
         }
       }
     }
@@ -1320,6 +1338,38 @@ function computePooledPrecision(
   return Math.max(0, Math.min(1, numerator / denominator));
 }
 
+function extractEventActivity(
+  ev: ConformanceOcelEventLike,
+  netActivityNames: ReadonlySet<string>
+): string {
+  if (netActivityNames.has(ev.type)) {
+    return ev.type;
+  }
+  const attrs = ev.attributes;
+  if (attrs) {
+    if (Array.isArray(attrs)) {
+      for (const a of attrs) {
+        if (
+          (a.name === "tool" || a.name === "tool_name" || a.name === "toolName") &&
+          typeof a.value === "string" &&
+          a.value.length > 0
+        ) {
+          return a.value;
+        }
+      }
+    } else if (typeof attrs === "object") {
+      const rec = attrs as Record<string, unknown>;
+      for (const key of ["tool", "tool_name", "toolName"]) {
+        const val = rec[key];
+        if (typeof val === "string" && val.length > 0) {
+          return val;
+        }
+      }
+    }
+  }
+  return ev.type;
+}
+
 export function computeAlignmentConformance(
   doc: ConformanceOcelDocLike,
   netOrPowl: WorkflowNetLike | PowlNode,
@@ -1327,6 +1377,13 @@ export function computeAlignmentConformance(
   options: AlignmentOptions = {}
 ): AlignmentConformanceReport {
   const net = normalizeWorkflowNet(netOrPowl);
+  const netActivityNames = new Set<string>();
+  for (const t of net.transitions) {
+    if (!t.silent) {
+      if (t.activityId) netActivityNames.add(t.activityId);
+      if (t.label) netActivityNames.add(t.label);
+    }
+  }
 
   const sortedEvents = [...(doc.events ?? [])]
     .map((ev, idx) => ({ ev, idx, ms: Date.parse(ev.time) }))
@@ -1338,9 +1395,7 @@ export function computeAlignmentConformance(
     .map((x) => x.ev);
 
   const targetType = objectType ?? "session";
-  const matchingObjects = objectType !== undefined
-    ? (doc.objects ?? []).filter((o) => o.type === targetType)
-    : [];
+  const matchingObjects = (doc.objects ?? []).filter((o) => o.type === targetType);
 
   // Fail closed: when an explicit objectType is requested and no matching objects exist,
   // return an empty 0-case report instead of falling back to __full_log__.
@@ -1363,7 +1418,7 @@ export function computeAlignmentConformance(
   }
 
   const traces: Array<{ caseId: string; objectType: string; events: ConformanceOcelEventLike[] }> = [];
-  if (objectType !== undefined) {
+  if (matchingObjects.length > 0) {
     const objIds = new Set(matchingObjects.map((o) => o.id));
     const grouped = new Map<string, ConformanceOcelEventLike[]>();
     for (const o of matchingObjects) grouped.set(o.id, []);
@@ -1408,10 +1463,11 @@ export function computeAlignmentConformance(
   let modelMoves = 0;
 
   for (const tr of traces) {
-    const variantKey = JSON.stringify(tr.events.map((e) => e.type));
+    const activities = tr.events.map((e) => extractEventActivity(e, netActivityNames));
+    const variantKey = JSON.stringify(activities);
     let aligned = variantCache.get(variantKey);
     if (!aligned) {
-      const tracePayload = tr.events.map((e) => ({ activity: e.type, eventId: e.id }));
+      const tracePayload = tr.events.map((e, i) => ({ activity: activities[i]!, eventId: e.id }));
       aligned = runAStarCore(net, tracePayload, options, emptyModelCost);
       variantCache.set(variantKey, aligned);
     }

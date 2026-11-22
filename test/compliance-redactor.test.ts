@@ -486,4 +486,80 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
     expect(redactedTruncatedPem).toBe("PEM header only: REDACTED");
     expect(containsUnredactedSecretsOrPii(redactedTruncatedPem)).toBe(false);
   });
+
+  test("Suite 9: v27.1.1 non-HTTP, empty-user, and colon-less URL userinfo + backreference-free AUTH_RAW", () => {
+    // 1. Non-HTTP URI schemes with user:pass
+    const nonHttpUris = [
+      ["postgres://admin:s3cr3t@db:5432/app", "postgres://admin:REDACTED@db:5432/app"],
+      ["redis://default:r3d1sPass@cache.example.com:6379/0", "redis://default:REDACTED@cache.example.com:6379/0"],
+      ["amqp://mq:pw123@broker.internal:5672/vhost", "amqp://mq:REDACTED@broker.internal:5672/vhost"],
+      ["mongodb+srv://svc:m0ng0Pass@cluster0.example.net/db", "mongodb+srv://svc:REDACTED@cluster0.example.net/db"],
+      ["wss://u1:wsSecret@stream.example.com/ws", "wss://u1:REDACTED@stream.example.com/ws"],
+      ["ssh://deploy:sshPass@bastion.example.com", "ssh://deploy:REDACTED@bastion.example.com"]
+    ] as const;
+
+    for (const [raw, expected] of nonHttpUris) {
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: false })).toBe(true);
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: true })).toBe(true);
+      const outNoPii = redactComplianceText(raw, { redactPii: false });
+      const outWithPii = redactComplianceText(raw, { redactPii: true });
+      expect(outNoPii).toBe(expected);
+      expect(outWithPii).toBe(expected);
+      expect(containsUnredactedSecretsOrPii(outNoPii, { redactPii: false })).toBe(false);
+      expect(containsUnredactedSecretsOrPii(outWithPii, { redactPii: true })).toBe(false);
+    }
+
+    // 2. Empty-username URLs
+    const emptyUserUris = [
+      ["https://:secret@host/path", "https://:REDACTED@host/path"],
+      ["redis://:s3cr3t@cache.example.com:6379/0", "redis://:REDACTED@cache.example.com:6379/0"]
+    ] as const;
+    for (const [raw, expected] of emptyUserUris) {
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: false })).toBe(true);
+      const outNoPii = redactComplianceText(raw, { redactPii: false });
+      const outWithPii = redactComplianceText(raw, { redactPii: true });
+      expect(outNoPii).toBe(expected);
+      expect(outWithPii).toBe(expected);
+      expect(containsUnredactedSecretsOrPii(outNoPii, { redactPii: false })).toBe(false);
+      expect(containsUnredactedSecretsOrPii(outWithPii, { redactPii: true })).toBe(false);
+    }
+
+    // 3. Colon-less token-as-userinfo URLs (including redactPii: false and hosts without dot+TLD)
+    const tokenUris = [
+      ["https://ghp_secret123@github.com/org/repo", "https://REDACTED@github.com/org/repo"],
+      ["https://tok_internal99@localhost/org/repo", "https://REDACTED@localhost/org/repo"],
+      ["postgres://tok_pg99@db:5432/app", "postgres://REDACTED@db:5432/app"]
+    ] as const;
+    for (const [raw, expected] of tokenUris) {
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: false })).toBe(true);
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: true })).toBe(true);
+      const outNoPii = redactComplianceText(raw, { redactPii: false });
+      const outWithPii = redactComplianceText(raw, { redactPii: true });
+      expect(outNoPii).toBe(expected);
+      expect(outWithPii).toBe(expected);
+      expect(containsUnredactedSecretsOrPii(outNoPii, { redactPii: false })).toBe(false);
+      expect(containsUnredactedSecretsOrPii(outWithPii, { redactPii: true })).toBe(false);
+    }
+
+    // Non-userinfo '@' in path or query is not misclassified as URL userinfo under redactPii: false
+    const pathAt = "https://example.com/users/alice@example.com?ref=1";
+    expect(redactComplianceText(pathAt, { redactPii: false })).toBe(pathAt);
+    expect(containsUnredactedSecretsOrPii(pathAt, { redactPii: false })).toBe(false);
+
+    // 4. Backreference-free AUTH_RAW (double, single, bare)
+    const authSamples = [
+      ['authorization: "sk-live-double"', 'authorization: "REDACTED"'],
+      ["authorization: 'sk-live-single'", "authorization: 'REDACTED'"],
+      ["authorization: sk-live-bare", "authorization: REDACTED"],
+      ['authorization="sk-eq-double"', 'authorization="REDACTED"'],
+      ["authorization='sk-eq-single'", "authorization='REDACTED'"],
+      ["authorization=sk-eq-bare", "authorization=REDACTED"]
+    ] as const;
+    for (const [raw, expected] of authSamples) {
+      expect(containsUnredactedSecretsOrPii(raw, { redactPii: false })).toBe(true);
+      const out = redactComplianceText(raw, { redactPii: false });
+      expect(out).toBe(expected);
+      expect(containsUnredactedSecretsOrPii(out, { redactPii: false })).toBe(false);
+    }
+  });
 });

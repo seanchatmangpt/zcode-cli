@@ -148,4 +148,121 @@ describe("09-Concept-Drift ERRC improvements", () => {
     const binaryEdgeFindings = report.findings.filter((f) => f.metric === "control_flow_edge");
     expect(binaryEdgeFindings.length).toBe(0);
   });
+
+  test("HARDEN-V12-1: multisetControlFlowDrift respects Phipson-Smyth lower bound without pseudoreplicated G-test override", () => {
+    // Two windows of nA = nB = 10 traces, each with 15 correlated edges
+    const groupA: Map<string, number>[] = [];
+    const groupB: Map<string, number>[] = [];
+    for (let i = 0; i < 10; i++) {
+      const mA = new Map<string, number>();
+      const mB = new Map<string, number>();
+      for (let e = 0; e < 15; e++) {
+        mA.set(`s${e}->s${e + 1}`, 1);
+        mB.set(`s${e}->s${e + 1}`, 2);
+      }
+      groupA.push(mA);
+      groupB.push(mB);
+    }
+
+    const perms = 199;
+    const res = multisetControlFlowDrift(groupA, groupB, { alpha: 0.01, permutations: perms });
+    const phipsonSmythFloor = 1 / (1 + perms);
+    expect(res.pValue).toBeCloseTo(phipsonSmythFloor, 12);
+    expect(res.pValue).toBeGreaterThanOrEqual(phipsonSmythFloor);
+    expect(res.significant).toBe(true);
+  });
+
+  test("HARDEN-V12-1b: multi-phase recurring search adjusts for internal m=4,5,6 splits (FWER controlled on stationary Gaussian series)", () => {
+    let seed = 424242;
+    const nextUniform = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return (seed + 0.5) / 4294967296;
+    };
+    const nextGaussian = () => {
+      const u1 = nextUniform();
+      const u2 = nextUniform();
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+
+    const trials = 120;
+    let falsePositives = 0;
+    for (let tr = 0; tr < trials; tr++) {
+      const events: DriftEventLike[] = [];
+      for (let i = 0; i < 48; i++) {
+        events.push({
+          id: `g-${tr}-${i}`,
+          type: "model_request_completed",
+          time: makeIso(i * 5),
+          attributes: [{ name: "ttft_ms", value: 100 + 10 * nextGaussian() }]
+        });
+      }
+      const rep = detectConceptDrift({ events }, { alpha: 0.01 });
+      if (rep.driftDetected) falsePositives += 1;
+    }
+    // Empirical FWER at alpha=0.01 must stay bounded (<= 3 false positives out of 120 trials)
+    expect(falsePositives).toBeLessThanOrEqual(3);
+  });
+
+  test("HARDEN-V12-2: separate BH families and report flags isolate performance drift from high-cardinality control-flow edges", () => {
+    // 1. Performance stream with clear shift + 20 stationary control-flow edges
+    const objects: DriftObjectLike[] = [];
+    const events: DriftEventLike[] = [];
+    let sec = 0;
+    for (let tr = 0; tr < 24; tr++) {
+      const objId = `turn-${tr}`;
+      objects.push({ id: objId, type: "turn", attributes: [] });
+      const rel = [{ objectId: objId, qualifier: "subject" }];
+      // 20 stationary edges per trace
+      for (let e = 0; e < 21; e++) {
+        events.push({
+          id: `cf-${tr}-${e}`,
+          type: `step_${e}`,
+          time: makeIso(sec++),
+          relationships: rel
+        });
+      }
+      // Performance event with moderate shift at tr=12
+      events.push({
+        id: `perf-${tr}`,
+        type: "model_request_completed",
+        time: makeIso(sec++),
+        attributes: [{ name: "ttft_ms", value: tr < 12 ? 100 + (tr % 3) : 140 + (tr % 3) }]
+      });
+    }
+
+    const perfReport = detectConceptDrift({ objects, events }, { alpha: 0.01 });
+    expect(perfReport.driftDetected).toBe(true);
+    expect(perfReport.performanceDriftDetected).toBe(true);
+    expect(perfReport.controlFlowDriftDetected).toBe(false);
+    const ttftFinding = perfReport.findings.find((f) => f.metric === "ttft_ms");
+    expect(ttftFinding).toBeDefined();
+    expect(ttftFinding!.adjustedPValue).toBeLessThan(0.01);
+
+    // 2. Pure control-flow multiset drift with stationary ttft_ms
+    const cfObjects: DriftObjectLike[] = [];
+    const cfEvents: DriftEventLike[] = [];
+    let sec2 = 0;
+    for (let tr = 0; tr < 30; tr++) {
+      const objId = `cf-turn-${tr}`;
+      cfObjects.push({ id: objId, type: "turn", attributes: [] });
+      const rel = [{ objectId: objId, qualifier: "subject" }];
+      const loopCount = tr < 15 ? 2 : 7;
+      cfEvents.push({ id: `c2-${tr}-s`, type: "start", time: makeIso(sec2++), relationships: rel });
+      for (let k = 0; k < loopCount; k++) {
+        cfEvents.push({ id: `c2-${tr}-w-${k}`, type: "work", time: makeIso(sec2++), relationships: rel });
+      }
+      cfEvents.push({ id: `c2-${tr}-e`, type: "end", time: makeIso(sec2++), relationships: rel });
+      cfEvents.push({
+        id: `c2-${tr}-p`,
+        type: "model_request_completed",
+        time: makeIso(sec2++),
+        attributes: [{ name: "ttft_ms", value: 100 + (tr % 3) }]
+      });
+    }
+
+    const cfReport = detectConceptDrift({ objects: cfObjects, events: cfEvents }, { alpha: 0.01 });
+    expect(cfReport.driftDetected).toBe(true);
+    expect(cfReport.controlFlowDriftDetected).toBe(true);
+    expect(cfReport.performanceDriftDetected).toBe(false);
+  });
 });

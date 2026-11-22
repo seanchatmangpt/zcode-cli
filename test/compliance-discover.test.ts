@@ -736,4 +736,90 @@ describe("F13 OC-DFG Discovery & Object-Centric Petri Nets (Chicago)", () => {
     // Permission request/resolve paired across rotated slices (500ms < 1000ms -> rubber_stamp)
     expect(dfg.oversightBottlenecks.some((b) => b.permissionObjectId === "perm_span" && b.kind === "rubber_stamp" && b.latencyMs === 500)).toBe(true);
   });
+
+  test("regression V08: computes E/UO/TO frequency triad on nodes and edges and thresholds noise by E", () => {
+    const t0 = Date.parse("2026-08-04T10:00:00.000Z");
+    const iso = (d: number) => new Date(t0 + d).toISOString();
+
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      id: `item_${i + 1}`,
+      type: "item",
+      attributes: []
+    }));
+
+    const doc: DiscoverDocLike = {
+      objects: items,
+      events: [
+        // 1 convergent event batch_op linked to 5 items (E=1, UO=5, TO=5)
+        {
+          id: "e1",
+          type: "batch_op",
+          time: iso(0),
+          relationships: [
+            { objectId: "item_1", qualifier: "targets" },
+            { objectId: "item_2", qualifier: "targets" },
+            { objectId: "item_3", qualifier: "targets" },
+            { objectId: "item_4", qualifier: "targets" },
+            { objectId: "item_5", qualifier: "targets" }
+          ]
+        },
+        // 1 convergent follow-up batch_done linked to the same 5 items (edge E=1, UO=5, TO=5)
+        {
+          id: "e1_done",
+          type: "batch_done",
+          time: iso(100),
+          relationships: [
+            { objectId: "item_1", qualifier: "targets" },
+            { objectId: "item_2", qualifier: "targets" },
+            { objectId: "item_3", qualifier: "targets" },
+            { objectId: "item_4", qualifier: "targets" },
+            { objectId: "item_5", qualifier: "targets" }
+          ]
+        },
+        // 2 separate single_op events each linked to 1 item (E=2, UO=2, TO=2)
+        {
+          id: "e2",
+          type: "single_op",
+          time: iso(200),
+          relationships: [{ objectId: "item_6", qualifier: "targets" }]
+        },
+        {
+          id: "e3",
+          type: "single_op",
+          time: iso(300),
+          relationships: [{ objectId: "item_7", qualifier: "targets" }]
+        }
+      ]
+    };
+
+    const dfg = discoverOcDfg(doc);
+    const itemGraph = dfg.byObjectType.item!;
+    const batchNode = itemGraph.nodes.find((n) => n.activity === "batch_op")!;
+    const singleNode = itemGraph.nodes.find((n) => n.activity === "single_op")!;
+    const batchEdge = itemGraph.edges.find((e) => e.source === "batch_op" && e.target === "batch_done")!;
+
+    // E / UO / TO triad on convergent node
+    expect(batchNode.frequency).toBe(1);
+    expect(batchNode.eventCount).toBe(1);
+    expect(batchNode.objectCount).toBe(5);
+    expect(batchNode.totalObjects).toBe(5);
+
+    // E / UO / TO triad on non-convergent node
+    expect(singleNode.frequency).toBe(2);
+    expect(singleNode.eventCount).toBe(2);
+    expect(singleNode.objectCount).toBe(2);
+    expect(singleNode.totalObjects).toBe(2);
+
+    // E / UO / TO triad on convergent edge
+    expect(batchEdge.frequency).toBe(1);
+    expect(batchEdge.eventCount).toBe(1);
+    expect(batchEdge.objectCount).toBe(5);
+    expect(batchEdge.totalObjects).toBe(5);
+
+    // Noise filtering uses E (max E = 2 -> ceil(0.5 * 2) = 1), so single_op (E=2) is NOT pruned
+    const filtered = discoverOcDfg(doc, { noiseThreshold: 0.5 });
+    const filteredActs = filtered.byObjectType.item!.nodes.map((n) => n.activity);
+    expect(filteredActs).toContain("single_op");
+    expect(filteredActs).toContain("batch_op");
+  });
 });

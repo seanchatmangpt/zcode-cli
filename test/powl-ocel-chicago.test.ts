@@ -8,6 +8,8 @@ import {
   compilePowlToWorkflowNet,
   deriveFollowUpPowl,
   executePowlWithTokenReplay,
+  pruneDeadPowlRoutes,
+  pruneDeadWorkflowNetRoutes,
   runAutonomicLoop,
   tokenConservationHolds,
   validateDisjointWriteScopes,
@@ -484,5 +486,127 @@ describe("Chicago-style (zero-mock, real subprocess + filesystem) POWL v2 + OCEL
         (o) => o.id === "debt:cure-002" && o.attributes.at(-1)?.value === "DISCHARGED"
       )
     ).toBe(true);
+  });
+
+  test("V03-POWL-OneOf: dead-route pruning strips refuted XOR/oneof/loop branches from POWL AST and compiled WorkflowNet", async () => {
+    // 1. Refuted XOR branch is pruned from compiled WorkflowNet transitions
+    const xorWithRefuted: PowlNode = {
+      kind: "xor",
+      id: "xor-dead-route",
+      branches: [
+        { kind: "activity", id: "live_branch", label: "Live Branch", objectType: "Artifact" },
+        { kind: "activity", id: "dead_branch", label: "Dead Branch", objectType: "Artifact", refuted: true }
+      ]
+    };
+
+    const prunedAst = pruneDeadPowlRoutes(xorWithRefuted);
+    expect(prunedAst.node.kind).toBe("activity");
+    expect(prunedAst.node.id).toBe("live_branch");
+    expect(prunedAst.prunedNodeIds).toEqual(["dead_branch"]);
+
+    const compiledXor = compilePowlToWorkflowNet(xorWithRefuted);
+    const activityIds = compiledXor.transitions.map((t) => t.activityId).filter(Boolean);
+    expect(activityIds).toEqual(["live_branch"]);
+    expect(verifyStructuralSoundness(compiledXor).noDeadTransitions).toBe(true);
+
+    // Real subprocess execution on the pruned XOR tree
+    const fired: string[] = [];
+    const res = await executePowlWithTokenReplay(xorWithRefuted, async (t) => {
+      fired.push(t.activityId!);
+      return runRealSubprocess(process.execPath, ["-v"]);
+    });
+    expect(fired).toEqual(["live_branch"]);
+    expect(res.replay.soundTermination).toBe(true);
+    expect(res.replay.fitness).toBe(1);
+
+    // 2. Refuted via external refutedNodeIds option
+    const xorExternalRefute: PowlNode = {
+      kind: "xor",
+      id: "xor-ext-refute",
+      branches: [
+        { kind: "activity", id: "keep_me", label: "Keep", objectType: "Artifact" },
+        { kind: "activity", id: "drop_me", label: "Drop", objectType: "Artifact" }
+      ]
+    };
+    const netExt = compilePowlToWorkflowNet(xorExternalRefute, { refutedNodeIds: ["drop_me"] });
+    expect(netExt.transitions.map((t) => t.activityId).filter(Boolean)).toEqual(["keep_me"]);
+
+    // 3. Resolved oneof prunes unchosen branch from compiled WorkflowNet
+    const resolvedOneOf: PowlNode = {
+      kind: "oneof",
+      id: "oneof-resolved-prune",
+      resolvedBranchIndex: 1,
+      branches: [
+        { kind: "activity", id: "unchosen_a", label: "Unchosen A", objectType: "Artifact" },
+        { kind: "activity", id: "chosen_b", label: "Chosen B", objectType: "Artifact" }
+      ]
+    };
+    const netOneOf = compilePowlToWorkflowNet(resolvedOneOf);
+    expect(netOneOf.transitions.map((t) => t.activityId).filter(Boolean)).toEqual(["chosen_b"]);
+
+    // 4. Loop with refuted redoBranch collapses to doBranch
+    const loopDeadRedo: PowlNode = {
+      kind: "loop",
+      id: "loop-dead-redo",
+      doBranch: { kind: "activity", id: "do_once", label: "Do Once", objectType: "Artifact" },
+      redoBranch: { kind: "activity", id: "never_redo", label: "Never Redo", objectType: "Artifact", refuted: true }
+    };
+    const netLoop = compilePowlToWorkflowNet(loopDeadRedo);
+    expect(netLoop.transitions.map((t) => t.activityId).filter(Boolean)).toEqual(["do_once"]);
+    expect(netLoop.transitions.some((t) => t.loopExitFor === "loop-dead-redo")).toBe(false);
+
+    // 5. All branches refuted fails closed
+    const allDeadXor: PowlNode = {
+      kind: "xor",
+      id: "xor-all-dead",
+      branches: [
+        { kind: "activity", id: "d1", label: "D1", objectType: "Artifact", refuted: true },
+        { kind: "activity", id: "d2", label: "D2", objectType: "Artifact", refuted: true }
+      ]
+    };
+    expect(() => compilePowlToWorkflowNet(allDeadXor)).toThrow(/no feasible route/);
+  });
+
+  test("V03-POWL-OneOf: pruneDeadWorkflowNetRoutes removes structurally unreachable and behaviorally dead transitions", () => {
+    const netWithDeadRoutes: WorkflowNet = {
+      places: [
+        { id: "i", objectType: "Workflow" },
+        { id: "o", objectType: "Workflow" },
+        { id: "p_orphan", objectType: "Workflow" },
+        { id: "p_dead_lock", objectType: "Workflow" }
+      ],
+      transitions: [
+        { id: "t_live", label: "live", silent: false, activityId: "live", objectType: "Artifact" },
+        // Structurally unreachable from sourcePlace
+        { id: "t_orphan", label: "orphan", silent: false, activityId: "orphan", objectType: "Artifact" },
+        // Behaviorally dead: requires both i and p_dead_lock, where p_dead_lock is never marked
+        { id: "t_dead", label: "dead", silent: false, activityId: "dead", objectType: "Artifact" }
+      ],
+      pre: new Map([
+        ["t_live", ["i"]],
+        ["t_orphan", ["p_orphan"]],
+        ["t_dead", ["i", "p_dead_lock"]]
+      ]),
+      post: new Map([
+        ["t_live", ["o"]],
+        ["t_orphan", ["o"]],
+        ["t_dead", ["o"]]
+      ]),
+      sourcePlace: "i",
+      sinkPlace: "o"
+    };
+
+    const pruned = pruneDeadWorkflowNetRoutes(netWithDeadRoutes);
+    expect(pruned.net.transitions.map((t) => t.id)).toEqual(["t_live"]);
+    expect(pruned.prunedTransitionIds).toContain("t_orphan");
+    expect(pruned.prunedTransitionIds).toContain("t_dead");
+    expect(pruned.prunedPlaceIds).toContain("p_orphan");
+    expect(pruned.prunedPlaceIds).toContain("p_dead_lock");
+
+    const soundness = verifyStructuralSoundness(pruned.net);
+    expect(soundness.wfNetValid).not.toBe(false);
+    expect(soundness.optionToComplete).toBe(true);
+    expect(soundness.properCompletion).toBe(true);
+    expect(soundness.noDeadTransitions).toBe(true);
   });
 });

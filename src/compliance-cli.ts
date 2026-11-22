@@ -832,7 +832,7 @@ async function handleOcelSubcommand(args: readonly string[]): Promise<number> {
         warnings,
         errors,
         explanations: rpm.explanations,
-        ...(declareReport ? { declareResults: declareReport.declareResults } : {}),
+        ...(declareReport ? { declareResults: declareReport.results, declare: declareReport } : {}),
         ...(alignmentReport ? { alignment: alignmentReport } : {})
       };
 

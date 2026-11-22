@@ -20,7 +20,10 @@ import {
   IGNITER_CHECK_DRIFT_EXIT,
   collectGitDiffDiagnostic,
   evaluateCleanRoomDrift,
-  isGitSyncCmd
+  isGgenDryRunCmd,
+  isGitSyncCmd,
+  isIgniterCheckCmd,
+  isNoopCleanRoomCmd
 } from "./clean-room-drift.ts";
 
 export {
@@ -42,7 +45,23 @@ export const DEFAULT_ALLOWED_MUTATION_GLOBS = [
   "**/*.tera"
 ];
 
-export const DEFAULT_FORBID_DOMAIN_WALL_CLOCK = ["DateTime.utc_now", "System.os_time"];
+export const DEFAULT_FORBID_DOMAIN_WALL_CLOCK = [
+  "DateTime.utc_now",
+  "NaiveDateTime.utc_now",
+  "Date.utc_today",
+  "Time.utc_now",
+  "System.os_time",
+  "System.system_time",
+  "System.monotonic_time",
+  ":os.system_time",
+  ":erlang.system_time",
+  "SystemTime::now",
+  "Instant::now",
+  "chrono::Utc::now",
+  "Date.now(",
+  "new Date()",
+  "performance.now("
+];
 
 /** @deprecated Prefer DEFAULT_CLEAN_ROOM_CHECK_CMD from clean-room-drift.ts */
 export const DEFAULT_IGNITER_SYNC_CHECK_CMD = DEFAULT_CLEAN_ROOM_CHECK_CMD;
@@ -155,11 +174,19 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     }
 
     const syncCmd = this.opts.cleanRoomSyncCmd;
-    // Refuse git* before spawn — clean index ≠ ontology match (ELIMINATE-2).
-    if (isGitSyncCmd(syncCmd)) {
+    // Refuse git*, noop stubs, and unadmitted non-igniter commands before spawn.
+    if (
+      isGitSyncCmd(syncCmd) ||
+      isNoopCleanRoomCmd(syncCmd) ||
+      (!isIgniterCheckCmd(syncCmd) && !isGgenDryRunCmd(syncCmd))
+    ) {
       const drift = evaluateCleanRoomDrift(syncCmd, { status: 0, stdout: "", stderr: "" });
       diagnostics.push(...drift.diagnostics);
-      digests["igniter_sync_check"] = "refused:git*";
+      digests["igniter_sync_check"] = isGitSyncCmd(syncCmd)
+        ? "refused:git*"
+        : isNoopCleanRoomCmd(syncCmd)
+          ? "loud_skip:noop"
+          : "refused:unadmitted";
       return {
         exitCode: drift.exitCode,
         standing: standingFromExit(drift.exitCode),
@@ -206,7 +233,7 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
   }
 }
 
-function findGeneratedDirs(root: string): string[] {
+export function findGeneratedDirs(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {
     let entries: string[];
@@ -225,7 +252,7 @@ function findGeneratedDirs(root: string): string[] {
         continue;
       }
       if (!st.isDirectory()) continue;
-      if (name === "generated") out.push(relative(root, p) || "generated");
+      if (name.toLowerCase() === "generated") out.push(relative(root, p) || name);
       else walk(p);
     }
   };
@@ -233,7 +260,7 @@ function findGeneratedDirs(root: string): string[] {
   return out;
 }
 
-function findDomainWallClock(root: string, needles: string[]): string[] {
+export function findDomainWallClock(root: string, needles: string[]): string[] {
   const hits: string[] = [];
   const domainRoots = ["lib", "src"].map((d) => join(root, d)).filter(existsSync);
   const walk = (dir: string) => {
@@ -241,9 +268,9 @@ function findDomainWallClock(root: string, needles: string[]): string[] {
       const p = join(dir, name);
       const st = statSync(p);
       if (st.isDirectory()) {
-        if (name === "generated") continue;
+        if (name.toLowerCase() === "generated") continue;
         walk(p);
-      } else if (/\.(ex|exs|rs)$/.test(name) && !/_generated\./.test(name)) {
+      } else if (/\.(ex|exs|rs|ts|tsx|js|jsx|mjs|cjs)$/i.test(name)) {
         const text = readFileSync(p, "utf8");
         for (const n of needles) {
           if (text.includes(n)) hits.push(`${relative(root, p)}:${n}`);

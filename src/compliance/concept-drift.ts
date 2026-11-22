@@ -142,6 +142,8 @@ export interface MultisetDriftResult {
 export interface ConceptDriftReport {
   schema: "zcode.concept-drift/1";
   driftDetected: boolean;
+  performanceDriftDetected: boolean;
+  controlFlowDriftDetected: boolean;
   driftKind: DriftKind | "none";
   pValue: number;
   findings: DriftFinding[];
@@ -833,46 +835,8 @@ export function multisetControlFlowDrift(
     }
   }
 
-  let pValue = (1 + geCount) / (1 + permutations);
-  if (geCount === 0 && nA + nB >= 12) {
-    // Refine extreme tail beyond 1/(1+permutations) using Wilson-Hilferty chi-squared approximation
-    // to the 2xK G-test (2 * N_traces * ln(2) * JSD_bits ~ chi^2_{df}).
-    const countsA = new Map<string, number>();
-    const countsB = new Map<string, number>();
-    let totalA = 0;
-    let totalB = 0;
-    for (const m of tracesA) {
-      if (m.size === 0) {
-        countsA.set("__empty__", (countsA.get("__empty__") ?? 0) + 1);
-        totalA += 1;
-      } else {
-        for (const [e, c] of m.entries()) {
-          countsA.set(`${e}#${c}`, (countsA.get(`${e}#${c}`) ?? 0) + 1);
-          totalA += 1;
-        }
-      }
-    }
-    for (const m of tracesB) {
-      if (m.size === 0) {
-        countsB.set("__empty__", (countsB.get("__empty__") ?? 0) + 1);
-        totalB += 1;
-      } else {
-        for (const [e, c] of m.entries()) {
-          countsB.set(`${e}#${c}`, (countsB.get(`${e}#${c}`) ?? 0) + 1);
-          totalB += 1;
-        }
-      }
-    }
-    const keys = new Set<string>([...countsA.keys(), ...countsB.keys()]);
-    const df = Math.max(1, keys.size - 1);
-    const gStat = 2 * (totalA + totalB) * Math.LN2 * obsJsd;
-    if (gStat > 0) {
-      const h = 2 / (9 * df);
-      const z = (Math.cbrt(gStat / df) - (1 - h)) / Math.sqrt(h);
-      const chi2P = z > 0 ? Math.max(0, Math.min(1, 0.5 * erfcApprox(z / Math.SQRT2))) : 1;
-      pValue = Math.min(pValue, chi2P);
-    }
-  }
+  // Exact Phipson-Smyth permutation p-value; never override with pseudoreplicated edge-count G-test
+  const pValue = (1 + geCount) / (1 + permutations);
   return {
     statistic: obsJsd,
     pValue,
@@ -1061,15 +1025,27 @@ function findMultiPhaseRecurring(
   adjAlpha = alpha
 ): { pValue: number; statistic: number; firstCp: number } | null {
   const n = vals.length;
+  const eligibleM = [4, 5, 6].filter((m) => n >= m * 4);
+  if (eligibleM.length === 0) return null;
+
+  // Adjust for all internal adjacent KS/MW tests across eligible m-segment partitions (up to 24 tests)
+  const totalInternalTests = eligibleM.reduce((acc, m) => acc + 2 * (m - 1), 0);
+  const perTestAdjAlpha = adjAlpha / totalInternalTests;
+
   let best: { pValue: number; statistic: number; firstCp: number } | null = null;
-  for (const m of [4, 5, 6]) {
-    if (n >= m * 4) {
-      const cuts = [0];
-      for (let i = 1; i < m; i++) cuts.push(Math.floor((i * n) / m));
-      cuts.push(n);
-      const rec = checkSegmentedRecurring(vals, cuts, alpha, adjAlpha);
-      if (rec && (!best || rec.pValue < best.pValue)) {
-        best = rec;
+  for (const m of eligibleM) {
+    const cuts = [0];
+    for (let i = 1; i < m; i++) cuts.push(Math.floor((i * n) / m));
+    cuts.push(n);
+    const rec = checkSegmentedRecurring(vals, cuts, alpha, perTestAdjAlpha);
+    if (rec) {
+      const adjustedRec = {
+        pValue: Math.min(1, rec.pValue * totalInternalTests),
+        statistic: rec.statistic,
+        firstCp: rec.firstCp
+      };
+      if (!best || adjustedRec.pValue < best.pValue) {
+        best = adjustedRec;
       }
     }
   }
@@ -1364,7 +1340,8 @@ export function detectConceptDrift(
     buildFinding: (adjustedPValue: number) => DriftFinding;
   }
 
-  const candidates: DriftCandidate[] = [];
+  const perfCandidates: DriftCandidate[] = [];
+  const cfCandidates: DriftCandidate[] = [];
   const strataAnalyzed = new Set<string>();
   const kingmanCs2ByStratum: Record<string, number> = {};
 
@@ -1451,7 +1428,7 @@ export function detectConceptDrift(
     const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
     const admitAlpha = isHeavyTailSvc ? alpha / 2 : alpha;
 
-    candidates.push({
+    perfCandidates.push({
       rawPValue: rawMinP,
       withinAdjustedPValue: withinAdjP,
       admitAlpha,
@@ -1583,7 +1560,7 @@ export function detectConceptDrift(
       const rawMinP = splitPs.length > 0 ? Math.min(...splitPs) : 1;
       const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
 
-      candidates.push({
+      cfCandidates.push({
         rawPValue: rawMinP,
         withinAdjustedPValue: withinAdjP,
         admitAlpha: alpha,
@@ -1612,7 +1589,8 @@ export function detectConceptDrift(
 
     // 2. Distributional control-flow drift over per-trace DFG edge-count multisets (loop multiplicity & joint variant shifts)
     const multisets = traces.map((t) => t.edgeCounts);
-    const msHalf = multisetControlFlowDrift(multisets.slice(0, half), multisets.slice(half), { alpha, permutations: 399 });
+    const msPerms = Math.min(4999, Math.max(999, Math.ceil((4 * (edgeNames.size + 1)) / alpha)));
+    const msHalf = multisetControlFlowDrift(multisets.slice(0, half), multisets.slice(half), { alpha, permutations: msPerms });
     const msSplitPs: number[] = [msHalf.pValue];
     let maxMsStat = msHalf.statistic;
     let ms01: MultisetDriftResult | null = null;
@@ -1620,9 +1598,9 @@ export function detectConceptDrift(
     let ms02: MultisetDriftResult | null = null;
 
     if (t1 >= 4 && t2 - t1 >= 4 && traces.length - t2 >= 4) {
-      ms01 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t1, t2), { alpha, permutations: 399 });
-      ms12 = multisetControlFlowDrift(multisets.slice(t1, t2), multisets.slice(t2), { alpha, permutations: 399 });
-      ms02 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t2), { alpha, permutations: 399 });
+      ms01 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t1, t2), { alpha, permutations: msPerms });
+      ms12 = multisetControlFlowDrift(multisets.slice(t1, t2), multisets.slice(t2), { alpha, permutations: msPerms });
+      ms02 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t2), { alpha, permutations: msPerms });
       msSplitPs.push(ms01.pValue, ms12.pValue);
       maxMsStat = Math.max(maxMsStat, ms01.statistic, ms12.statistic);
     }
@@ -1631,7 +1609,7 @@ export function detectConceptDrift(
     const msRawMinP = Math.min(...msSplitPs);
     const msWithinAdjP = Math.min(...msHolmPs);
 
-    candidates.push({
+    cfCandidates.push({
       rawPValue: msRawMinP,
       withinAdjustedPValue: msWithinAdjP,
       admitAlpha: alpha,
@@ -1664,24 +1642,39 @@ export function detectConceptDrift(
     });
   }
 
-  // Across-family Benjamini-Hochberg (FDR) correction over all analyzed streams, edges, and multisets
-  const globalAdjusted = benjaminiHochberg(candidates.map((c) => c.withinAdjustedPValue));
-  const findings: DriftFinding[] = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const cand = candidates[i]!;
-    const adjP = Math.max(cand.rawPValue, globalAdjusted[i]!);
+  // Separate Benjamini-Hochberg (FDR) correction per family: performance streams vs control-flow tests
+  const perfAdjusted = benjaminiHochberg(perfCandidates.map((c) => c.withinAdjustedPValue));
+  const perfFindings: DriftFinding[] = [];
+  for (let i = 0; i < perfCandidates.length; i++) {
+    const cand = perfCandidates[i]!;
+    const adjP = Math.max(cand.rawPValue, perfAdjusted[i]!);
     if (adjP < cand.admitAlpha) {
-      findings.push(cand.buildFinding(adjP));
+      perfFindings.push(cand.buildFinding(adjP));
     }
   }
 
+  const cfAdjusted = benjaminiHochberg(cfCandidates.map((c) => c.withinAdjustedPValue));
+  const cfFindings: DriftFinding[] = [];
+  for (let i = 0; i < cfCandidates.length; i++) {
+    const cand = cfCandidates[i]!;
+    const adjP = Math.max(cand.rawPValue, cfAdjusted[i]!);
+    if (adjP < cand.admitAlpha) {
+      cfFindings.push(cand.buildFinding(adjP));
+    }
+  }
+
+  const findings: DriftFinding[] = [...perfFindings, ...cfFindings];
   findings.sort((a, b) => a.adjustedPValue - b.adjustedPValue || a.pValue - b.pValue);
-  const driftDetected = findings.length > 0;
+  const performanceDriftDetected = perfFindings.length > 0;
+  const controlFlowDriftDetected = cfFindings.length > 0;
+  const driftDetected = performanceDriftDetected || controlFlowDriftDetected;
   const primaryFinding = findings[0];
 
   return {
     schema: "zcode.concept-drift/1",
     driftDetected,
+    performanceDriftDetected,
+    controlFlowDriftDetected,
     driftKind: primaryFinding ? primaryFinding.driftType : "none",
     pValue: primaryFinding ? primaryFinding.pValue : primaryKs?.pValue ?? 1,
     findings,

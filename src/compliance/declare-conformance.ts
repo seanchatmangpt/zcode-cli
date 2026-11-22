@@ -46,6 +46,49 @@ export type DeclareTemplate =
 
 export type DeclareStatus = "SATISFIED_WITNESSED" | "SATISFIED_VACUOUS" | "VIOLATED";
 
+export type RvLtlfTruthValue =
+  | "permanently_satisfied"
+  | "temporarily_satisfied"
+  | "temporarily_violated"
+  | "permanently_violated";
+
+export interface DeclareOnlineRuleState {
+  id: string;
+  template: DeclareTemplate;
+  objectType: string;
+  mandatory: boolean;
+  antiVacuityRequired: boolean;
+  rvStatus: RvLtlfTruthValue;
+  witness_event_ids: string[];
+  counterexample_event_ids: string[];
+  activations: number;
+  evaluatedTraces: number;
+  permanentlySatisfiedTraces: number;
+  temporarilySatisfiedTraces: number;
+  temporarilyViolatedTraces: number;
+  permanentlyViolatedTraces: number;
+  article?: string;
+  detail: string;
+}
+
+export interface DeclareOnlineSnapshot {
+  schema: "zcode.declare-online/1";
+  eventCount: number;
+  results: DeclareOnlineRuleState[];
+  hasPermanentViolation: boolean;
+  hasTemporaryViolation: boolean;
+  permanentlyViolatedRuleIds: string[];
+  temporarilyViolatedRuleIds: string[];
+  allMandatoryCurrentlySatisfied: boolean;
+  /** True iff at least one mandatory rule has reached permanently_violated (safe for online gating). */
+  canGateFail: boolean;
+}
+
+export interface DeclareOnlineMonitorOptions {
+  rules?: readonly DeclareRule[] | DeclareRulesDocument;
+  objects?: readonly Ocel2ObjectLike[];
+}
+
 export interface DeclareDataCondition {
   attribute: string;
   equals?: string;
@@ -946,4 +989,819 @@ export function evaluateDeclareRules(
     vacuousCount,
     violatedCount
   };
+}
+
+interface OnlineTraceState {
+  traceLength: number;
+  firstEventId?: string;
+  lastEventId?: string;
+  // Init
+  initStatus?: "permanently_satisfied" | "permanently_violated";
+  initEventId?: string;
+  // Existence / Absence
+  matchEventIds: string[];
+  // Response
+  pendingResponseByKey: Map<string, Ocel2EventLike[]>;
+  expiredResponseIds: string[];
+  // Precedence
+  latestPreByKey: Map<string, Ocel2EventLike>;
+  // AlternatePrecedence
+  availablePreByKey: Map<string, Ocel2EventLike>;
+  // ChainResponse
+  pendingChainAct?: Ocel2EventLike;
+  // ChainPrecedence
+  prevEvent?: Ocel2EventLike;
+  // NotCoExistence
+  aEventIds: string[];
+  bEventIds: string[];
+  // Common tracking
+  witnessIds: Set<string>;
+  counterexampleIds: Set<string>;
+  activations: number;
+}
+
+function createOnlineTraceState(): OnlineTraceState {
+  return {
+    traceLength: 0,
+    matchEventIds: [],
+    pendingResponseByKey: new Map(),
+    expiredResponseIds: [],
+    latestPreByKey: new Map(),
+    availablePreByKey: new Map(),
+    aEventIds: [],
+    bEventIds: [],
+    witnessIds: new Set(),
+    counterexampleIds: new Set(),
+    activations: 0
+  };
+}
+
+function stepOnlineTraceState(
+  state: OnlineTraceState,
+  ev: Ocel2EventLike,
+  rule: DeclareRule,
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo: EvalMemo
+): void {
+  const matchAct = (e: Ocel2EventLike, pat: string | undefined) =>
+    matchesDeclarePredicate(e, pat, objectById, memo) &&
+    matchesDataCondition(e, rule.activationCondition, objectById, memo);
+  const matchTgt = (e: Ocel2EventLike, pat: string | undefined) =>
+    matchesDeclarePredicate(e, pat, objectById, memo) &&
+    matchesDataCondition(e, rule.targetCondition, objectById, memo);
+  const corrKey = (e: Ocel2EventLike) =>
+    rule.correlationKey ? extractCorrelationValue(e, rule.correlationKey, objectById, memo) : "";
+
+  if (state.traceLength === 0) {
+    state.firstEventId = ev.id;
+  }
+  state.traceLength += 1;
+  state.lastEventId = ev.id;
+
+  switch (rule.template) {
+    case "Init": {
+      if (state.traceLength === 1) {
+        const act = rule.activity ?? rule.activation;
+        state.activations = 1;
+        state.initEventId = ev.id;
+        if (matchAct(ev, act)) {
+          state.initStatus = "permanently_satisfied";
+          state.witnessIds.add(ev.id);
+        } else {
+          state.initStatus = "permanently_violated";
+          state.counterexampleIds.add(ev.id);
+        }
+      }
+      break;
+    }
+
+    case "Existence": {
+      const act = rule.activity ?? rule.activation;
+      if (matchAct(ev, act)) {
+        state.matchEventIds.push(ev.id);
+        state.witnessIds.add(ev.id);
+        state.activations += 1;
+      }
+      break;
+    }
+
+    case "Absence": {
+      const act = rule.activity ?? rule.activation;
+      const maxCount = rule.maxCount ?? 0;
+      if (matchAct(ev, act)) {
+        state.matchEventIds.push(ev.id);
+        if (state.matchEventIds.length > maxCount) {
+          for (const id of state.matchEventIds) {
+            state.counterexampleIds.add(id);
+          }
+        }
+      }
+      break;
+    }
+
+    case "Response": {
+      const actPat = rule.activation ?? rule.activity;
+      const tgtPat = rule.target;
+      const evMs = getEventTimeMs(ev, memo);
+
+      // 1. Expire any pending activations that have already exceeded maxTimeDeltaMs
+      if (rule.maxTimeDeltaMs !== undefined) {
+        for (const [k, pending] of state.pendingResponseByKey) {
+          const stillPending: Ocel2EventLike[] = [];
+          for (const actEv of pending) {
+            const delta = evMs - getEventTimeMs(actEv, memo);
+            if (delta > rule.maxTimeDeltaMs) {
+              state.expiredResponseIds.push(actEv.id);
+              state.counterexampleIds.add(actEv.id);
+            } else {
+              stillPending.push(actEv);
+            }
+          }
+          if (stillPending.length > 0) {
+            state.pendingResponseByKey.set(k, stillPending);
+          } else {
+            state.pendingResponseByKey.delete(k);
+          }
+        }
+      }
+
+      // 2. Fulfill pending activations matching target (strictly after activation)
+      if (matchTgt(ev, tgtPat)) {
+        const key = corrKey(ev);
+        const pending = state.pendingResponseByKey.get(key);
+        if (pending && pending.length > 0) {
+          const remaining: Ocel2EventLike[] = [];
+          for (const actEv of pending) {
+            if (withinTimeWindow(actEv, ev, rule, memo)) {
+              state.witnessIds.add(actEv.id);
+              state.witnessIds.add(ev.id);
+            } else {
+              remaining.push(actEv);
+            }
+          }
+          if (remaining.length > 0) {
+            state.pendingResponseByKey.set(key, remaining);
+          } else {
+            state.pendingResponseByKey.delete(key);
+          }
+        }
+      }
+
+      // 3. Record new activation
+      if (matchAct(ev, actPat)) {
+        state.activations += 1;
+        const key = corrKey(ev);
+        let list = state.pendingResponseByKey.get(key);
+        if (!list) {
+          list = [];
+          state.pendingResponseByKey.set(key, list);
+        }
+        list.push(ev);
+      }
+      break;
+    }
+
+    case "Precedence": {
+      const actPat = rule.activation ?? rule.activity;
+      const prePat = rule.target;
+      if (matchTgt(ev, prePat)) {
+        state.latestPreByKey.set(corrKey(ev), ev);
+      }
+      if (matchAct(ev, actPat)) {
+        state.activations += 1;
+        const pre = state.latestPreByKey.get(corrKey(ev));
+        if (pre && withinTimeWindow(pre, ev, rule, memo)) {
+          state.witnessIds.add(pre.id);
+          state.witnessIds.add(ev.id);
+        } else {
+          state.counterexampleIds.add(ev.id);
+        }
+      }
+      break;
+    }
+
+    case "AlternatePrecedence": {
+      const actPat = rule.activation ?? rule.activity;
+      const prePat = rule.target;
+      const isPre = matchTgt(ev, prePat);
+      const isAct = matchAct(ev, actPat);
+      if (isAct) {
+        state.activations += 1;
+        const key = corrKey(ev);
+        const pre = state.availablePreByKey.get(key);
+        if (pre && withinTimeWindow(pre, ev, rule, memo)) {
+          state.witnessIds.add(pre.id);
+          state.witnessIds.add(ev.id);
+          state.availablePreByKey.delete(key);
+        } else {
+          state.counterexampleIds.add(ev.id);
+        }
+      }
+      if (isPre) {
+        state.availablePreByKey.set(corrKey(ev), ev);
+      }
+      break;
+    }
+
+    case "ChainResponse": {
+      const actPat = rule.activation ?? rule.activity;
+      const tgtPat = rule.target;
+      if (state.pendingChainAct) {
+        const prevAct = state.pendingChainAct;
+        state.pendingChainAct = undefined;
+        if (
+          matchTgt(ev, tgtPat) &&
+          corrKey(prevAct) === corrKey(ev) &&
+          withinTimeWindow(prevAct, ev, rule, memo)
+        ) {
+          state.witnessIds.add(prevAct.id);
+          state.witnessIds.add(ev.id);
+        } else {
+          state.counterexampleIds.add(prevAct.id);
+          state.counterexampleIds.add(ev.id);
+        }
+      }
+      if (matchAct(ev, actPat)) {
+        state.activations += 1;
+        state.pendingChainAct = ev;
+      }
+      break;
+    }
+
+    case "ChainPrecedence": {
+      const actPat = rule.activation ?? rule.activity;
+      const prePat = rule.target;
+      if (matchAct(ev, actPat)) {
+        state.activations += 1;
+        const prev = state.prevEvent;
+        if (
+          prev &&
+          matchTgt(prev, prePat) &&
+          corrKey(prev) === corrKey(ev) &&
+          withinTimeWindow(prev, ev, rule, memo)
+        ) {
+          state.witnessIds.add(prev.id);
+          state.witnessIds.add(ev.id);
+        } else {
+          state.counterexampleIds.add(ev.id);
+          if (prev) state.counterexampleIds.add(prev.id);
+        }
+      }
+      state.prevEvent = ev;
+      break;
+    }
+
+    case "NotCoExistence": {
+      const actPat = rule.activation ?? rule.activity;
+      const tgtPat = rule.target;
+      if (matchAct(ev, actPat)) {
+        state.aEventIds.push(ev.id);
+      }
+      if (matchTgt(ev, tgtPat)) {
+        state.bEventIds.push(ev.id);
+      }
+      if (state.aEventIds.length > 0 && state.bEventIds.length > 0) {
+        for (const id of state.aEventIds) state.counterexampleIds.add(id);
+        for (const id of state.bEventIds) state.counterexampleIds.add(id);
+      }
+      break;
+    }
+  }
+}
+
+function getOnlineTraceRvStatus(state: OnlineTraceState, rule: DeclareRule): RvLtlfTruthValue {
+  switch (rule.template) {
+    case "Init": {
+      if (state.traceLength === 0) return "temporarily_satisfied";
+      return state.initStatus ?? "permanently_violated";
+    }
+
+    case "Existence": {
+      const minCount = rule.minCount ?? 1;
+      if (minCount === 0 || state.matchEventIds.length >= minCount) {
+        return "permanently_satisfied";
+      }
+      return "temporarily_violated";
+    }
+
+    case "Absence": {
+      const maxCount = rule.maxCount ?? 0;
+      if (state.matchEventIds.length > maxCount) {
+        return "permanently_violated";
+      }
+      return "temporarily_satisfied";
+    }
+
+    case "Response": {
+      if (state.expiredResponseIds.length > 0) {
+        return "permanently_violated";
+      }
+      for (const pending of state.pendingResponseByKey.values()) {
+        if (pending.length > 0) return "temporarily_violated";
+      }
+      return "temporarily_satisfied";
+    }
+
+    case "Precedence": {
+      if (state.counterexampleIds.size > 0) return "permanently_violated";
+      if (
+        !rule.correlationKey &&
+        rule.minTimeDeltaMs === undefined &&
+        rule.maxTimeDeltaMs === undefined &&
+        state.latestPreByKey.has("")
+      ) {
+        return "permanently_satisfied";
+      }
+      return "temporarily_satisfied";
+    }
+
+    case "AlternatePrecedence": {
+      if (state.counterexampleIds.size > 0) return "permanently_violated";
+      return "temporarily_satisfied";
+    }
+
+    case "ChainResponse": {
+      if (state.counterexampleIds.size > 0) return "permanently_violated";
+      if (state.pendingChainAct !== undefined) return "temporarily_violated";
+      return "temporarily_satisfied";
+    }
+
+    case "ChainPrecedence": {
+      if (state.counterexampleIds.size > 0) return "permanently_violated";
+      return "temporarily_satisfied";
+    }
+
+    case "NotCoExistence": {
+      if (state.aEventIds.length > 0 && state.bEventIds.length > 0) {
+        return "permanently_violated";
+      }
+      return "temporarily_satisfied";
+    }
+  }
+}
+
+function finalizeOnlineTraceOutcome(state: OnlineTraceState, rule: DeclareRule): TraceOutcome {
+  switch (rule.template) {
+    case "Init": {
+      if (state.traceLength === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      if (state.initStatus === "permanently_satisfied") {
+        return {
+          status: "SATISFIED_WITNESSED",
+          witnessIds: state.initEventId ? [state.initEventId] : [],
+          counterexampleIds: [],
+          activations: 1
+        };
+      }
+      return {
+        status: "VIOLATED",
+        witnessIds: [],
+        counterexampleIds: state.initEventId ? [state.initEventId] : [],
+        activations: 1
+      };
+    }
+
+    case "Existence": {
+      const minCount = rule.minCount ?? 1;
+      if (state.traceLength === 0 && minCount > 0) {
+        return { status: "VIOLATED", witnessIds: [], counterexampleIds: [], activations: 1 };
+      }
+      if (minCount === 0) {
+        return state.traceLength > 0 && state.firstEventId
+          ? { status: "SATISFIED_WITNESSED", witnessIds: [state.firstEventId], counterexampleIds: [], activations: 0 }
+          : { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      if (state.matchEventIds.length >= minCount) {
+        return {
+          status: "SATISFIED_WITNESSED",
+          witnessIds: [...state.matchEventIds],
+          counterexampleIds: [],
+          activations: state.matchEventIds.length
+        };
+      }
+      return {
+        status: "VIOLATED",
+        witnessIds: [...state.matchEventIds],
+        counterexampleIds: state.lastEventId ? [state.lastEventId] : [],
+        activations: state.matchEventIds.length
+      };
+    }
+
+    case "Absence": {
+      const maxCount = rule.maxCount ?? 0;
+      if (state.traceLength === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      if (state.matchEventIds.length > maxCount) {
+        return {
+          status: "VIOLATED",
+          witnessIds: [],
+          counterexampleIds: [...state.matchEventIds],
+          activations: state.matchEventIds.length
+        };
+      }
+      return {
+        status: "SATISFIED_WITNESSED",
+        witnessIds: state.firstEventId ? [state.firstEventId] : [],
+        counterexampleIds: [],
+        activations: state.traceLength
+      };
+    }
+
+    case "Response": {
+      const counterIds = new Set<string>(state.counterexampleIds);
+      for (const pending of state.pendingResponseByKey.values()) {
+        for (const actEv of pending) {
+          counterIds.add(actEv.id);
+        }
+      }
+      if (counterIds.size > 0) {
+        return {
+          status: "VIOLATED",
+          witnessIds: [...state.witnessIds],
+          counterexampleIds: [...counterIds],
+          activations: state.activations
+        };
+      }
+      if (state.activations === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      return {
+        status: "SATISFIED_WITNESSED",
+        witnessIds: [...state.witnessIds],
+        counterexampleIds: [],
+        activations: state.activations
+      };
+    }
+
+    case "Precedence":
+    case "AlternatePrecedence":
+    case "ChainPrecedence": {
+      if (state.counterexampleIds.size > 0) {
+        return {
+          status: "VIOLATED",
+          witnessIds: [...state.witnessIds],
+          counterexampleIds: [...state.counterexampleIds],
+          activations: state.activations
+        };
+      }
+      if (state.activations === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      return {
+        status: "SATISFIED_WITNESSED",
+        witnessIds: [...state.witnessIds],
+        counterexampleIds: [],
+        activations: state.activations
+      };
+    }
+
+    case "ChainResponse": {
+      const counterIds = new Set<string>(state.counterexampleIds);
+      if (state.pendingChainAct) {
+        counterIds.add(state.pendingChainAct.id);
+      }
+      if (counterIds.size > 0) {
+        return {
+          status: "VIOLATED",
+          witnessIds: [...state.witnessIds],
+          counterexampleIds: [...counterIds],
+          activations: state.activations
+        };
+      }
+      if (state.activations === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      return {
+        status: "SATISFIED_WITNESSED",
+        witnessIds: [...state.witnessIds],
+        counterexampleIds: [],
+        activations: state.activations
+      };
+    }
+
+    case "NotCoExistence": {
+      if (state.aEventIds.length > 0 && state.bEventIds.length > 0) {
+        return {
+          status: "VIOLATED",
+          witnessIds: [],
+          counterexampleIds: [...state.aEventIds, ...state.bEventIds],
+          activations: state.aEventIds.length + state.bEventIds.length
+        };
+      }
+      if (state.aEventIds.length > 0 || state.bEventIds.length > 0) {
+        const present = state.aEventIds.length > 0 ? state.aEventIds : state.bEventIds;
+        return {
+          status: "SATISFIED_WITNESSED",
+          witnessIds: [...present],
+          counterexampleIds: [],
+          activations: present.length
+        };
+      }
+      return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+    }
+  }
+}
+
+/**
+ * Incremental RV-LTLf 4-valued prefix monitor for DECLARE rules over OCEL 2.0 event streams.
+ *
+ * Distinguishes permanently_violated (safe to gate/fail online immediately) from
+ * temporarily_violated (open obligations like Response/Existence/ChainResponse that may
+ * still be fulfilled by future events), and permanently_satisfied from temporarily_satisfied.
+ */
+export class DeclareOnlineMonitor {
+  private readonly rules: readonly DeclareRule[];
+  private readonly memo: EvalMemo;
+  private readonly objectById: Map<string, Ocel2ObjectLike>;
+  private readonly tracesByRuleIndex: Map<string, OnlineTraceState>[];
+  private eventCount = 0;
+
+  constructor(options: DeclareOnlineMonitorOptions = {}) {
+    const rulesInput = options.rules ?? DEFAULT_EU_AI_ACT_DECLARE_RULES;
+    this.rules = Array.isArray(rulesInput)
+      ? rulesInput
+      : (rulesInput as DeclareRulesDocument).rules ?? DEFAULT_EU_AI_ACT_DECLARE_RULES;
+    this.memo = createEvalMemo();
+    this.objectById = new Map();
+    this.tracesByRuleIndex = this.rules.map(() => new Map<string, OnlineTraceState>());
+
+    for (const obj of options.objects ?? []) {
+      this.registerObject(obj);
+    }
+  }
+
+  registerObject(obj: Ocel2ObjectLike): void {
+    this.objectById.set(obj.id, obj);
+    for (let i = 0; i < this.rules.length; i++) {
+      const rule = this.rules[i]!;
+      const objectType = rule.objectType ?? "session";
+      if (obj.type === objectType) {
+        const traces = this.tracesByRuleIndex[i]!;
+        if (!traces.has(obj.id)) {
+          traces.set(obj.id, createOnlineTraceState());
+        }
+      }
+    }
+  }
+
+  step(event: Ocel2EventLike): DeclareOnlineSnapshot {
+    this.eventCount += 1;
+
+    for (let i = 0; i < this.rules.length; i++) {
+      const rule = this.rules[i]!;
+      const objectType = rule.objectType ?? "session";
+      const traces = this.tracesByRuleIndex[i]!;
+
+      const matchedIds = new Set<string>();
+      for (const rel of event.relationships ?? []) {
+        const obj = this.objectById.get(rel.objectId);
+        const inferredType = obj?.type ?? QUALIFIER_TO_OBJECT_TYPE[rel.qualifier];
+        if (inferredType === objectType) {
+          matchedIds.add(rel.objectId);
+        }
+      }
+
+      for (const oid of matchedIds) {
+        let state = traces.get(oid);
+        if (!state) {
+          state = createOnlineTraceState();
+          traces.set(oid, state);
+        }
+        stepOnlineTraceState(state, event, rule, this.objectById, this.memo);
+      }
+    }
+
+    return this.snapshot();
+  }
+
+  getRuleState(ruleId: string): DeclareOnlineRuleState | undefined {
+    const idx = this.rules.findIndex((r) => r.id === ruleId);
+    if (idx === -1) return undefined;
+    return this.buildRuleState(idx);
+  }
+
+  private buildRuleState(index: number): DeclareOnlineRuleState {
+    const rule = this.rules[index]!;
+    const objectType = rule.objectType ?? "session";
+    const mandatory = rule.mandatory ?? true;
+    const antiVacuityRequired = rule.antiVacuityRequired ?? false;
+    const traces = this.tracesByRuleIndex[index]!;
+
+    if (traces.size === 0) {
+      return {
+        id: rule.id,
+        template: rule.template,
+        objectType,
+        mandatory,
+        antiVacuityRequired,
+        rvStatus: "temporarily_satisfied",
+        witness_event_ids: [],
+        counterexample_event_ids: [],
+        activations: 0,
+        evaluatedTraces: 0,
+        permanentlySatisfiedTraces: 0,
+        temporarilySatisfiedTraces: 0,
+        temporarilyViolatedTraces: 0,
+        permanentlyViolatedTraces: 0,
+        article: rule.article,
+        detail: `No traces observed yet for objectType "${objectType}" (temporarily_satisfied).`
+      };
+    }
+
+    let permanentlySatisfiedTraces = 0;
+    let temporarilySatisfiedTraces = 0;
+    let temporarilyViolatedTraces = 0;
+    let permanentlyViolatedTraces = 0;
+    let totalActivations = 0;
+    const witnessSet = new Set<string>();
+    const counterSet = new Set<string>();
+
+    for (const state of traces.values()) {
+      const rv = getOnlineTraceRvStatus(state, rule);
+      totalActivations += state.activations;
+      for (const id of state.witnessIds) witnessSet.add(id);
+      for (const id of state.counterexampleIds) counterSet.add(id);
+      if (rule.template === "Response") {
+        for (const pending of state.pendingResponseByKey.values()) {
+          for (const actEv of pending) counterSet.add(actEv.id);
+        }
+      } else if (rule.template === "ChainResponse" && state.pendingChainAct) {
+        counterSet.add(state.pendingChainAct.id);
+      } else if (rule.template === "NotCoExistence" && rv !== "permanently_violated") {
+        const present = state.aEventIds.length > 0 ? state.aEventIds : state.bEventIds;
+        for (const id of present) witnessSet.add(id);
+      }
+
+      if (rv === "permanently_violated") permanentlyViolatedTraces += 1;
+      else if (rv === "temporarily_violated") temporarilyViolatedTraces += 1;
+      else if (rv === "permanently_satisfied") permanentlySatisfiedTraces += 1;
+      else temporarilySatisfiedTraces += 1;
+    }
+
+    const rvStatus: RvLtlfTruthValue =
+      permanentlyViolatedTraces > 0
+        ? "permanently_violated"
+        : temporarilyViolatedTraces > 0
+          ? "temporarily_violated"
+          : permanentlySatisfiedTraces === traces.size
+            ? "permanently_satisfied"
+            : "temporarily_satisfied";
+
+    return {
+      id: rule.id,
+      template: rule.template,
+      objectType,
+      mandatory,
+      antiVacuityRequired,
+      rvStatus,
+      witness_event_ids: [...witnessSet],
+      counterexample_event_ids: [...counterSet],
+      activations: totalActivations,
+      evaluatedTraces: traces.size,
+      permanentlySatisfiedTraces,
+      temporarilySatisfiedTraces,
+      temporarilyViolatedTraces,
+      permanentlyViolatedTraces,
+      article: rule.article,
+      detail: `Rule ${rule.id} (${rule.template}) is ${rvStatus} across ${traces.size} "${objectType}" trace(s).`
+    };
+  }
+
+  snapshot(): DeclareOnlineSnapshot {
+    const results = this.rules.map((_, i) => this.buildRuleState(i));
+    const permanentlyViolatedRuleIds = results
+      .filter((r) => r.rvStatus === "permanently_violated")
+      .map((r) => r.id);
+    const temporarilyViolatedRuleIds = results
+      .filter((r) => r.rvStatus === "temporarily_violated")
+      .map((r) => r.id);
+    const hasPermanentViolation = permanentlyViolatedRuleIds.length > 0;
+    const hasTemporaryViolation = temporarilyViolatedRuleIds.length > 0;
+    const allMandatoryCurrentlySatisfied = results.every(
+      (r) =>
+        !r.mandatory ||
+        (r.rvStatus === "permanently_satisfied" || r.rvStatus === "temporarily_satisfied")
+    );
+    const canGateFail = results.some((r) => r.mandatory && r.rvStatus === "permanently_violated");
+
+    return {
+      schema: "zcode.declare-online/1",
+      eventCount: this.eventCount,
+      results,
+      hasPermanentViolation,
+      hasTemporaryViolation,
+      permanentlyViolatedRuleIds,
+      temporarilyViolatedRuleIds,
+      allMandatoryCurrentlySatisfied,
+      canGateFail
+    };
+  }
+
+  finalize(): DeclareConformanceReport {
+    const results: DeclareEvaluationResult[] = [];
+
+    for (let i = 0; i < this.rules.length; i++) {
+      const rule = this.rules[i]!;
+      const objectType = rule.objectType ?? "session";
+      const mandatory = rule.mandatory ?? true;
+      const antiVacuityRequired = rule.antiVacuityRequired ?? false;
+      const traces = this.tracesByRuleIndex[i]!;
+
+      if (traces.size === 0) {
+        results.push({
+          id: rule.id,
+          template: rule.template,
+          objectType,
+          mandatory,
+          antiVacuityRequired,
+          status: "SATISFIED_VACUOUS",
+          witness_event_ids: [],
+          counterexample_event_ids: [],
+          activations: 0,
+          evaluatedTraces: 0,
+          witnessedTraces: 0,
+          vacuousTraces: 0,
+          violatedTraces: 0,
+          antiVacuityPassed: false,
+          article: rule.article,
+          detail: `No traces observed for objectType "${objectType}" (vacuously satisfied).`
+        });
+        continue;
+      }
+
+      let witnessedTraces = 0;
+      let vacuousTraces = 0;
+      let violatedTraces = 0;
+      let totalActivations = 0;
+      const witnessSet = new Set<string>();
+      const counterSet = new Set<string>();
+
+      for (const state of traces.values()) {
+        const res = finalizeOnlineTraceOutcome(state, rule);
+        totalActivations += res.activations;
+        for (const id of res.witnessIds) witnessSet.add(id);
+        for (const id of res.counterexampleIds) counterSet.add(id);
+        if (res.status === "VIOLATED") violatedTraces += 1;
+        else if (res.status === "SATISFIED_WITNESSED") witnessedTraces += 1;
+        else vacuousTraces += 1;
+      }
+
+      const status: DeclareStatus =
+        violatedTraces > 0
+          ? "VIOLATED"
+          : witnessedTraces > 0
+            ? "SATISFIED_WITNESSED"
+            : "SATISFIED_VACUOUS";
+
+      const antiVacuityPassed = status === "SATISFIED_WITNESSED";
+
+      results.push({
+        id: rule.id,
+        template: rule.template,
+        objectType,
+        mandatory,
+        antiVacuityRequired,
+        status,
+        witness_event_ids: status === "SATISFIED_VACUOUS" ? [] : [...witnessSet],
+        counterexample_event_ids: [...counterSet],
+        activations: totalActivations,
+        evaluatedTraces: traces.size,
+        witnessedTraces,
+        vacuousTraces,
+        violatedTraces,
+        antiVacuityPassed,
+        article: rule.article,
+        detail:
+          status === "VIOLATED"
+            ? `Rule ${rule.id} (${rule.template}) violated in ${violatedTraces}/${traces.size} "${objectType}" trace(s).`
+            : status === "SATISFIED_WITNESSED"
+              ? `Rule ${rule.id} (${rule.template}) witnessed in ${witnessedTraces}/${traces.size} "${objectType}" trace(s).`
+              : `Rule ${rule.id} (${rule.template}) vacuously satisfied across ${traces.size} "${objectType}" trace(s) (0 activations).`
+      });
+    }
+
+    const witnessedCount = results.filter((r) => r.status === "SATISFIED_WITNESSED").length;
+    const vacuousCount = results.filter((r) => r.status === "SATISFIED_VACUOUS").length;
+    const violatedCount = results.filter((r) => r.status === "VIOLATED").length;
+    const allMandatorySatisfied = results.every(
+      (r) => !r.mandatory || (r.status !== "VIOLATED" && (!r.antiVacuityRequired || r.antiVacuityPassed))
+    );
+
+    return {
+      schema: "zcode.declare-report/1",
+      results,
+      allMandatorySatisfied,
+      witnessedCount,
+      vacuousCount,
+      violatedCount
+    };
+  }
+}
+
+export function createDeclareOnlineMonitor(
+  options: DeclareOnlineMonitorOptions = {}
+): DeclareOnlineMonitor {
+  return new DeclareOnlineMonitor(options);
 }

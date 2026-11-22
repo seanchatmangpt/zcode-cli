@@ -578,7 +578,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       const exp = runZcodeCli(["ocel", "export", "--in", inPath, "--format", "sqlite", "--out", dbPath], ws);
       expect(exp.exitCode).toBe(0);
 
-      const db = new Database(dbPath, { readonly: true });
+      const db = new Database(dbPath);
       try {
         const integrity = db.query("PRAGMA integrity_check;").get() as { integrity_check: string };
         expect(integrity.integrity_check).toBe("ok");
@@ -957,7 +957,9 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
       const cfgPath = ws.writeToml(
         buildComplianceToml({ profile: "high-risk-annex-iii", overseerId: "", logRetentionDays: 180 }),
       );
-      const res = runZcodeCli(["compliance", "deployer-check", "--config", cfgPath, "--json"], ws);
+      const res = runZcodeCli(["compliance", "deployer-check", "--config", cfgPath, "--json"], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
@@ -995,7 +997,9 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
     await withIsolatedWorkspace(async (ws) => {
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii", overseerId: "" }));
       const outPath = ws.path("fria-bad.json");
-      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath], ws);
+      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect([1, 2]).toContain(res.exitCode);
       expect(existsSync(outPath)).toBe(false);
       expect(res.stdout + res.stderr).toMatch(/OVERSIGHT_POLICY_REFUSED|overseer_id/i);

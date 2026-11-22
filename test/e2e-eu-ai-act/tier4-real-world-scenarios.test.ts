@@ -226,11 +226,13 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
         decisionLatencyMs: 1450,
         gitHeadSha: head,
         includeSubagent: true,
+        includeWorkOrder: true,
       });
       const logsDir = ws.path("soak-logs");
       mkdirSync(logsDir, { recursive: true });
       const jsonPath = join(logsDir, "sess_annex3_lifecycle.ocel.json");
       writeFileSync(jsonPath, JSON.stringify(sessionDoc, null, 2), "utf8");
+      writeFileSync(join(ws.ocelDir, "sess_annex3_lifecycle.ocel.json"), JSON.stringify(sessionDoc, null, 2), "utf8");
 
       const sqlitePath = ws.path("lifecycle.ocel.sqlite");
       const toSqlite = runZcodeCli(
@@ -295,7 +297,7 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
         ]),
       );
       const verRes = runZcodeCli(
-        ["ocel", "verify", "--in", jsonPath, "--wfnet", wfPath, "--declare", rulesPath, "--json"],
+        ["ocel", "verify", "--in", roundTripJson, "--wfnet", wfPath, "--declare", rulesPath, "--json"],
         ws,
       );
       expect(verRes.exitCode).toBe(0);
@@ -341,12 +343,16 @@ describe("Tier 4 — Real-World EU AI Act & van der Aalst E2E Compliance Scenari
 
       // 7. Art. 27 FRIA export (JSON + MD) & Art. 13 compliance info + version --compliance
       const friaJsonPath = ws.path("fria-report.json");
-      const friaRes = runZcodeCli(["compliance", "fria-export", "--out", friaJsonPath], ws);
+      const friaRes = runZcodeCli(["compliance", "fria-export", "--out", friaJsonPath], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect(friaRes.exitCode).toBe(0);
       expect(readFileSync(friaJsonPath, "utf8")).toContain("overseer-alice-eu");
 
       const friaMdPath = ws.path("fria-report.md");
-      const friaMdRes = runZcodeCli(["compliance", "fria-export", "--out", friaMdPath, "--format", "md"], ws);
+      const friaMdRes = runZcodeCli(["compliance", "fria-export", "--out", friaMdPath, "--format", "md"], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect(friaMdRes.exitCode).toBe(0);
       expect(readFileSync(friaMdPath, "utf8")).toContain("#");
 

@@ -78,6 +78,7 @@ export const UI_LAYOUT_VIEWPORTS_ENV = "UI_LAYOUT_VIEWPORTS";
 export const UI_LAYOUT_PLAYWRIGHT_VIEWPORTS_ENV = "UI_LAYOUT_PLAYWRIGHT_VIEWPORTS";
 
 export const DEFAULT_MIN_TOUCH_TARGET_PX = 44;
+export const DEFAULT_PRIMARY_TOUCH_TARGET_PX = 48;
 export const DEFAULT_MIN_TOUCH_GAP_PX = 8;
 export const DEFAULT_MAX_REMEDIATION_ATTEMPTS = 3;
 
@@ -89,8 +90,30 @@ export interface LayoutBox {
   height: number;
   /** Interactive control (button / link / input) — subject to touch floors. */
   interactive?: boolean;
+  /** Primary / Android Material interactive target — subject to 48px preferred floor. */
+  primary?: boolean;
+  /** Optional per-control touch floor (e.g. 48px Material vs 44px WCAG). */
+  preferredTouchTargetPx?: number;
   /** Semantic group id for Gestalt proximity (sh:PropertyGroup). */
   group?: string;
+  /** Optional typography fields for WCAG 1.4.12 1.5× text-expansion checks. */
+  fontSize?: number;
+  /** Unitless line-height multiplier (e.g. 1.2). */
+  lineHeight?: number;
+  /** Base letter-spacing in em (default 0). */
+  letterSpacing?: number;
+  /** Base word-spacing in em (default 0). */
+  wordSpacing?: number;
+  /** Optional explicit line count for WCAG 1.4.12 height expansion. */
+  lineCount?: number;
+  /** Optional explicit paragraph count for WCAG 1.4.12 paragraph-spacing expansion. */
+  paragraphCount?: number;
+  /** Optional explicit character count for WCAG 1.4.12 letter-spacing expansion. */
+  charCount?: number;
+  /** Optional explicit word count for WCAG 1.4.12 word-spacing expansion. */
+  wordCount?: number;
+  /** Structured text metrics for WCAG 1.4.12 1.5× expansion verification. */
+  textMetrics?: ModeBTextMetrics;
 }
 
 /** In-process spatial subject (Chicago tests / fixture injection). */
@@ -532,21 +555,27 @@ function cargoPackageName(cmd: string[]): string | undefined {
 
 export interface SpatialCheckOptions {
   minTouchTargetPx?: number;
+  /** Preferred touch-target floor for primary / Android controls (default 48px). */
+  primaryTouchTargetPx?: number;
   minTouchGapPx?: number;
   /** Configured sweep from {@link UiLayoutCourtAdapter.viewports} (digest / audit). */
   configuredViewports?: number[];
+  /** Require WCAG 1.4.12 1.5× text-expansion pass when typography/textMetrics are present (default true). */
+  checkWcag1412?: boolean;
 }
 
 /**
  * Fail-closed spatial oracle over absolute boxes.
- * Detects: viewport overflow, pairwise overlap, touch-target floors, gap floors,
- * and Gestalt inter ≥ 2·intra when group gaps are supplied.
+ * Detects: viewport overflow, pairwise overlap, 44px/48px touch-target floors,
+ * gap floors, Gestalt inter ≥ 2·intra (from explicit metadata or `box.group`
+ * geometry), and WCAG 1.4.12 1.5× text expansion.
  */
 export function checkSpatialSubject(
   subject: SpatialSubject,
   opts: SpatialCheckOptions = {}
 ): string[] {
   const minTouch = opts.minTouchTargetPx ?? DEFAULT_MIN_TOUCH_TARGET_PX;
+  const primaryTouch = opts.primaryTouchTargetPx ?? DEFAULT_PRIMARY_TOUCH_TARGET_PX;
   const minGap = opts.minTouchGapPx ?? DEFAULT_MIN_TOUCH_GAP_PX;
   const defects: string[] = [];
   const { viewportWidth: vw, boxes } = subject;
@@ -570,6 +599,15 @@ export function checkSpatialSubject(
           `spatial defect: interactive "${b.id}" touch target ${b.width}×${b.height} ` +
             `< ${minTouch}px floor`
         );
+      }
+      if (b.primary || b.preferredTouchTargetPx !== undefined) {
+        const preferredFloor = Math.max(minTouch, b.preferredTouchTargetPx ?? primaryTouch);
+        if (b.width < preferredFloor || b.height < preferredFloor) {
+          defects.push(
+            `spatial defect: interactive "${b.id}" touch target ${b.width}×${b.height} ` +
+              `< ${preferredFloor}px preferred floor`
+          );
+        }
       }
     }
   }
@@ -602,6 +640,55 @@ export function checkSpatialSubject(
       `spatial defect: Gestalt proximity violated ` +
         `(inter=${subject.interGroupGapPx} < 2·intra=${2 * subject.intraGroupGapPx})`
     );
+  } else {
+    // Derive Gestalt intra-group vs. inter-group gaps directly from LayoutBox.group.
+    const grouped = boxes.filter((b) => typeof b.group === "string" && b.group.length > 0);
+    if (grouped.length >= 2) {
+      let maxNearestIntra = -1;
+      let minInter = Infinity;
+      for (let i = 0; i < grouped.length; i += 1) {
+        const a = grouped[i]!;
+        let nearestSame = Infinity;
+        for (let j = 0; j < grouped.length; j += 1) {
+          if (i === j) continue;
+          const b = grouped[j]!;
+          const gap = edgeGap(a, b);
+          if (a.group === b.group) {
+            if (gap < nearestSame) nearestSame = gap;
+          } else if (gap < minInter) {
+            minInter = gap;
+          }
+        }
+        if (Number.isFinite(nearestSame) && nearestSame > maxNearestIntra) {
+          maxNearestIntra = nearestSame;
+        }
+      }
+      if (maxNearestIntra > 0 && Number.isFinite(minInter) && minInter < 2 * maxNearestIntra) {
+        defects.push(
+          `spatial defect: Gestalt proximity violated ` +
+            `(derived inter=${minInter.toFixed(1)}px < 2·intra=${(2 * maxNearestIntra).toFixed(1)}px)`
+        );
+      }
+    }
+  }
+
+  if (opts.checkWcag1412 !== false && boxes.some(hasTypographyMetrics)) {
+    const expandedBoxes = boxes.map((b) => applyWcag1412Expansion(b));
+    const expandedDefects = checkSpatialSubject(
+      {
+        viewportWidth: subject.viewportWidth,
+        boxes: expandedBoxes,
+        intraGroupGapPx: subject.intraGroupGapPx,
+        interGroupGapPx: subject.interGroupGapPx
+      },
+      { ...opts, checkWcag1412: false }
+    );
+    const baseSet = new Set(defects);
+    for (const d of expandedDefects) {
+      if (!baseSet.has(d)) {
+        defects.push(`WCAG 1.4.12 expansion: ${d}`);
+      }
+    }
   }
 
   return defects;
@@ -1023,18 +1110,52 @@ export interface ModeBSpatialCourtResult {
   artifactDigests: Record<string, string>;
 }
 
-/** Expand a ModeBBox under WCAG 1.4.12 minima (top-left anchored). */
-export function applyWcag1412Expansion(box: ModeBBox): LayoutBox {
+function hasTypographyMetrics(box: LayoutBox): boolean {
+  return (
+    box.textMetrics !== undefined ||
+    box.fontSize !== undefined ||
+    box.lineHeight !== undefined ||
+    box.letterSpacing !== undefined ||
+    box.wordSpacing !== undefined
+  );
+}
+
+/** Expand a LayoutBox / ModeBBox under WCAG 1.4.12 minima (top-left anchored). */
+export function applyWcag1412Expansion(box: LayoutBox): LayoutBox {
   const m = box.textMetrics;
-  if (!m) return box;
+  if (m) {
+    const widthDelta =
+      m.charCount * m.fontSize * WCAG_1412_LETTER_SPACING_EM +
+      m.wordCount * m.fontSize * WCAG_1412_WORD_SPACING_EM;
+    const lines = Math.max(1, m.lineCount);
+    const paraGaps = Math.max(0, m.paragraphCount - 1);
+    const requiredHeight =
+      lines * m.fontSize * WCAG_1412_LINE_HEIGHT_MULT +
+      paraGaps * m.fontSize * WCAG_1412_PARAGRAPH_SPACING_MULT;
+    return {
+      ...box,
+      width: box.width + widthDelta,
+      height: Math.max(box.height, requiredHeight)
+    };
+  }
+  if (!hasTypographyMetrics(box)) return box;
+  const fontSize = box.fontSize ?? 16;
+  const baseLineHeight = box.lineHeight ?? 1.2;
+  const baseLetterSpacing = box.letterSpacing ?? 0;
+  const baseWordSpacing = box.wordSpacing ?? 0;
+  const charCount = box.charCount ?? Math.max(1, Math.round(box.width / (fontSize * 0.55)));
+  const wordCount = box.wordCount ?? Math.max(1, Math.round(charCount / 5));
+  const lines = Math.max(
+    1,
+    box.lineCount ?? Math.round(box.height / (fontSize * Math.max(0.5, baseLineHeight)))
+  );
+  const paraGaps = Math.max(0, (box.paragraphCount ?? 1) - 1);
   const widthDelta =
-    m.charCount * m.fontSize * WCAG_1412_LETTER_SPACING_EM +
-    m.wordCount * m.fontSize * WCAG_1412_WORD_SPACING_EM;
-  const lines = Math.max(1, m.lineCount);
-  const paraGaps = Math.max(0, m.paragraphCount - 1);
+    charCount * fontSize * Math.max(0, WCAG_1412_LETTER_SPACING_EM - baseLetterSpacing) +
+    wordCount * fontSize * Math.max(0, WCAG_1412_WORD_SPACING_EM - baseWordSpacing);
   const requiredHeight =
-    lines * m.fontSize * WCAG_1412_LINE_HEIGHT_MULT +
-    paraGaps * m.fontSize * WCAG_1412_PARAGRAPH_SPACING_MULT;
+    lines * fontSize * Math.max(baseLineHeight, WCAG_1412_LINE_HEIGHT_MULT) +
+    paraGaps * fontSize * WCAG_1412_PARAGRAPH_SPACING_MULT;
   return {
     ...box,
     width: box.width + widthDelta,
@@ -1136,41 +1257,10 @@ export function checkModeBSubject(
   subject: ModeBSubject,
   opts: ModeBCheckOptions = {}
 ): string[] {
-  const minTouch = opts.minTouchTargetPx ?? DEFAULT_MIN_TOUCH_TARGET_PX;
-  const defects = checkSpatialSubject(subject, opts);
-
-  for (const b of subject.boxes) {
-    if (b.interactive && b.preferredTouchTargetPx !== undefined) {
-      const floor = Math.max(minTouch, b.preferredTouchTargetPx);
-      if (b.width < floor || b.height < floor) {
-        defects.push(
-          `spatial defect: interactive "${b.id}" touch target ${b.width}×${b.height} ` +
-            `< ${floor}px preferred floor`
-        );
-      }
-    }
-  }
-
-  if (opts.checkWcag1412 !== false && subject.boxes.some((b) => b.textMetrics)) {
-    const expandedBoxes = subject.boxes.map((b) => applyWcag1412Expansion(b));
-    const expandedDefects = checkSpatialSubject(
-      {
-        viewportWidth: subject.viewportWidth,
-        boxes: expandedBoxes,
-        intraGroupGapPx: subject.intraGroupGapPx,
-        interGroupGapPx: subject.interGroupGapPx
-      },
-      opts
-    );
-    const baseSet = new Set(defects);
-    for (const d of expandedDefects) {
-      if (!baseSet.has(d)) {
-        defects.push(`WCAG 1.4.12 expansion: ${d}`);
-      }
-    }
-  }
-
-  return defects;
+  return checkSpatialSubject(subject, {
+    ...opts,
+    checkWcag1412: opts.checkWcag1412 ?? true
+  });
 }
 
 /**

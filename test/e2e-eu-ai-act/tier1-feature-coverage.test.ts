@@ -121,6 +121,8 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
     await withIsolatedWorkspace(async (ws) => {
       const repo = initGitRepo(ws.cwd);
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii", gitProvenanceTrailer: true }));
+      const seedDoc = buildConformingHighRiskSession({ sessionId: "sess_a01_4", includeWorkOrder: true });
+      writeFileSync(join(ws.ocelDir, "sess_a01_4.ocel.json"), JSON.stringify(seedDoc, null, 2), "utf8");
       ws.writeText("output.txt", "AI-assisted content\n");
       const docOutPath = ws.path("eu-doc.json");
       const res = runZcodeCli(["compliance", "doc", "--out", docOutPath], ws);
@@ -779,7 +781,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii" }));
       const logsDir = ws.path("soak-logs");
       mkdirSync(logsDir, { recursive: true });
-      const doc = buildConformingHighRiskSession({ sessionId: "sess_assess_01" });
+      const doc = buildConformingHighRiskSession({ sessionId: "sess_assess_01", includeWorkOrder: true });
       writeFileSync(join(logsDir, "sess_assess_01.ocel.json"), JSON.stringify(doc, null, 2), "utf8");
 
       const res = runZcodeCli(["compliance", "assess", "--logs", logsDir, "--json"], ws);
@@ -793,6 +795,8 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
   test("A09.3: zcode compliance doc --out <file> emits Annex V EU Declaration of Conformity with HEAD & lock sha512", async () => {
     await withIsolatedWorkspace(async (ws) => {
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii" }));
+      const seedDoc = buildConformingHighRiskSession({ sessionId: "sess_doc_01", includeWorkOrder: true });
+      writeFileSync(join(ws.ocelDir, "sess_doc_01.ocel.json"), JSON.stringify(seedDoc, null, 2), "utf8");
       const lock = JSON.parse(readFileSync(join(REPO_ROOT, "zcode-runtime.lock.json"), "utf8")) as { sha512: string };
       const outPath = ws.path("eu-declaration-of-conformity.json");
       const res = runZcodeCli(["compliance", "doc", "--out", outPath], ws);
@@ -882,7 +886,9 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
     await withIsolatedWorkspace(async (ws) => {
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii" }));
       const outPath = ws.path("fria.json");
-      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath], ws);
+      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect(res.exitCode).toBe(0);
       expect(existsSync(outPath)).toBe(true);
       const fria = JSON.parse(readFileSync(outPath, "utf8")) as Record<string, unknown>;
@@ -896,7 +902,9 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
     await withIsolatedWorkspace(async (ws) => {
       ws.writeToml(buildComplianceToml({ profile: "high-risk-annex-iii" }));
       const outPath = ws.path("fria.md");
-      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath, "--format", "md"], ws);
+      const res = runZcodeCli(["compliance", "fria-export", "--out", outPath, "--format", "md"], ws, {
+        env: { ZCODE_OVERSEER_ID: undefined },
+      });
       expect(res.exitCode).toBe(0);
       const md = readFileSync(outPath, "utf8");
       expect(md).toContain("#");

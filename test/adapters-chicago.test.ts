@@ -19,7 +19,10 @@ import {
   runFoundryLoop
 } from "../src/adapters/index.ts";
 import {
+  PUBLIC_CURIE_URI_BASES,
   PUBLIC_ONTOLOGY_PREFIXES,
+  findAskQueries,
+  isSelectOnlySparql,
   structuralPrivateNamespaceScan
 } from "../src/adapters/marketplace-court.ts";
 import { aggregateStanding, exitCodeForStanding } from "../src/adapters/receipt-sink.ts";
@@ -319,6 +322,83 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     expect(leakVerdict.exitCode).toBe(1);
     expect(leakVerdict.standing).toBe("REFUSED");
     expect(leakVerdict.diagnostics.join("\n")).toContain("https://zcode.dev/ontology/zcode-loop#");
+  });
+
+  test("V02-Truex-Shui: findAskQueries enforces SELECT-only SPARQL recursively (refuses CONSTRUCT/DESCRIBE/UPDATE)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "chicago-select-only-"));
+    const gatesDir = join(root, "packs", "demo", "gates");
+    const nestedDir = join(gatesDir, "nested");
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(
+      join(root, "packs", "demo", "pack.toml"),
+      '[pack]\nname = "demo"\nversion = "0.1.0"\ndescription = "select-only"\n'
+    );
+
+    // Valid SELECT query with PREFIX, comments mentioning ASK, and ?delete variable
+    writeFileSync(
+      join(gatesDir, "000_good.rq"),
+      "# Comment mentioning ASK and DELETE\n" +
+        "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
+        'SELECT ?violation ?delete WHERE { ?violation rdf:type ?delete . FILTER(?delete != "DROP") }\n'
+    );
+    expect(findAskQueries(gatesDir)).toEqual([]);
+    expect(isSelectOnlySparql("SELECT ?s WHERE { ?s ?p ?o }")).toBe(true);
+    expect(isSelectOnlySparql("SELECT ?s WHERE { ?s ?p ?o } ; DROP ALL")).toBe(false);
+
+    // Non-SELECT forms: CONSTRUCT, DESCRIBE, DELETE, INSERT, LOAD, CLEAR, DROP (including nested)
+    writeFileSync(join(gatesDir, "001_construct.rq"), "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }\n");
+    writeFileSync(join(gatesDir, "002_describe.rq"), "DESCRIBE ?s WHERE { ?s ?p ?o }\n");
+    writeFileSync(join(nestedDir, "003_delete.rq"), "DELETE WHERE { ?s ?p ?o }\n");
+    writeFileSync(join(nestedDir, "004_insert.rq"), "INSERT DATA { <urn:uuid:1> <urn:uuid:2> <urn:uuid:3> }\n");
+    writeFileSync(join(nestedDir, "005_drop.rq"), "DROP ALL\n");
+
+    const hits = findAskQueries(gatesDir);
+    expect(hits).toEqual([
+      "001_construct.rq",
+      "002_describe.rq",
+      "nested/003_delete.rq",
+      "nested/004_insert.rq",
+      "nested/005_drop.rq"
+    ]);
+
+    const court = new MarketplaceCourtAdapter({
+      packDirs: [join(root, "packs", "demo")],
+      requireDoubleCapsuleCheck: false
+    });
+    const verdict = await court.verifyPostTransition(root);
+    expect(verdict.exitCode).toBe(1);
+    expect(verdict.standing).toBe("REFUSED");
+    expect(verdict.diagnostics.join("\n")).toContain("001_construct.rq");
+    expect(verdict.diagnostics.join("\n")).toContain("nested/003_delete.rq");
+  });
+
+  test("V02-Truex-Shui: CURIE-to-URI allowlist admits ratified public prefixes (dcterms, foaf, airo, shui, ocel, fibo)", () => {
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("shui:");
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("dcterms:");
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("airo:");
+    expect(PUBLIC_CURIE_URI_BASES["dcterms:"]).toContain("http://purl.org/dc/terms/");
+    expect(PUBLIC_CURIE_URI_BASES["airo:"]).toContain("https://w3id.org/airo#");
+
+    const packDir = mkdtempSync(join(tmpdir(), "chicago-curie-allow-"));
+    const ontDir = join(packDir, "ontology");
+    mkdirSync(ontDir, { recursive: true });
+    const rqPath = join(packDir, "gates", "000_forbid_private_namespaces.rq");
+
+    writeFileSync(
+      join(ontDir, "ratified.ttl"),
+      "@prefix dcterms: <http://purl.org/dc/terms/> .\n" +
+        "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n" +
+        "@prefix airo: <https://w3id.org/airo#> .\n" +
+        "@prefix shui: <http://www.w3.org/ns/shacl-ui#> .\n" +
+        "@prefix ocel: <http://www.ocel-standard.org/> .\n" +
+        "@prefix p-plan: <http://purl.org/net/p-plan#> .\n" +
+        "@prefix fibo-fnd-acc-cur: <https://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/> .\n" +
+        "<urn:uuid:11111111-1111-1111-1111-111111111111> dcterms:title \"Ratified\" ; a airo:AISystem .\n"
+    );
+
+    const res = structuralPrivateNamespaceScan(packDir, rqPath);
+    expect(res.status).toBe(0);
+    expect(res.stderr).toBe("");
   });
 
   test("ERRC RAISE: ReceiptSink populates consequence/replay, fails closed on missing git HEAD, and preserves UNSUPPORTED (exit 3)", () => {

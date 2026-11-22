@@ -10,10 +10,12 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
-  unlinkSync
+  unlinkSync,
+  writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -67,12 +69,24 @@ export interface RetryHistoryEntry {
   timestamp: string;
 }
 
+export interface SignatureRetryLimiterState {
+  version: 1;
+  maxRetriesPerSignature: number;
+  counts: Record<string, number>;
+  history: RetryHistoryEntry[];
+}
+
+export interface SignatureRetryLimiterOptions {
+  statePath?: string;
+}
+
 export class SignatureRetryLimiter {
   readonly maxRetriesPerSignature: number;
+  readonly statePath?: string;
   private readonly counts = new Map<string, number>();
   private readonly history: RetryHistoryEntry[] = [];
 
-  constructor(maxRetriesPerSignature = 3) {
+  constructor(maxRetriesPerSignature = 3, options?: SignatureRetryLimiterOptions) {
     if (!Number.isInteger(maxRetriesPerSignature) || maxRetriesPerSignature < 1) {
       throw new ComplianceRefusalError(
         "INVALID_COMPLIANCE_CONFIG",
@@ -81,6 +95,118 @@ export class SignatureRetryLimiter {
       );
     }
     this.maxRetriesPerSignature = maxRetriesPerSignature;
+    if (options?.statePath) {
+      this.statePath = resolve(options.statePath);
+      if (existsSync(this.statePath)) {
+        this.hydrateFromFile(this.statePath);
+      }
+    }
+  }
+
+  private hydrateFromFile(filePath: string): void {
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<SignatureRetryLimiterState>;
+    if (parsed && typeof parsed === "object") {
+      if (parsed.counts && typeof parsed.counts === "object") {
+        for (const [k, v] of Object.entries(parsed.counts)) {
+          if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+            this.counts.set(k, Math.floor(v));
+          }
+        }
+      }
+      if (Array.isArray(parsed.history)) {
+        for (const entry of parsed.history) {
+          if (
+            entry &&
+            typeof entry === "object" &&
+            typeof entry.signature === "string" &&
+            typeof entry.rawSignature === "string" &&
+            typeof entry.count === "number" &&
+            typeof entry.timestamp === "string"
+          ) {
+            this.history.push({
+              signature: entry.signature,
+              rawSignature: entry.rawSignature,
+              count: entry.count,
+              transitionId: typeof entry.transitionId === "string" ? entry.transitionId : undefined,
+              timestamp: entry.timestamp
+            });
+          }
+        }
+      }
+    }
+  }
+
+  private persistIfConfigured(): void {
+    if (this.statePath) {
+      this.save(this.statePath);
+    }
+  }
+
+  toJSON(): SignatureRetryLimiterState {
+    return {
+      version: 1,
+      maxRetriesPerSignature: this.maxRetriesPerSignature,
+      counts: this.getCounts(),
+      history: this.getHistory()
+    };
+  }
+
+  save(targetPath?: string): void {
+    const dest = targetPath ? resolve(targetPath) : this.statePath;
+    if (!dest) {
+      throw new ComplianceRefusalError(
+        "INVALID_COMPLIANCE_CONFIG",
+        "Cannot save SignatureRetryLimiter without a targetPath or configured statePath",
+        "R_missing_consequence"
+      );
+    }
+    mkdirSync(dirname(dest), { recursive: true });
+    const tmpPath = `${dest}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tmpPath, `${JSON.stringify(this.toJSON(), null, 2)}\n`, "utf8");
+    renameSync(tmpPath, dest);
+  }
+
+  static fromJSON(
+    state: SignatureRetryLimiterState,
+    options?: SignatureRetryLimiterOptions
+  ): SignatureRetryLimiter {
+    const limiter = new SignatureRetryLimiter(state.maxRetriesPerSignature, {
+      statePath: undefined
+    });
+    if (state.counts && typeof state.counts === "object") {
+      for (const [k, v] of Object.entries(state.counts)) {
+        if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+          limiter.counts.set(k, Math.floor(v));
+        }
+      }
+    }
+    if (Array.isArray(state.history)) {
+      for (const entry of state.history) {
+        limiter.history.push({ ...entry });
+      }
+    }
+    if (options?.statePath) {
+      (limiter as { statePath?: string }).statePath = resolve(options.statePath);
+      limiter.persistIfConfigured();
+    }
+    return limiter;
+  }
+
+  static load(statePath: string, maxRetriesPerSignature?: number): SignatureRetryLimiter {
+    const absPath = resolve(statePath);
+    if (existsSync(absPath)) {
+      const parsed = JSON.parse(readFileSync(absPath, "utf8")) as Partial<SignatureRetryLimiterState>;
+      const cap =
+        maxRetriesPerSignature ??
+        (typeof parsed.maxRetriesPerSignature === "number" &&
+        Number.isInteger(parsed.maxRetriesPerSignature) &&
+        parsed.maxRetriesPerSignature >= 1
+          ? parsed.maxRetriesPerSignature
+          : 3);
+      return new SignatureRetryLimiter(cap, { statePath: absPath });
+    }
+    return new SignatureRetryLimiter(maxRetriesPerSignature ?? 3, { statePath: absPath });
   }
 
   normalizeSignature(raw: string): string {
@@ -115,6 +241,7 @@ export class SignatureRetryLimiter {
       transitionId,
       timestamp: new Date().toISOString()
     });
+    this.persistIfConfigured();
     if (next > this.maxRetriesPerSignature) {
       throw new ComplianceRefusalError(
         "RETRY_BUDGET_EXHAUSTED",
@@ -141,9 +268,11 @@ export class SignatureRetryLimiter {
     if (rawSignature === undefined) {
       this.counts.clear();
       this.history.length = 0;
+      this.persistIfConfigured();
       return;
     }
     this.counts.delete(this.normalizeSignature(rawSignature));
+    this.persistIfConfigured();
   }
 }
 
@@ -323,6 +452,47 @@ function findGitIndexLock(workspaceDir: string): string | null {
   return null;
 }
 
+function resolveGitDir(workspaceDir: string): string | null {
+  try {
+    const gitDir = execFileSync("git", ["rev-parse", "--git-dir"], {
+      cwd: workspaceDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    return gitDir ? resolve(workspaceDir, gitDir) : null;
+  } catch {
+    return null;
+  }
+}
+
+function listGitIgnoredFiles(workspaceDir: string): Set<string> {
+  try {
+    const out = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], {
+      cwd: workspaceDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const ignored = new Set<string>();
+    for (const entry of out.split("\0")) {
+      if (entry) ignored.add(entry.replace(/\\/g, "/"));
+    }
+    return ignored;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function fileSha256OrNull(filePath: string): string | null {
+  if (!existsSync(filePath)) return null;
+  try {
+    const h = createHash("sha256");
+    h.update(readFileSync(filePath));
+    return h.digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 export interface WorkspaceManifestEntry {
   sha256: string;
   mode: number;
@@ -379,14 +549,39 @@ export function captureWorkspaceSnapshot(
   const wasCleanBefore = isGit ? gitStatusPorcelain(absWorkspace).length === 0 : false;
   const useGitCleanRollback = isGit && wasCleanBefore && headSha !== null;
 
-  const backupDir = useGitCleanRollback ? "" : mkdtempSync(join(tmpdir(), "zcode-tx-snap-"));
   const files = walkWorkspaceFiles(absWorkspace, shouldIgnore);
   const manifest = new Map<string, WorkspaceManifestEntry>();
 
   const sortedEntries = [...files.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const gitIgnoredSet = useGitCleanRollback ? listGitIgnoredFiles(absWorkspace) : new Set<string>();
+  const hasGitIgnoredRegularFiles =
+    useGitCleanRollback &&
+    sortedEntries.some(([rel, info]) => !info.isSymlink && gitIgnoredSet.has(rel.replace(/\\/g, "/")));
+
+  const backupDir =
+    useGitCleanRollback && !hasGitIgnoredRegularFiles
+      ? ""
+      : mkdtempSync(join(tmpdir(), "zcode-tx-snap-"));
+
+  // Snapshot git index when operating on a dirty git tree so git add / git commit side effects can be rolled back
+  const gitDir = isGit && !useGitCleanRollback ? resolveGitDir(absWorkspace) : null;
+  const gitIndexPath = gitDir ? join(gitDir, "index") : null;
+  const gitIndexSha256 = gitIndexPath ? fileSha256OrNull(gitIndexPath) : null;
+  const gitIndexBackupPath =
+    gitIndexPath && gitIndexSha256 !== null && backupDir
+      ? join(backupDir, ".git", "index")
+      : null;
+  if (gitIndexBackupPath && gitIndexPath) {
+    mkdirSync(dirname(gitIndexBackupPath), { recursive: true });
+    copyFileSync(gitIndexPath, gitIndexBackupPath);
+  }
+
   const aggHash = createHash("sha256");
   for (const [rel, info] of sortedEntries) {
-    if (!useGitCleanRollback && !info.isSymlink) {
+    const needsBackup =
+      !info.isSymlink &&
+      (!useGitCleanRollback || gitIgnoredSet.has(rel.replace(/\\/g, "/")));
+    if (needsBackup && backupDir) {
       const dest = join(backupDir, rel);
       mkdirSync(dirname(dest), { recursive: true });
       copyFileSync(info.absPath, dest);
@@ -401,7 +596,15 @@ export function captureWorkspaceSnapshot(
   }
   const snapshotSha256 = aggHash.digest("hex");
 
+  const isGitMetaDirty = (): boolean => {
+    if (!isGit || useGitCleanRollback) return false;
+    if (gitHeadSha(absWorkspace) !== headSha) return true;
+    if (gitIndexPath && fileSha256OrNull(gitIndexPath) !== gitIndexSha256) return true;
+    return false;
+  };
+
   const isDirty = (): boolean => {
+    if (isGitMetaDirty()) return true;
     const current = walkWorkspaceFiles(absWorkspace, shouldIgnore);
     if (current.size !== manifest.size) return true;
     for (const [rel, info] of manifest.entries()) {
@@ -461,7 +664,8 @@ export function captureWorkspaceSnapshot(
       }
     }
 
-    const dirty = expectedFilesRemoved > 0 || expectedFilesRestored > 0;
+    const gitMetaDirty = isGitMetaDirty();
+    const dirty = expectedFilesRemoved > 0 || expectedFilesRestored > 0 || gitMetaDirty;
     if (dirty && !rollbackOnDirty) {
       throw new TransactionalRollbackError(
         "DIRTY_TIMEOUT_REFUSED",
@@ -487,6 +691,29 @@ export function captureWorkspaceSnapshot(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           throw new TransactionalRollbackError("ROLLBACK_FAILED", `git rollback failed: ${msg}`, 1);
+        }
+      } else if (isGit && !useGitCleanRollback && gitMetaDirty) {
+        try {
+          if (headSha && gitHeadSha(absWorkspace) !== headSha) {
+            execFileSync("git", ["reset", "--soft", headSha], {
+              cwd: absWorkspace,
+              stdio: ["ignore", "pipe", "pipe"]
+            });
+          }
+          if (gitIndexPath) {
+            if (gitIndexBackupPath && existsSync(gitIndexBackupPath)) {
+              copyFileSync(gitIndexBackupPath, gitIndexPath);
+            } else if (gitIndexSha256 === null && existsSync(gitIndexPath)) {
+              unlinkSync(gitIndexPath);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new TransactionalRollbackError(
+            "ROLLBACK_FAILED",
+            `dirty-tree git HEAD/index rollback failed: ${msg}`,
+            1
+          );
         }
       }
 
@@ -651,6 +878,7 @@ export interface TransactionalRollbackContext {
   snapshotIgnorePatterns?: readonly string[];
   lifecycleSavepoint?: boolean;
   retryLimiter?: SignatureRetryLimiter;
+  retryStatePath?: string;
   throwOnRefusal?: boolean;
 }
 
@@ -762,7 +990,10 @@ export async function executeTransactionalLifecycle(
   const net = normalizeWorkflowNet(netOrPowl);
   const limiter =
     rollbackCtx.retryLimiter ??
-    new SignatureRetryLimiter(rollbackCtx.maxRetriesPerSignature ?? 3);
+    new SignatureRetryLimiter(
+      rollbackCtx.maxRetriesPerSignature ?? 3,
+      rollbackCtx.retryStatePath ? { statePath: rollbackCtx.retryStatePath } : undefined
+    );
   const rollbackOnDirty = rollbackCtx.rollbackOnDirty ?? true;
   const maxWallClockMs = rollbackCtx.maxWallClockMs ?? 60_000;
   const maxAttemptsTotal = rollbackCtx.maxAttemptsTotal ?? Math.max(16, net.transitions.length * 8);

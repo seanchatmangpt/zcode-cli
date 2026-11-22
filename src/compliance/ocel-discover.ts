@@ -46,8 +46,14 @@ export interface SojournStats {
 
 export interface OcDfgNode {
   activity: string;
+  /** Distinct event count (E) for this activity and object type. */
   frequency: number;
+  /** Distinct event count (E) — explicit alias of `frequency`. */
+  eventCount?: number;
+  /** Unique object count (UO) participating in this activity for this object type. */
   objectCount: number;
+  /** Total event-object pairs (TO) for this activity and object type. */
+  totalObjects?: number;
   medianSojournMs: number;
   p95SojournMs: number;
   meanSojournMs: number;
@@ -58,8 +64,14 @@ export interface OcDfgEdge {
   source: string;
   target: string;
   objectType: string;
+  /** Distinct directly-follows event pairs (E) for this edge and object type. */
   frequency: number;
+  /** Distinct directly-follows event pairs (E) — explicit alias of `frequency`. */
+  eventCount?: number;
+  /** Unique object count (UO) traversing this edge. */
   objectCount: number;
+  /** Total object-level directly-follows transitions (TO) traversing this edge. */
+  totalObjects?: number;
   meanMs: number;
   medianMs: number;
   p95Ms: number;
@@ -399,12 +411,14 @@ export function discoverOcDfg(
 
   // Per object type accumulators
   const traceCountByOt = new Map<string, number>();
-  const nodeFreqByOt = new Map<string, Map<string, number>>();
+  const nodeEventsByOt = new Map<string, Map<string, Set<string>>>();
+  const nodeTotalObjectsByOt = new Map<string, Map<string, number>>();
   const nodeObjectsByOt = new Map<string, Map<string, Set<string>>>();
   const nodeSojournByOt = new Map<string, Map<string, number[]>>();
   const startActByOt = new Map<string, Map<string, number>>();
   const endActByOt = new Map<string, Map<string, number>>();
   const edgeDurationsByOt = new Map<string, Map<string, number[]>>();
+  const edgeEventsByOt = new Map<string, Map<string, Set<string>>>();
   const edgeObjectsByOt = new Map<string, Map<string, Set<string>>>();
   const objSojournByOt = new Map<string, number[]>();
 
@@ -435,12 +449,14 @@ export function discoverOcDfg(
 
   const ensureOtAcc = (ot: string) => {
     allObjectTypes.add(ot);
-    if (!nodeFreqByOt.has(ot)) nodeFreqByOt.set(ot, new Map());
+    if (!nodeEventsByOt.has(ot)) nodeEventsByOt.set(ot, new Map());
+    if (!nodeTotalObjectsByOt.has(ot)) nodeTotalObjectsByOt.set(ot, new Map());
     if (!nodeObjectsByOt.has(ot)) nodeObjectsByOt.set(ot, new Map());
     if (!nodeSojournByOt.has(ot)) nodeSojournByOt.set(ot, new Map());
     if (!startActByOt.has(ot)) startActByOt.set(ot, new Map());
     if (!endActByOt.has(ot)) endActByOt.set(ot, new Map());
     if (!edgeDurationsByOt.has(ot)) edgeDurationsByOt.set(ot, new Map());
+    if (!edgeEventsByOt.has(ot)) edgeEventsByOt.set(ot, new Map());
     if (!edgeObjectsByOt.has(ot)) edgeObjectsByOt.set(ot, new Map());
     if (!objSojournByOt.has(ot)) objSojournByOt.set(ot, []);
     if (!traceCountByOt.has(ot)) traceCountByOt.set(ot, 0);
@@ -614,12 +630,14 @@ export function discoverOcDfg(
     ensureOtAcc(ot);
     traceCountByOt.set(ot, (traceCountByOt.get(ot) ?? 0) + 1);
 
-    const nodeFreq = nodeFreqByOt.get(ot)!;
+    const nodeEvents = nodeEventsByOt.get(ot)!;
+    const nodeTotalObjs = nodeTotalObjectsByOt.get(ot)!;
     const nodeObjs = nodeObjectsByOt.get(ot)!;
     const nodeSoj = nodeSojournByOt.get(ot)!;
     const startMap = startActByOt.get(ot)!;
     const endMap = endActByOt.get(ot)!;
     const edgeDur = edgeDurationsByOt.get(ot)!;
+    const edgeEvents = edgeEventsByOt.get(ot)!;
     const edgeObjs = edgeObjectsByOt.get(ot)!;
 
     const firstAct = entries[0]!.ev.type;
@@ -630,11 +648,18 @@ export function discoverOcDfg(
     // Group events by activity for this object to detect true OCEL 2.0 divergence
     const entriesByActivity = new Map<string, typeof entries>();
 
-    // Node frequencies, distinct object counts, & per-event service/sojourn sampling
+    // Node E/UO/TO frequencies & per-event service/sojourn sampling
     for (let i = 0; i < entries.length; i++) {
       const cur = entries[i]!;
       const act = cur.ev.type;
-      nodeFreq.set(act, (nodeFreq.get(act) ?? 0) + 1);
+      nodeTotalObjs.set(act, (nodeTotalObjs.get(act) ?? 0) + 1);
+
+      let nEvSet = nodeEvents.get(act);
+      if (!nEvSet) {
+        nEvSet = new Set();
+        nodeEvents.set(act, nEvSet);
+      }
+      nEvSet.add(cur.ev.id);
 
       let nObjSet = nodeObjs.get(act);
       if (!nObjSet) {
@@ -678,6 +703,13 @@ export function discoverOcDfg(
           edgeDur.set(eKey, arr);
         }
         arr.push(delta);
+
+        let eEvSet = edgeEvents.get(eKey);
+        if (!eEvSet) {
+          eEvSet = new Set();
+          edgeEvents.set(eKey, eEvSet);
+        }
+        eEvSet.add(`${cur.ev.id}\0${nxt.ev.id}`);
 
         let eObjSet = edgeObjs.get(eKey);
         if (!eObjSet) {
@@ -771,22 +803,27 @@ export function discoverOcDfg(
   const reworkCycles: ReworkCycleFinding[] = [...traceCycleMap.values()];
 
   for (const ot of [...allObjectTypes].sort()) {
-    const nodeFreq = nodeFreqByOt.get(ot)!;
+    const nodeEvents = nodeEventsByOt.get(ot)!;
+    const nodeTotalObjs = nodeTotalObjectsByOt.get(ot)!;
     const nodeObjs = nodeObjectsByOt.get(ot)!;
     const nodeSoj = nodeSojournByOt.get(ot)!;
     const startMap = startActByOt.get(ot)!;
     const endMap = endActByOt.get(ot)!;
     const edgeDur = edgeDurationsByOt.get(ot)!;
+    const edgeEvents = edgeEventsByOt.get(ot)!;
     const edgeObjs = edgeObjectsByOt.get(ot)!;
 
-    const rawNodes: OcDfgNode[] = [...nodeFreq.entries()]
+    const rawNodes: OcDfgNode[] = [...nodeEvents.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([activity, frequency]) => {
+      .map(([activity, evSet]) => {
         const st = computeSummaryStats(nodeSoj.get(activity) ?? []);
+        const eventCount = evSet.size;
         return {
           activity,
-          frequency,
+          frequency: eventCount,
+          eventCount,
           objectCount: nodeObjs.get(activity)?.size ?? 0,
+          totalObjects: nodeTotalObjs.get(activity) ?? 0,
           medianSojournMs: st.medianMs,
           p95SojournMs: st.p95Ms,
           meanSojournMs: st.meanMs,
@@ -801,12 +838,15 @@ export function discoverOcDfg(
         const source = key.slice(0, sep);
         const target = key.slice(sep + 1);
         const st = computeSummaryStats(durs);
+        const eventCount = edgeEvents.get(key)?.size ?? 0;
         return {
           source,
           target,
           objectType: ot,
-          frequency: durs.length,
+          frequency: eventCount,
+          eventCount,
           objectCount: edgeObjs.get(key)?.size ?? 0,
+          totalObjects: durs.length,
           meanMs: st.meanMs,
           medianMs: st.medianMs,
           p95Ms: st.p95Ms,

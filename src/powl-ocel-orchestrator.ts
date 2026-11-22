@@ -47,6 +47,8 @@ export type PowlActivity = {
   /** Optional; bare activities default to readonly fan-out; `targetFile` ⇒ mutating singleton scope. */
   activityKind?: ActivityKind;
   fileScope?: string[];
+  /** Optional dead-route marker: when true, this route is refuted/unreachable and pruned during compilation. */
+  refuted?: boolean;
 };
 
 export type PowlPartialOrder = {
@@ -54,6 +56,8 @@ export type PowlPartialOrder = {
   id: string;
   children: PowlNode[];
   order: ReadonlyArray<readonly [string, string]>;
+  /** Optional dead-route marker: when true, this route is refuted/unreachable and pruned during compilation. */
+  refuted?: boolean;
 };
 
 export type PowlOneOf = {
@@ -65,14 +69,16 @@ export type PowlOneOf = {
   reason?: string;
   /** Optional explicit 0-based branch index resolved by an external Control Surface oracle. */
   resolvedBranchIndex?: number;
+  /** Optional dead-route marker: when true, this route is refuted/unreachable and pruned during compilation. */
+  refuted?: boolean;
 };
 
 export type PowlNode =
   | PowlActivity
-  | { kind: "tau"; id: string }
-  | { kind: "xor"; id: string; branches: PowlNode[] }
+  | { kind: "tau"; id: string; refuted?: boolean }
+  | { kind: "xor"; id: string; branches: PowlNode[]; refuted?: boolean }
   | PowlOneOf
-  | { kind: "loop"; id: string; doBranch: PowlNode; redoBranch: PowlNode; maxIterations?: number }
+  | { kind: "loop"; id: string; doBranch: PowlNode; redoBranch: PowlNode; maxIterations?: number; refuted?: boolean }
   | PowlPartialOrder;
 
 export interface WriteScopeViolation {
@@ -343,13 +349,365 @@ export interface WorkflowNet {
   sinkPlace: string;
 }
 
+export interface PruneDeadPowlRoutesOptions {
+  /** Node IDs explicitly refuted/infeasible and to be pruned from the POWL AST. */
+  refutedNodeIds?: ReadonlySet<string> | readonly string[];
+}
+
+export interface PruneDeadPowlRoutesResult {
+  node: PowlNode;
+  prunedNodeIds: string[];
+}
+
+/**
+ * AST-level dead-route pruning pass for POWL v2 trees:
+ * - Removes branches marked `refuted: true` or listed in `refutedNodeIds`.
+ * - Collapses single-survivor `xor` nodes directly to their surviving branch.
+ * - Collapses `loop` nodes whose `redoBranch` is refuted directly to their `doBranch`.
+ * - Propagates infeasibility through `partial_order` (AND-join) and `loop.doBranch`.
+ * - Fails closed if the root itself becomes completely infeasible.
+ */
+export function pruneDeadPowlRoutes(
+  root: PowlNode,
+  options: PruneDeadPowlRoutesOptions = {}
+): PruneDeadPowlRoutesResult {
+  const refutedSet =
+    options.refutedNodeIds instanceof Set
+      ? options.refutedNodeIds
+      : new Set(options.refutedNodeIds ?? []);
+  const prunedNodeIds: string[] = [];
+
+  const collectIds = (node: PowlNode) => {
+    prunedNodeIds.push(node.id);
+    if (node.kind === "xor" || node.kind === "oneof") {
+      for (const b of node.branches) collectIds(b);
+    } else if (node.kind === "loop") {
+      collectIds(node.doBranch);
+      collectIds(node.redoBranch);
+    } else if (node.kind === "partial_order") {
+      for (const c of node.children) collectIds(c);
+    }
+  };
+
+  const prune = (node: PowlNode): PowlNode | null => {
+    if (node.refuted === true || refutedSet.has(node.id)) {
+      collectIds(node);
+      return null;
+    }
+    if (node.kind === "activity" || node.kind === "tau") {
+      return node;
+    }
+    if (node.kind === "xor") {
+      const survivors: PowlNode[] = [];
+      for (const branch of node.branches) {
+        const pruned = prune(branch);
+        if (pruned !== null) survivors.push(pruned);
+      }
+      if (survivors.length === 0) {
+        prunedNodeIds.push(node.id);
+        return null;
+      }
+      if (survivors.length === 1) {
+        return survivors[0]!;
+      }
+      return { ...node, branches: survivors };
+    }
+    if (node.kind === "oneof") {
+      if (node.resolvedBranchIndex !== undefined) {
+        const chosenIdx = node.resolvedBranchIndex;
+        for (let i = 0; i < node.branches.length; i += 1) {
+          if (i !== chosenIdx) collectIds(node.branches[i]!);
+        }
+        const prunedChosen = prune(node.branches[chosenIdx]!);
+        if (prunedChosen === null) {
+          prunedNodeIds.push(node.id);
+          return null;
+        }
+        // Keep the resolved oneof node with its single surviving branch at index 0
+        // and preserve resolvedBranchIndex semantics via compiled gate metadata.
+        return {
+          ...node,
+          branches: [prunedChosen],
+          resolvedBranchIndex: 0
+        };
+      }
+      const survivors: PowlNode[] = [];
+      for (const branch of node.branches) {
+        const pruned = prune(branch);
+        if (pruned !== null) survivors.push(pruned);
+      }
+      if (survivors.length === 0) {
+        prunedNodeIds.push(node.id);
+        return null;
+      }
+      if (survivors.length === 1) {
+        return survivors[0]!;
+      }
+      return { ...node, branches: survivors };
+    }
+    if (node.kind === "loop") {
+      const prunedDo = prune(node.doBranch);
+      if (prunedDo === null) {
+        collectIds(node.redoBranch);
+        prunedNodeIds.push(node.id);
+        return null;
+      }
+      const prunedRedo = prune(node.redoBranch);
+      if (prunedRedo === null) {
+        // Redo route is dead: loop can never iterate, collapse to doBranch.
+        return prunedDo;
+      }
+      return { ...node, doBranch: prunedDo, redoBranch: prunedRedo };
+    }
+    if (node.kind === "partial_order") {
+      const survivors: PowlNode[] = [];
+      for (const child of node.children) {
+        const pruned = prune(child);
+        if (pruned === null) {
+          // AND-semantics: one infeasible child makes the entire partial order infeasible.
+          for (const other of node.children) {
+            if (other.id !== child.id && !prunedNodeIds.includes(other.id)) {
+              collectIds(other);
+            }
+          }
+          prunedNodeIds.push(node.id);
+          return null;
+        }
+        survivors.push(pruned);
+      }
+      return { ...node, children: survivors };
+    }
+    return node;
+  };
+
+  const result = prune(root);
+  if (result === null) {
+    throw new Error(`POWL dead-route pruning: root "${root.id}" has no feasible route (fail-closed)`);
+  }
+  return { node: result, prunedNodeIds };
+}
+
+export interface PruneDeadWorkflowNetResult {
+  net: WorkflowNet;
+  prunedTransitionIds: string[];
+  prunedPlaceIds: string[];
+}
+
+/**
+ * WorkflowNet-level dead-route pruning pass:
+ * Removes transitions and places that are unreachable from `sourcePlace`, cannot reach
+ * `sinkPlace`, or are dead (never enabled in any reachable marking when bounded BFS
+ * completes without truncation). Operates on a copy so the input net is never mutated.
+ */
+export function pruneDeadWorkflowNetRoutes(
+  net: WorkflowNet,
+  options: { refutedTransitionIds?: ReadonlySet<string> | readonly string[] } = {}
+): PruneDeadWorkflowNetResult {
+  const refutedT =
+    options.refutedTransitionIds instanceof Set
+      ? options.refutedTransitionIds
+      : new Set(options.refutedTransitionIds ?? []);
+
+  let places = net.places.map((p) => ({ ...p }));
+  let transitions = net.transitions.map((t) => ({ ...t }));
+  const pre = new Map<string, string[]>();
+  const post = new Map<string, string[]>();
+  for (const t of transitions) {
+    pre.set(t.id, [...(net.pre.get(t.id) ?? [])]);
+    post.set(t.id, [...(net.post.get(t.id) ?? [])]);
+  }
+
+  const prunedTransitionIds: string[] = [];
+  const prunedPlaceIds: string[] = [];
+
+  const removeTransitions = (toRemove: Set<string>) => {
+    if (toRemove.size === 0) return false;
+    transitions = transitions.filter((t) => {
+      if (toRemove.has(t.id)) {
+        prunedTransitionIds.push(t.id);
+        pre.delete(t.id);
+        post.delete(t.id);
+        return false;
+      }
+      return true;
+    });
+    return true;
+  };
+
+  const removePlaces = (toRemove: Set<string>) => {
+    if (toRemove.size === 0) return false;
+    places = places.filter((p) => {
+      if (toRemove.has(p.id)) {
+        prunedPlaceIds.push(p.id);
+        return false;
+      }
+      return true;
+    });
+    // Any transition whose preset or postset references a removed place is now broken/dead.
+    const brokenT = new Set<string>();
+    for (const t of transitions) {
+      const ins = pre.get(t.id) ?? [];
+      const outs = post.get(t.id) ?? [];
+      if (ins.some((p) => toRemove.has(p)) || outs.some((p) => toRemove.has(p))) {
+        brokenT.add(t.id);
+      }
+    }
+    removeTransitions(brokenT);
+    return true;
+  };
+
+  // 1. Remove explicitly refuted transitions
+  if (refutedT.size > 0) {
+    const explicit = new Set(transitions.filter((t) => refutedT.has(t.id)).map((t) => t.id));
+    removeTransitions(explicit);
+  }
+
+  // 2. Fixed-point structural i->o connectedness pruning
+  const pruneStructural = () => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const fwd = new Map<string, string[]>();
+      const rev = new Map<string, string[]>();
+      const addEdge = (from: string, to: string) => {
+        if (!fwd.has(from)) fwd.set(from, []);
+        fwd.get(from)!.push(to);
+        if (!rev.has(to)) rev.set(to, []);
+        rev.get(to)!.push(from);
+      };
+      for (const t of transitions) {
+        const tNode = `t:${t.id}`;
+        for (const p of pre.get(t.id) ?? []) addEdge(`p:${p}`, tNode);
+        for (const p of post.get(t.id) ?? []) addEdge(tNode, `p:${p}`);
+      }
+      const bfs = (start: string, adj: Map<string, string[]>): Set<string> => {
+        const seen = new Set<string>([start]);
+        const q = [start];
+        let head = 0;
+        while (head < q.length) {
+          const cur = q[head++]!;
+          for (const nxt of adj.get(cur) ?? []) {
+            if (!seen.has(nxt)) {
+              seen.add(nxt);
+              q.push(nxt);
+            }
+          }
+        }
+        return seen;
+      };
+      const fromSource = bfs(`p:${net.sourcePlace}`, fwd);
+      const toSink = bfs(`p:${net.sinkPlace}`, rev);
+
+      const deadT = new Set<string>();
+      for (const t of transitions) {
+        const key = `t:${t.id}`;
+        if (!fromSource.has(key) || !toSink.has(key)) deadT.add(t.id);
+      }
+      if (removeTransitions(deadT)) changed = true;
+
+      const deadP = new Set<string>();
+      for (const p of places) {
+        if (p.id === net.sourcePlace || p.id === net.sinkPlace) continue;
+        const key = `p:${p.id}`;
+        if (!fromSource.has(key) || !toSink.has(key)) deadP.add(p.id);
+      }
+      if (removePlaces(deadP)) changed = true;
+    }
+  };
+
+  pruneStructural();
+
+  // 3. Bounded behavioral dead-transition pruning: if reachability BFS completes without
+  // truncation, any transition that can never fire from [sourcePlace] is dead and pruned.
+  const placeIds = places.map((p) => p.id);
+  const placeIndex = new Map(placeIds.map((id, i) => [id, i] as const));
+  const sourceIdx = placeIndex.get(net.sourcePlace);
+  if (sourceIdx !== undefined && transitions.length > 0) {
+    const n = placeIds.length;
+    const tPreIdx = transitions.map((t) => (pre.get(t.id) ?? []).map((p) => placeIndex.get(p)!));
+    const tPostIdx = transitions.map((t) => (post.get(t.id) ?? []).map((p) => placeIndex.get(p)!));
+    const encode = (m: number[]) => m.join(",");
+    const init = new Array<number>(n).fill(0);
+    init[sourceIdx] = 1;
+    const initKey = encode(init);
+    const states = new Map<string, number[]>([[initKey, init]]);
+    const queue: string[] = [initKey];
+    let qHead = 0;
+    const fired = new Set<number>();
+    const MAX_PRUNE_STATES = 5_000;
+    let truncated = false;
+
+    while (qHead < queue.length) {
+      if (states.size >= MAX_PRUNE_STATES) {
+        truncated = true;
+        break;
+      }
+      const curKey = queue[qHead++]!;
+      const cur = states.get(curKey)!;
+      for (let ti = 0; ti < transitions.length; ti += 1) {
+        const ins = tPreIdx[ti]!;
+        let enabled = true;
+        for (const idx of ins) {
+          if (idx === undefined || cur[idx]! < 1) {
+            enabled = false;
+            break;
+          }
+        }
+        if (!enabled) continue;
+        fired.add(ti);
+        const next = cur.slice();
+        for (const idx of ins) next[idx]! -= 1;
+        for (const idx of tPostIdx[ti]!) next[idx]! += 1;
+        const nextKey = encode(next);
+        if (!states.has(nextKey)) {
+          states.set(nextKey, next);
+          queue.push(nextKey);
+        }
+      }
+    }
+
+    if (!truncated) {
+      const deadT = new Set<string>();
+      for (let ti = 0; ti < transitions.length; ti += 1) {
+        if (!fired.has(ti)) deadT.add(transitions[ti]!.id);
+      }
+      if (removeTransitions(deadT)) {
+        pruneStructural();
+      }
+    }
+  }
+
+  return {
+    net: {
+      places,
+      transitions,
+      pre,
+      post,
+      sourcePlace: net.sourcePlace,
+      sinkPlace: net.sinkPlace
+    },
+    prunedTransitionIds,
+    prunedPlaceIds
+  };
+}
+
+export interface CompilePowlOptions extends PruneDeadPowlRoutesOptions {
+  /** When false, disables dead-route pruning (defaults to true). */
+  pruneDeadRoutes?: boolean;
+}
+
 /**
  * Compiler-allocated transition ids live in the reserved `__powl_t_` namespace and
  * always include a monotonic seq, so structural τ prefixes cannot collide with
  * user node ids (e.g. tau id `enter_L` vs loop enter for `L`).
  */
-export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
+export function compilePowlToWorkflowNet(
+  root: PowlNode,
+  options: CompilePowlOptions = {}
+): WorkflowNet {
   validatePowlTree(root);
+  const effectiveRoot =
+    options.pruneDeadRoutes === false ? root : pruneDeadPowlRoutes(root, options).node;
   const places: Place[] = [];
   const transitions: Transition[] = [];
   const pre = new Map<string, string[]>();
@@ -560,9 +918,10 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
 
   const sourcePlace = newPlace("source");
   const sinkPlace = newPlace("sink");
-  compile(root, sourcePlace, sinkPlace);
+  compile(effectiveRoot, sourcePlace, sinkPlace);
 
-  return { places, transitions, pre, post, sourcePlace, sinkPlace };
+  const rawNet: WorkflowNet = { places, transitions, pre, post, sourcePlace, sinkPlace };
+  return options.pruneDeadRoutes === false ? rawNet : pruneDeadWorkflowNetRoutes(rawNet).net;
 }
 
 export interface StructuralSoundnessResult {

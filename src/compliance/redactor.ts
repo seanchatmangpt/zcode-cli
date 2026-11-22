@@ -50,10 +50,18 @@ const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b/
 const AUTH_SCHEME_RE = /(authorization\s*[:=]\s*["']?(?:bearer|basic|token|digest|apikey)\s+)([^\s"'\\]+)(["']?)/gi;
 const BEARER_RE =
   /(Bearer\s+)((?=[^\s"'\\]{8,})[^\s"'\\]+|(?=[^\s"'\\]*[0-9_.\-+/=])[^\s"'\\]{3,})/gi;
-const AUTH_RAW_RE =
-  /(authorization\s*[:=]\s*)(["']?)(?!(?:basic|token|digest|bearer|apikey)\s)([^\s"'\\]+)(\2)/gi;
+// Separate quote-variant patterns eliminate the non-regular backreference (\2) from AUTH_RAW.
+const AUTH_RAW_DOUBLE_RE =
+  /(authorization\s*[:=]\s*")(?!(?:basic|token|digest|bearer|apikey)\s)([^\s"'\\]+)(")/gi;
+const AUTH_RAW_SINGLE_RE =
+  /(authorization\s*[:=]\s*')(?!(?:basic|token|digest|bearer|apikey)\s)([^\s"'\\]+)(')/gi;
+const AUTH_RAW_BARE_RE =
+  /(authorization\s*[:=]\s*)(?!["'])(?!(?:basic|token|digest|bearer|apikey)\s)([^\s"'\\]+)/gi;
 const URL_SECRET_PARAM_RE = new RegExp(`([?&#](?:${KEY_ALT})=)([^&#\\s"']+)`, "gi");
-const URL_USERINFO_RE = /(https?:\/\/[^:/\s@]+:)([^@\s/]+)(@)/gi;
+// RFC 3986 scheme://[user]:pass@host (covers non-HTTP schemes and empty-user URLs)
+const URL_USERINFO_RE = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^:/?#\s@"']*:)([^@/?#\s"']+)(@)/g;
+// RFC 3986 scheme://token@host (colon-less token-as-userinfo URLs)
+const URL_USERINFO_TOKEN_RE = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^:/?#\s@"']+)(@)/g;
 // TOML assignments (capability-snapshot parity): quoted `"..."` / `'...'` and bare
 // unquoted `key = value` / `key=value` (no quotes). Omit bare `authorization` so
 // header-shaped `authorization="Bearer …"` stays on AUTH_* (not whole-value wipe).
@@ -103,7 +111,7 @@ function isRedactedUrlUserinfoEmail(text: string, match: string, offset: number,
   for (const token of new Set([replacement, "REDACTED"])) {
     if (token.length > 0 && atPos >= token.length && text.slice(atPos - token.length, atPos) === token) {
       const beforeToken = text.slice(0, atPos - token.length);
-      if (/https?:\/\/[^/\s@"']+:$/i.test(beforeToken)) {
+      if (/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(?:[^/?#\s@"']*:)?$/i.test(beforeToken)) {
         return true;
       }
     }
@@ -194,12 +202,21 @@ function redactSchemesAndTokens(text: string, ctx: CompiledContext): string {
     .replace(URL_USERINFO_RE, (full, pre: string, pw: string, at: string) =>
       isAlreadyRedacted(pw, r) ? full : `${pre}${r}${at}`
     )
+    .replace(URL_USERINFO_TOKEN_RE, (full, pre: string, tok: string, at: string) =>
+      isAlreadyRedacted(tok, r) ? full : `${pre}${r}${at}`
+    )
     .replace(AUTH_SCHEME_RE, (full, pre: string, val: string, post: string) =>
       isAlreadyRedacted(val, r) ? full : `${pre}${r}${post}`
     )
     .replace(BEARER_RE, (full, pre: string, val: string) => (isAlreadyRedacted(val, r) ? full : `${pre}${r}`))
-    .replace(AUTH_RAW_RE, (full, pre: string, q: string, val: string, closeQ: string) =>
-      isAlreadyRedacted(val, r) ? full : `${pre}${q}${r}${closeQ}`
+    .replace(AUTH_RAW_DOUBLE_RE, (full, pre: string, val: string, post: string) =>
+      isAlreadyRedacted(val, r) ? full : `${pre}${r}${post}`
+    )
+    .replace(AUTH_RAW_SINGLE_RE, (full, pre: string, val: string, post: string) =>
+      isAlreadyRedacted(val, r) ? full : `${pre}${r}${post}`
+    )
+    .replace(AUTH_RAW_BARE_RE, (full, pre: string, val: string) =>
+      isAlreadyRedacted(val, r) ? full : `${pre}${r}`
     );
   // TOML after auth-scheme scrub; skip scheme-prefixed values so
   // `authorization="Bearer REDACTED"` is not collapsed to `authorization="REDACTED"`.
@@ -403,9 +420,12 @@ function testStringRaw(text: string, ctx: CompiledContext): boolean {
   if (JWT_RE.test(text)) return true;
   if (hasUnredactedGroup(text, URL_SECRET_PARAM_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, URL_USERINFO_RE, 2, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, URL_USERINFO_TOKEN_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, AUTH_SCHEME_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, BEARER_RE, 2, ctx.replacement)) return true;
-  if (hasUnredactedGroup(text, AUTH_RAW_RE, 3, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, AUTH_RAW_DOUBLE_RE, 2, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, AUTH_RAW_SINGLE_RE, 2, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, AUTH_RAW_BARE_RE, 2, ctx.replacement)) return true;
   for (const secret of ctx.envSecrets) {
     if (text.includes(secret)) return true;
   }

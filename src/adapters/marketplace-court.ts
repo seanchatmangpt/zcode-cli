@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import type { CourtVerdict, ExitCode, TransitionCourtAdapter } from "./types.ts";
@@ -30,6 +30,7 @@ export const PUBLIC_ONTOLOGY_PREFIXES = [
   "fibo-fnd-acc-cur:",
   "fibo-fbc-pas-caa:",
   "ocel:",
+  "airo:",
   "urn:uuid:",
   "urn:sha256:",
   "http://www.w3.org/",
@@ -39,6 +40,35 @@ export const PUBLIC_ONTOLOGY_PREFIXES = [
   "http://schema.org/",
   "https://schema.org/"
 ] as const;
+
+/** Canonical URI bases for ratified CURIE prefixes in PUBLIC_ONTOLOGY_PREFIXES. */
+export const PUBLIC_CURIE_URI_BASES: Record<string, readonly string[]> = {
+  "rdf:": ["http://www.w3.org/1999/02/22-rdf-syntax-ns#"],
+  "rdfs:": ["http://www.w3.org/2000/01/rdf-schema#"],
+  "xsd:": ["http://www.w3.org/2001/XMLSchema#"],
+  "owl:": ["http://www.w3.org/2002/07/owl#"],
+  "sh:": ["http://www.w3.org/ns/shacl#"],
+  "shui:": ["http://www.w3.org/ns/shacl-ui#", "http://www.w3.org/ns/shacl-ui/"],
+  "time:": ["http://www.w3.org/2006/time#"],
+  "org:": ["http://www.w3.org/ns/org#"],
+  "odrl:": ["http://www.w3.org/ns/odrl/2/"],
+  "foaf:": ["http://xmlns.com/foaf/0.1/", "https://xmlns.com/foaf/0.1/"],
+  "skos:": ["http://www.w3.org/2004/02/skos/core#"],
+  "prov:": ["http://www.w3.org/ns/prov#"],
+  "p-plan:": ["http://purl.org/net/p-plan#", "https://purl.org/net/p-plan#"],
+  "dcterms:": ["http://purl.org/dc/terms/", "https://purl.org/dc/terms/"],
+  "schema:": ["http://schema.org/", "https://schema.org/"],
+  "fibo-fnd-acc-cur:": [
+    "https://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/",
+    "http://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/"
+  ],
+  "fibo-fbc-pas-caa:": [
+    "https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/",
+    "http://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/"
+  ],
+  "ocel:": ["http://www.ocel-standard.org/", "https://www.ocel-standard.org/"],
+  "airo:": ["https://w3id.org/airo#", "http://w3id.org/airo#"]
+};
 
 export interface MarketplaceCourtOptions {
   /** Pack roots to qualify (absolute or cwd-relative). */
@@ -115,9 +145,11 @@ export class MarketplaceCourtAdapter implements TransitionCourtAdapter {
       }
 
       if (this.opts.forbidAskQueries) {
-        const ask = findAskQueries(join(dir, "gates"));
-        if (ask.length > 0) {
-          diagnostics.push(`ASK queries forbidden in gates (marketplace.py ignores them): ${ask.join(", ")}`);
+        const nonSelect = findAskQueries(join(dir, "gates"));
+        if (nonSelect.length > 0) {
+          diagnostics.push(
+            `Non-SELECT SPARQL queries (ASK/CONSTRUCT/DESCRIBE/UPDATE) forbidden in gates: ${nonSelect.join(", ")}`
+          );
           return refuse(diagnostics, digests);
         }
       }
@@ -218,19 +250,54 @@ export function validatePackTomlMinimal(text: string): { ok: boolean; detail: st
   return { ok: true, detail: "ok" };
 }
 
+const FORBIDDEN_SPARQL_FORMS =
+  /(?<![?$A-Za-z0-9_-])\b(?:ASK|CONSTRUCT|DESCRIBE|INSERT|DELETE|LOAD|CLEAR|DROP|CREATE|COPY|MOVE|ADD)\b/i;
+
+function stripSparqlNoise(text: string): string {
+  return text.replace(
+    /<[^>]*>|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[^\r\n]*/g,
+    (m) => (m.startsWith("<") ? " <> " : " ")
+  );
+}
+
+/** Return true iff the SPARQL text is a SELECT-only query (no ASK/CONSTRUCT/DESCRIBE/UPDATE). */
+export function isSelectOnlySparql(text: string): boolean {
+  const body = stripSparqlNoise(text)
+    .replace(/^\s*(?:(?:BASE\s+<>|PREFIX\s+[A-Za-z0-9_-]*:\s*<>)\s*)+/i, "")
+    .trim();
+  if (!/^SELECT\b/i.test(body)) return false;
+  if (FORBIDDEN_SPARQL_FORMS.test(body)) return false;
+  return true;
+}
+
 export function findAskQueries(gatesDir: string): string[] {
   if (!existsSync(gatesDir) || !statSync(gatesDir).isDirectory()) return [];
   const hits: string[] = [];
-  for (const f of readdirSync(gatesDir).filter((x) => x.endsWith(".rq"))) {
-    const text = readFileSync(join(gatesDir, f), "utf8");
-    // Refuse ASK forms; require SELECT ?violation style gates.
-    if (/\bASK\b/i.test(text)) hits.push(f);
-  }
-  return hits;
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const fullPath = join(dir, entry);
+      const st = statSync(fullPath);
+      if (st.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.endsWith(".rq")) {
+        const text = readFileSync(fullPath, "utf8");
+        if (!isSelectOnlySparql(text)) {
+          hits.push(relative(gatesDir, fullPath).replace(/\\/g, "/"));
+        }
+      }
+    }
+  };
+  walk(gatesDir);
+  return hits.sort();
 }
 
-const ALLOWED_URI_PREFIXES = PUBLIC_ONTOLOGY_PREFIXES.filter(
-  (pre) => pre.startsWith("http://") || pre.startsWith("https://") || pre.startsWith("urn:")
+const ALLOWED_URI_PREFIXES: readonly string[] = Array.from(
+  new Set([
+    ...PUBLIC_ONTOLOGY_PREFIXES.filter(
+      (pre) => pre.startsWith("http://") || pre.startsWith("https://") || pre.startsWith("urn:")
+    ),
+    ...PUBLIC_ONTOLOGY_PREFIXES.flatMap((pre) => PUBLIC_CURIE_URI_BASES[pre] ?? [])
+  ])
 );
 
 function isAllowedPublicIri(iri: string): boolean {

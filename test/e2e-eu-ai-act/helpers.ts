@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { computeObjectsSha256, computePiAttrSha256 } from "../../src/compliance/ocel2.ts";
 
 export const REPO_ROOT = resolve(import.meta.dir, "../..");
 export const ZCODE_ENTRY = join(REPO_ROOT, "bin", "zcode.ts");
@@ -176,6 +177,9 @@ export function buildIsolatedEnv(
     ZCODE_COMPLIANCE_DIR: ws.complianceDir,
     ZCODE_DISABLE_MODEL_CATALOG_REFRESH: "1",
     ZCODE_DISABLE_UPDATE_CHECK: "1",
+    ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "1",
+    ZCODE_OVERSEER_ID: "e2e-overseer",
+    ZCODE_RPM_SALT: "e2e-rpm-salt-32-bytes-minimum-key",
     ...overrides,
   };
   return Object.fromEntries(
@@ -586,21 +590,34 @@ export function computePiHash(
   return sha256Text(`${parent}\n${canonOcelEvent(event, phase, pendingRef)}`);
 }
 
-const CHAIN_ATTR_NAMES = new Set(["pi_parent", "pi_hash", "pi_hash_alg"]);
+const CHAIN_ATTR_NAMES = new Set([
+  "pi_parent",
+  "pi_hash",
+  "pi_hash_alg",
+  "pi_attr_sha256",
+  "pi_obj_sha256",
+]);
 
-export function canonicalizeOcel2Chain(events: Ocel2Event[]): Ocel2Event[] {
+export function canonicalizeOcel2Chain(
+  events: Ocel2Event[],
+  objects: Ocel2Object[] = [],
+): Ocel2Event[] {
+  const objSha256 = computeObjectsSha256(objects);
   let parent = "";
   return events.map((ev) => {
     const phase = ev.attributes.find((a) => a.name === "pi_phase")?.value ?? "";
     const ref = ev.attributes.find((a) => a.name === "pi_pending_ref")?.value ?? "";
     const hash = computePiHash(parent, ev, phase, ref);
     const domainAttrs = ev.attributes.filter((a) => !CHAIN_ATTR_NAMES.has(a.name));
+    const attrSha256 = computePiAttrSha256(domainAttrs);
     const next: Ocel2Event = {
       ...ev,
       attributes: [
         { name: "pi_parent", value: parent },
         { name: "pi_hash", value: hash },
         { name: "pi_hash_alg", value: "sha256" },
+        { name: "pi_attr_sha256", value: attrSha256 },
+        { name: "pi_obj_sha256", value: objSha256 },
         ...domainAttrs,
       ],
     };
@@ -730,6 +747,34 @@ export const DEFAULT_OCEL2_EVENT_TYPES: Ocel2TypeSchema[] = [
   { name: "high_risk_profile_active", attributes: [] },
 ];
 
+function ensureDeclaredTypeAttributes(
+  schemas: Ocel2TypeSchema[],
+  items: Array<{ type: string; attributes: Array<{ name: string }> }>,
+): Ocel2TypeSchema[] {
+  const map = new Map<string, { name: string; attributes: Array<{ name: string; type: string }> }>();
+  for (const s of schemas) {
+    map.set(s.name, {
+      name: s.name,
+      attributes: s.attributes.map((a) => ({ ...a })),
+    });
+  }
+  for (const item of items) {
+    let schema = map.get(item.type);
+    if (!schema) {
+      schema = { name: item.type, attributes: [] };
+      map.set(item.type, schema);
+    }
+    const existing = new Set(schema.attributes.map((a) => a.name));
+    for (const attr of item.attributes) {
+      if (!existing.has(attr.name)) {
+        schema.attributes.push({ name: attr.name, type: "string" });
+        existing.add(attr.name);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 export function buildOcel2Doc(
   opts: {
     objectTypes?: Ocel2TypeSchema[];
@@ -739,13 +784,14 @@ export function buildOcel2Doc(
     preserveExistingHashes?: boolean;
   } = {},
 ): Ocel2Doc {
+  const objects = opts.objects ?? [];
   const events = opts.preserveExistingHashes
     ? (opts.events ?? [])
-    : canonicalizeOcel2Chain(opts.events ?? []);
+    : canonicalizeOcel2Chain(opts.events ?? [], objects);
   return {
-    objectTypes: opts.objectTypes ?? DEFAULT_OCEL2_OBJECT_TYPES,
-    eventTypes: opts.eventTypes ?? DEFAULT_OCEL2_EVENT_TYPES,
-    objects: opts.objects ?? [],
+    objectTypes: ensureDeclaredTypeAttributes(opts.objectTypes ?? DEFAULT_OCEL2_OBJECT_TYPES, objects),
+    eventTypes: ensureDeclaredTypeAttributes(opts.eventTypes ?? DEFAULT_OCEL2_EVENT_TYPES, events),
+    objects,
     events,
   };
 }
@@ -764,6 +810,7 @@ export interface ConformingSessionOptions {
   gitHeadSha?: string;
   includeSubagent?: boolean;
   includeRework?: boolean;
+  includeWorkOrder?: boolean;
   extraToolCount?: number;
 }
 
@@ -946,6 +993,7 @@ export function buildConformingHighRiskSession(opts: ConformingSessionOptions = 
         { objectId: sess, qualifier: "in_session" },
         { objectId: turn, qualifier: "in_turn" },
         { objectId: perm, qualifier: "governs" },
+        ...(opts.includeWorkOrder ? [{ objectId: tool, qualifier: "about_tool_call" }] : []),
         { objectId: overseer, qualifier: "approved_by" },
       ],
     },
@@ -1053,6 +1101,32 @@ export function buildConformingHighRiskSession(opts: ConformingSessionOptions = 
     },
   );
 
+  if (opts.includeWorkOrder) {
+    const woObj = `${sess}_wo_01`;
+    objects.push({
+      id: woObj,
+      type: "work_order",
+      attributes: [{ name: "work_order_id", value: woObj, time: iso(0) }],
+      relationships: [{ objectId: sess, qualifier: "in_session" }],
+    });
+    events.push(
+      {
+        id: `${sess}_ev_wo_claim`,
+        type: "worker_claim",
+        time: iso(sessionClosedMs + 10),
+        attributes: [],
+        relationships: [{ objectId: woObj, qualifier: "about_work_order" }],
+      },
+      {
+        id: `${sess}_ev_wo_receipt`,
+        type: "receipt_persist",
+        time: iso(sessionClosedMs + 20),
+        attributes: [],
+        relationships: [{ objectId: woObj, qualifier: "about_work_order" }],
+      },
+    );
+  }
+
   return buildOcel2Doc({ objects, events });
 }
 
@@ -1064,7 +1138,6 @@ export function buildAppServerSession(): Ocel2Doc {
     eventTypes: raw.eventTypes,
     objects: raw.objects,
     events: raw.events,
-    preserveExistingHashes: true,
   });
 }
 
@@ -1499,7 +1572,7 @@ export interface Ocel2SqliteInspection {
 }
 
 export function inspectOcel2Sqlite(dbPath: string): Ocel2SqliteInspection {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database(dbPath);
   try {
     const modeRow = db.query("PRAGMA journal_mode;").get() as { journal_mode?: string } | null;
     const tableRows = db

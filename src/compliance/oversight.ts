@@ -73,11 +73,169 @@ const LEASE_ENV_KEYS = [
   "XAAS_REPLAY_BINDING"
 ] as const;
 
+export interface As01Seal {
+  seat: "AS-01";
+  sealId: string;
+  subjectSha: string;
+  overseerId: string;
+  issuedAt: string;
+  expiresAt?: string;
+  authorityCeiling: PolicyCeiling;
+  leaseId?: string;
+  signature?: string;
+}
+
+export interface BrceDoGateInput {
+  seal?: As01Seal | null;
+  requiredCeiling?: PolicyCeiling;
+  expectedSubjectSha?: string;
+  leaseId?: string;
+  nowMs?: number;
+}
+
+export interface BrceDoGateResult {
+  admitted: true;
+  seat: "AS-01";
+  sealId: string;
+  subjectSha: string;
+  overseerId: string;
+  authorityCeiling: PolicyCeiling;
+  leaseId?: string;
+  verifiedAt: string;
+}
+
+const revokedLeaseRegistry = new Map<string, { revokedAt: string; reason: string }>();
+
+export function revokeAuthorityLease(
+  leaseId: string,
+  reason: string,
+  timestamp?: string
+): { leaseId: string; revokedAt: string; reason: string } {
+  const cleanId = leaseId?.trim() ?? "";
+  if (!cleanId) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      "Cannot revoke an empty authority leaseId.",
+      "R_missing_identity"
+    );
+  }
+  const entry = {
+    revokedAt: timestamp ?? new Date().toISOString(),
+    reason: reason.trim() || "oversight_intervention"
+  };
+  revokedLeaseRegistry.set(cleanId, entry);
+  return { leaseId: cleanId, ...entry };
+}
+
+export function isAuthorityLeaseRevoked(leaseId: string | undefined): boolean {
+  const cleanId = leaseId?.trim();
+  return cleanId ? revokedLeaseRegistry.has(cleanId) : false;
+}
+
+export function clearRevokedAuthorityLeases(): void {
+  revokedLeaseRegistry.clear();
+}
+
+export function verifyBrceDoGate(input: BrceDoGateInput): BrceDoGateResult {
+  const seal = input.seal;
+  if (!seal || typeof seal !== "object") {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      "BRCE DO-gate requires a valid Seat AS-01 seal.",
+      "R_missing_authority"
+    );
+  }
+  if (seal.seat !== "AS-01") {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      `BRCE DO-gate requires Seat 'AS-01' seal; received '${String(seal.seat)}'.`,
+      "R_missing_authority"
+    );
+  }
+  const sealId = seal.sealId?.trim() ?? "";
+  const subjectSha = seal.subjectSha?.trim() ?? "";
+  const overseerId = seal.overseerId?.trim() ?? "";
+  const issuedAt = seal.issuedAt?.trim() ?? "";
+  if (!sealId || !subjectSha || !overseerId || !issuedAt) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      "Seat AS-01 seal is missing required identity/authority fields (sealId, subjectSha, overseerId, issuedAt).",
+      "R_missing_identity"
+    );
+  }
+  if (!Object.prototype.hasOwnProperty.call(CEILING_RANK, seal.authorityCeiling)) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      `Seat AS-01 seal has unknown authorityCeiling '${String(seal.authorityCeiling)}'.`,
+      "mu_on_O"
+    );
+  }
+
+  const requiredCeiling: PolicyCeiling = input.requiredCeiling ?? "DO";
+  if (CEILING_RANK[seal.authorityCeiling] < CEILING_RANK[requiredCeiling]) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      `BRCE DO-gate refused: Seat AS-01 seal ceiling '${seal.authorityCeiling}' is below required '${requiredCeiling}'.`,
+      "R_missing_authority"
+    );
+  }
+
+  const expectedSha = input.expectedSubjectSha?.trim();
+  if (expectedSha && expectedSha !== subjectSha) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      `BRCE DO-gate refused: Seat AS-01 seal subjectSha '${subjectSha}' does not match expected '${expectedSha}'.`,
+      "R_missing_identity"
+    );
+  }
+
+  const nowMs = input.nowMs ?? Date.now();
+  if (seal.expiresAt !== undefined) {
+    const expMs = Date.parse(seal.expiresAt);
+    if (!Number.isFinite(expMs) || expMs <= nowMs) {
+      throw new ComplianceRefusalError(
+        "OVERSIGHT_POLICY_REFUSED",
+        `BRCE DO-gate refused: Seat AS-01 seal '${sealId}' is expired or has an invalid expiresAt.`,
+        "R_missing_authority"
+      );
+    }
+  }
+
+  const effectiveLeaseId = input.leaseId?.trim() || seal.leaseId?.trim() || undefined;
+  if (effectiveLeaseId && isAuthorityLeaseRevoked(effectiveLeaseId)) {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      `BRCE DO-gate refused: authority lease '${effectiveLeaseId}' has been revoked.`,
+      "R_missing_authority"
+    );
+  }
+
+  return {
+    admitted: true,
+    seat: "AS-01",
+    sealId,
+    subjectSha,
+    overseerId,
+    authorityCeiling: seal.authorityCeiling,
+    ...(effectiveLeaseId ? { leaseId: effectiveLeaseId } : {}),
+    verifiedAt: new Date(nowMs).toISOString()
+  };
+}
+
+export interface EnforceOversightArgsOptions {
+  requireBrceDoGate?: boolean;
+  as01Seal?: As01Seal | null;
+  requiredCeiling?: PolicyCeiling;
+  expectedSubjectSha?: string;
+  nowMs?: number;
+}
+
 export interface EnforceOversightArgsResult {
   allowed: true;
   profile: ComplianceProfile;
   allowYolo: boolean;
   mode?: string;
+  brceGate?: BrceDoGateResult;
 }
 
 function isTruthyFlagValue(raw: string | undefined): boolean {
@@ -86,19 +244,48 @@ function isTruthyFlagValue(raw: string | undefined): boolean {
   return norm === "1" || norm === "true" || norm === "yes";
 }
 
+function parseAs01SealFromEnv(raw: string | undefined): As01Seal | undefined {
+  if (!raw || !raw.trim()) return undefined;
+  try {
+    return JSON.parse(raw) as As01Seal;
+  } catch {
+    throw new ComplianceRefusalError(
+      "OVERSIGHT_POLICY_REFUSED",
+      "ZCODE_AS01_SEAL contains malformed JSON.",
+      "mu_on_O"
+    );
+  }
+}
+
 export function enforceOversightArgs(
   args: readonly string[],
   config: ResolvedComplianceConfig,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  options?: EnforceOversightArgsOptions
 ): EnforceOversightArgsResult {
   const profile = config.compliance.profile;
   const yoloForbidden = isHighRiskProfile(profile) || config.compliance.allow_yolo === false;
+  const requireBrce =
+    options?.requireBrceDoGate === true || isTruthyFlagValue(env.ZCODE_BRCE_DO_GATE);
+
+  let brceGate: BrceDoGateResult | undefined;
+  if (requireBrce) {
+    const seal = options?.as01Seal !== undefined ? options.as01Seal : parseAs01SealFromEnv(env.ZCODE_AS01_SEAL);
+    brceGate = verifyBrceDoGate({
+      seal,
+      requiredCeiling: options?.requiredCeiling ?? "DO",
+      expectedSubjectSha: options?.expectedSubjectSha ?? env.XAAS_BASE_SHA,
+      leaseId: env.XAAS_LEASE_ID,
+      nowMs: options?.nowMs
+    });
+  }
 
   if (!yoloForbidden) {
     return {
       allowed: true,
       profile,
-      allowYolo: config.compliance.allow_yolo
+      allowYolo: config.compliance.allow_yolo,
+      ...(brceGate ? { brceGate } : {})
     };
   }
 
@@ -236,7 +423,8 @@ export function enforceOversightArgs(
     allowed: true,
     profile,
     allowYolo: false,
-    ...(observedMode ? { mode: observedMode } : {})
+    ...(observedMode ? { mode: observedMode } : {}),
+    ...(brceGate ? { brceGate } : {})
   };
 }
 
@@ -590,12 +778,23 @@ export interface OversightInterventionInput {
   metadata?: Record<string, unknown>;
   redactionOptions?: RedactComplianceOptions;
   onEvent?: (event: Ocel2Event) => void;
+  targetPid?: number;
+  killSignal?: NodeJS.Signals;
+  leaseId?: string;
+  onRevokeLease?: (leaseId: string, reason: string) => void;
+  abortController?: AbortController;
+  onHaltActuation?: (details: { action: string; targetObjectId: string; reason: string }) => void;
 }
 
 export interface OversightInterventionResult {
   event: Ocel2Event;
   redacted: true;
   standing: "INTERVENED";
+  actuationHalted: boolean;
+  killedPid?: number;
+  killError?: string;
+  revokedLeaseId?: string;
+  aborted?: boolean;
 }
 
 export function recordOversightIntervention(
@@ -625,14 +824,71 @@ export function recordOversightIntervention(
   const safeTargetId = redactComplianceText(rawTargetId, redactOpts);
   const safeAction = input.action ?? "emergency_stop";
   const safeTargetType = input.targetObjectType ?? "session";
+  const eventTime = input.timestamp ?? new Date().toISOString();
+
+  // Execute real actuation halt, process termination, and authority lease revocation
+  let actuationHalted = false;
+  let killedPid: number | undefined;
+  let killError: string | undefined;
+  let revokedLeaseId: string | undefined;
+  let aborted: boolean | undefined;
+
+  if (input.abortController && !input.abortController.signal.aborted) {
+    input.abortController.abort(safeReason);
+    aborted = true;
+    actuationHalted = true;
+  }
+
+  const cleanLeaseId = input.leaseId?.trim();
+  if (cleanLeaseId) {
+    revokeAuthorityLease(cleanLeaseId, safeReason, eventTime);
+    input.onRevokeLease?.(cleanLeaseId, safeReason);
+    revokedLeaseId = cleanLeaseId;
+    actuationHalted = true;
+  }
+
+  if (
+    typeof input.targetPid === "number" &&
+    Number.isInteger(input.targetPid) &&
+    input.targetPid > 0
+  ) {
+    try {
+      process.kill(input.targetPid, input.killSignal ?? "SIGTERM");
+      killedPid = input.targetPid;
+      actuationHalted = true;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      killError = code ?? (err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  if (input.onHaltActuation) {
+    input.onHaltActuation({
+      action: safeAction,
+      targetObjectId: safeTargetId,
+      reason: safeReason
+    });
+    actuationHalted = true;
+  }
 
   const attributes = [
     { name: "overseer_id", value: safeOverseerId },
     { name: "reason", value: safeReason },
     { name: "action", value: safeAction },
     { name: "target_object_id", value: safeTargetId },
-    { name: "target_object_type", value: safeTargetType }
+    { name: "target_object_type", value: safeTargetType },
+    { name: "actuation_halted", value: String(actuationHalted) }
   ];
+
+  if (killedPid !== undefined) {
+    attributes.push({ name: "killed_pid", value: String(killedPid) });
+  }
+  if (revokedLeaseId !== undefined) {
+    attributes.push({
+      name: "revoked_lease_id",
+      value: redactComplianceText(revokedLeaseId, redactOpts)
+    });
+  }
 
   if (input.metadata !== undefined) {
     const redactedMeta = redactComplianceData(input.metadata, redactOpts);
@@ -673,7 +929,7 @@ export function recordOversightIntervention(
   const event: Ocel2Event = {
     id: input.eventId ?? `oversight_stop_${randomUUID()}`,
     type: "oversight_intervened",
-    time: input.timestamp ?? new Date().toISOString(),
+    time: eventTime,
     attributes,
     relationships
   };
@@ -683,7 +939,12 @@ export function recordOversightIntervention(
   return {
     event,
     redacted: true,
-    standing: "INTERVENED"
+    standing: "INTERVENED",
+    actuationHalted,
+    ...(killedPid !== undefined ? { killedPid } : {}),
+    ...(killError !== undefined ? { killError } : {}),
+    ...(revokedLeaseId !== undefined ? { revokedLeaseId } : {}),
+    ...(aborted !== undefined ? { aborted } : {})
   };
 }
 

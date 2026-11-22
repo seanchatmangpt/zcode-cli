@@ -471,4 +471,155 @@ describe("F11 Optimal A* Trace Alignment & Escaping-Edges Precision (Chicago)", 
     expect(report.deviations).toEqual([]);
     expect(report.alignmentCost).toBe(0);
   });
+
+  test("v27.1.1 regression: multi-arc preset requires full token multiplicity and never produces negative markings", () => {
+    // Falsifier 1: weight-2 preset from sourcePlace p0 (which only starts with 1 token)
+    const insufficientMultiArcNet: WorkflowNetJson = {
+      places: [
+        { id: "p0", objectType: "Workflow" },
+        { id: "p_sink", objectType: "Workflow" }
+      ],
+      transitions: [
+        { id: "t1", label: "t1", silent: false, activityId: "t1", objectType: "Workflow" }
+      ],
+      pre: { t1: ["p0", "p0"] },
+      post: { t1: ["p_sink"] },
+      sourcePlace: "p0",
+      sinkPlace: "p_sink"
+    };
+    expect(() => alignTraceAStar(insufficientMultiArcNet, ["t1"])).toThrow(/unable to reach sinkPlace/);
+
+    // Positive control: producer emits 2 tokens into p_mid so weight-2 consumer is legitimately enabled
+    const soundMultiArcNet: WorkflowNetJson = {
+      places: [
+        { id: "p0", objectType: "Workflow" },
+        { id: "p_mid", objectType: "Workflow" },
+        { id: "p_sink", objectType: "Workflow" }
+      ],
+      transitions: [
+        { id: "t_gen", label: "gen", silent: false, activityId: "gen", objectType: "Workflow" },
+        { id: "t_consume", label: "consume", silent: false, activityId: "consume", objectType: "Workflow" }
+      ],
+      pre: { t_gen: ["p0"], t_consume: ["p_mid", "p_mid"] },
+      post: { t_gen: ["p_mid", "p_mid"], t_consume: ["p_sink"] },
+      sourcePlace: "p0",
+      sinkPlace: "p_sink"
+    };
+    const res = alignTraceAStar(soundMultiArcNet, ["gen", "consume"]);
+    expect(res.alignmentCost).toBe(0);
+    expect(res.fitness).toBe(1);
+    expect(res.syncMoves).toBe(2);
+  });
+
+  test("v27.1.1 regression: A* heap tie-breaking dives toward goal on 6-way parallel AND-split plateaus", () => {
+    const branches = ["A", "B", "C", "D", "E", "F"];
+    const places: WorkflowNetJson["places"] = [
+      { id: "p_src", objectType: "Workflow" },
+      { id: "p_sink", objectType: "Workflow" }
+    ];
+    const transitions: WorkflowNetJson["transitions"] = [
+      { id: "t_split", label: "split", silent: true },
+      { id: "t_join", label: "join", silent: true }
+    ];
+    const pre: Record<string, string[]> = { t_split: ["p_src"], t_join: [] };
+    const post: Record<string, string[]> = { t_split: [], t_join: ["p_sink"] };
+
+    for (const b of branches) {
+      const pIn = `p_in_${b}`;
+      const pOut = `p_out_${b}`;
+      const tid = `t_${b}`;
+      places.push({ id: pIn, objectType: "Workflow" }, { id: pOut, objectType: "Workflow" });
+      transitions.push({ id: tid, label: b, silent: false, activityId: b, objectType: "Workflow" });
+      post.t_split!.push(pIn);
+      pre[tid] = [pIn];
+      post[tid] = [pOut];
+      pre.t_join!.push(pOut);
+    }
+
+    const parallel6Net: WorkflowNetJson = {
+      places,
+      transitions,
+      pre,
+      post,
+      sourcePlace: "p_src",
+      sinkPlace: "p_sink"
+    };
+
+    // 1 extra log move (f=1) on 6-way parallel net: diving tie-breaker avoids exponential plateau expansion
+    const withExtra = alignTraceAStar(parallel6Net, ["A", "B", "EXTRA", "C", "D", "E", "F"], {
+      maxStates: 200
+    });
+    expect(withExtra.alignmentCost).toBe(1);
+    expect(withExtra.logMoves).toBe(1);
+    expect(withExtra.syncMoves).toBe(6);
+    expect(withExtra.statesExplored).toBeLessThan(50);
+
+    // syncCost=1: every sync move increases g by 1 while f stays constant at 6
+    const withSyncCost = alignTraceAStar(parallel6Net, ["A", "B", "C", "D", "E", "F"], {
+      syncCost: 1,
+      logMoveCost: 2,
+      modelMoveCost: 2,
+      maxStates: 200
+    });
+    expect(withSyncCost.alignmentCost).toBe(6);
+    expect(withSyncCost.syncMoves).toBe(6);
+    expect(withSyncCost.statesExplored).toBeLessThan(50);
+  });
+
+  test("v27.1.1 regression: computeAlignmentConformance auto-groups by session when objectType is omitted and projects tool attributes", () => {
+    const net = buildLinearWfNet(["a", "b"]);
+    const interleavedDoc: ConformanceOcelDocLike = {
+      objects: [
+        { id: "S1", type: "session", attributes: [] },
+        { id: "S2", type: "session", attributes: [] }
+      ],
+      events: [
+        { id: "e1", type: "a", time: "2026-08-02T10:00:00Z", relationships: [{ objectId: "S1", qualifier: "s" }] },
+        { id: "e2", type: "a", time: "2026-08-02T10:00:01Z", relationships: [{ objectId: "S2", qualifier: "s" }] },
+        { id: "e3", type: "b", time: "2026-08-02T10:00:02Z", relationships: [{ objectId: "S1", qualifier: "s" }] },
+        { id: "e4", type: "b", time: "2026-08-02T10:00:03Z", relationships: [{ objectId: "S2", qualifier: "s" }] }
+      ]
+    };
+
+    const report = computeAlignmentConformance(interleavedDoc, net);
+    expect(report.caseCount).toBe(2);
+    expect(report.alignmentCost).toBe(0);
+    expect(report.fitness).toBe(1);
+
+    // Tool-level WF-net matching coarse wire event type "tool_updated" via tool attribute
+    const toolNet = buildLinearWfNet(["Read", "Write"]);
+    const toolDoc: ConformanceOcelDocLike = {
+      objects: [{ id: "S1", type: "session", attributes: [] }],
+      events: [
+        {
+          id: "t1",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:00Z",
+          attributes: [{ name: "tool", value: "Read" }],
+          relationships: [{ objectId: "S1", qualifier: "s" }]
+        },
+        {
+          id: "t2",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:01Z",
+          attributes: [{ name: "tool", value: "Bash" }],
+          relationships: [{ objectId: "S1", qualifier: "s" }]
+        },
+        {
+          id: "t3",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:02Z",
+          attributes: [{ name: "tool", value: "Write" }],
+          relationships: [{ objectId: "S1", qualifier: "s" }]
+        }
+      ]
+    };
+    const toolReport = computeAlignmentConformance(toolDoc, toolNet);
+    expect(toolReport.caseCount).toBe(1);
+    expect(toolReport.alignmentCost).toBe(1);
+    expect(toolReport.syncMoves).toBe(2);
+    expect(toolReport.logMoves).toBe(1);
+    expect(toolReport.deviations[0]!.activity).toBe("Bash");
+    expect(toolReport.deviations[0]!.category).toBe("out_of_scope_write");
+  });
 });

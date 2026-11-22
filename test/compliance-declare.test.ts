@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createDeclareOnlineMonitor,
   DEFAULT_EU_AI_ACT_DECLARE_RULES,
   evaluateDeclareRules,
   type DeclareRule,
@@ -657,5 +658,168 @@ describe("F10 Declare / LTLf Conformance Engine (Chicago)", () => {
     const parsed = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
     expect(Array.isArray(parsed.results)).toBe(true);
     expect("declareResults" in parsed).toBe(false);
+  });
+
+  test("V13 RV-LTLf online monitor: live session_created prefix yields temporarily_violated for DEC-RESP-ART50 and does not false-gate", () => {
+    const monitor = createDeclareOnlineMonitor({
+      rules: DEFAULT_EU_AI_ACT_DECLARE_RULES,
+      objects: [
+        {
+          id: "sess_live",
+          type: "session",
+          attributes: [{ name: "compliance_profile", value: "high-risk-annex-iii" }]
+        }
+      ]
+    });
+
+    // Step 1: only session_created has arrived
+    const snap1 = monitor.step({
+      id: "ev_1",
+      type: "session_created",
+      time: "2026-08-02T10:00:00.000Z",
+      attributes: [{ name: "compliance_profile", value: "high-risk-annex-iii" }],
+      relationships: [{ objectId: "sess_live", qualifier: "in_session" }]
+    });
+
+    expect(snap1.schema).toBe("zcode.declare-online/1");
+    expect(snap1.eventCount).toBe(1);
+    expect(snap1.canGateFail).toBe(false);
+    expect(snap1.hasPermanentViolation).toBe(false);
+    expect(snap1.hasTemporaryViolation).toBe(true);
+
+    const byId1 = new Map(snap1.results.map((r) => [r.id, r]));
+    expect(byId1.get("DEC-INIT-SESSION")!.rvStatus).toBe("permanently_satisfied");
+    expect(byId1.get("DEC-RESP-ART50")!.rvStatus).toBe("temporarily_violated");
+    expect(byId1.get("DEC-EXIST-TURN")!.rvStatus).toBe("temporarily_violated");
+    expect(byId1.get("DEC-ABS-UNREDACTED")!.rvStatus).toBe("temporarily_satisfied");
+    expect(byId1.get("DEC-NOTCO-YOLO-HIGHRISK")!.rvStatus).toBe("temporarily_satisfied");
+
+    // Step 2: art50_disclosure_emitted fulfills DEC-RESP-ART50
+    const snap2 = monitor.step({
+      id: "ev_2",
+      type: "art50_disclosure_emitted",
+      time: "2026-08-02T10:00:00.100Z",
+      attributes: [{ name: "channel", value: "stream-json" }],
+      relationships: [{ objectId: "sess_live", qualifier: "in_session" }]
+    });
+    expect(monitor.getRuleState("DEC-RESP-ART50")!.rvStatus).toBe("temporarily_satisfied");
+    expect(snap2.canGateFail).toBe(false);
+
+    // Step 3: turn_started permanently satisfies DEC-EXIST-TURN
+    const snap3 = monitor.step({
+      id: "ev_3",
+      type: "turn_started",
+      time: "2026-08-02T10:00:00.200Z",
+      attributes: [],
+      relationships: [{ objectId: "sess_live", qualifier: "in_session" }]
+    });
+    expect(monitor.getRuleState("DEC-EXIST-TURN")!.rvStatus).toBe("permanently_satisfied");
+    expect(snap3.allMandatoryCurrentlySatisfied).toBe(true);
+    expect(snap3.hasTemporaryViolation).toBe(false);
+    expect(snap3.canGateFail).toBe(false);
+  });
+
+  test("V13 RV-LTLf online monitor: gates permanent prefix violations (Absence, Precedence, ChainResponse, NotCoExistence, Response deadline)", () => {
+    const monitor = createDeclareOnlineMonitor({
+      rules: [
+        ...DEFAULT_EU_AI_ACT_DECLARE_RULES,
+        {
+          id: "DEC-RESP-TTL",
+          template: "Response",
+          activation: "turn_started",
+          target: "turn_completed",
+          maxTimeDeltaMs: 1000,
+          objectType: "session",
+          mandatory: true
+        }
+      ],
+      objects: [
+        { id: "s1", type: "session", attributes: [{ name: "compliance_profile", value: "high-risk-annex-iii" }] },
+        { id: "t1", type: "turn", attributes: [] },
+        { id: "wo1", type: "work_order", attributes: [] }
+      ]
+    });
+
+    monitor.step({
+      id: "e1",
+      type: "session_created",
+      time: "2026-08-02T10:00:00.000Z",
+      attributes: [{ name: "compliance_profile", value: "high-risk-annex-iii" }],
+      relationships: [{ objectId: "s1", qualifier: "in_session" }]
+    });
+
+    // ChainResponse pending -> temporarily_violated (not yet permanent)
+    monitor.step({
+      id: "e2",
+      type: "worker_claim",
+      time: "2026-08-02T10:00:00.100Z",
+      attributes: [],
+      relationships: [{ objectId: "wo1", qualifier: "subject" }]
+    });
+    expect(monitor.getRuleState("DEC-CHAIN-RECEIPT")!.rvStatus).toBe("temporarily_violated");
+    expect(monitor.snapshot().canGateFail).toBe(false);
+
+    // Intervening event breaks ChainResponse -> permanently_violated!
+    const snapChainFail = monitor.step({
+      id: "e3",
+      type: "turn_started",
+      time: "2026-08-02T10:00:00.200Z",
+      attributes: [],
+      relationships: [
+        { objectId: "s1", qualifier: "in_session" },
+        { objectId: "wo1", qualifier: "subject" }
+      ]
+    });
+    expect(monitor.getRuleState("DEC-CHAIN-RECEIPT")!.rvStatus).toBe("permanently_violated");
+    expect(snapChainFail.canGateFail).toBe(true);
+    expect(snapChainFail.permanentlyViolatedRuleIds).toContain("DEC-CHAIN-RECEIPT");
+
+    // Precedence violation (tool_updated without permission_resolved) -> permanently_violated
+    monitor.step({
+      id: "e4",
+      type: "tool_updated",
+      time: "2026-08-02T10:00:00.300Z",
+      attributes: [],
+      relationships: [{ objectId: "t1", qualifier: "in_turn" }]
+    });
+    expect(monitor.getRuleState("DEC-PREC-ART14")!.rvStatus).toBe("permanently_violated");
+
+    // Absence violation (unredacted secret) + NotCoExistence (yolo + high-risk) + Response maxTimeDeltaMs expiry
+    monitor.step({
+      id: "e5",
+      type: "tool_updated",
+      time: "2026-08-02T10:00:05.000Z",
+      attributes: [
+        { name: "mode", value: "yolo" },
+        { name: "output", value: "sk-proj-abc1234567890XYZ9876543210abcdef" }
+      ],
+      relationships: [{ objectId: "s1", qualifier: "in_session" }]
+    });
+    expect(monitor.getRuleState("DEC-ABS-UNREDACTED")!.rvStatus).toBe("permanently_violated");
+    expect(monitor.getRuleState("DEC-NOTCO-YOLO-HIGHRISK")!.rvStatus).toBe("permanently_violated");
+    expect(monitor.getRuleState("DEC-RESP-TTL")!.rvStatus).toBe("permanently_violated");
+  });
+
+  test("V13 RV-LTLf online monitor: finalize() matches batch evaluateDeclareRules on conforming high-risk session", () => {
+    const doc = buildConformingHighRiskDoc();
+    const batchReport = evaluateDeclareRules(doc, DEFAULT_EU_AI_ACT_DECLARE_RULES);
+
+    const monitor = createDeclareOnlineMonitor({
+      rules: DEFAULT_EU_AI_ACT_DECLARE_RULES,
+      objects: doc.objects
+    });
+    for (const ev of doc.events) {
+      const snap = monitor.step(ev);
+      expect(snap.canGateFail).toBe(false);
+    }
+    const onlineFinal = monitor.finalize();
+
+    expect(onlineFinal.allMandatorySatisfied).toBe(batchReport.allMandatorySatisfied);
+    expect(onlineFinal.witnessedCount).toBe(batchReport.witnessedCount);
+    expect(onlineFinal.vacuousCount).toBe(batchReport.vacuousCount);
+    expect(onlineFinal.violatedCount).toBe(batchReport.violatedCount);
+    expect(onlineFinal.results.map((r) => [r.id, r.status])).toEqual(
+      batchReport.results.map((r) => [r.id, r.status])
+    );
   });
 });

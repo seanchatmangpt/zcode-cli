@@ -955,6 +955,17 @@ export interface KAnonResult<T extends RpmDocLike = RpmDocLike> {
 }
 
 const QUASI_ATTR_KEYS = new Set(["provider_id", "model_id", "repo"]);
+const CONTINUOUS_QUASI_ATTR_KEYS = new Set(["service_ms", "ttft_ms"]);
+
+function bucketContinuousMs(value: unknown): string {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return "*";
+  if (n < 100) return "<100ms";
+  if (n < 500) return "100-500ms";
+  if (n < 2000) return "500-2000ms";
+  if (n < 10000) return "2000-10000ms";
+  return ">=10000ms";
+}
 
 function mapAttributes(
   attrs: readonly RpmAttributeLike[] | readonly unknown[] | Record<string, unknown>,
@@ -1005,7 +1016,7 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
 
   const generalizeQuasi = options.generalizeQuasiIdentifiers ?? true;
   const suppressBelowK = options.suppressBelowK ?? true;
-  const timestampBucket = options.timestampBucket ?? "none";
+  const timestampBucket = options.timestampBucket ?? "hour";
   const lDiversity = options.lDiversity ?? 1;
   if (!Number.isInteger(lDiversity) || lDiversity < 1) {
     throw new ComplianceRefusalError(
@@ -1032,6 +1043,9 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
         return isActorValueRedactedOrPseudonymized(String(value))
           ? String(value)
           : pseudonymizeActor(String(value), salt);
+      }
+      if (CONTINUOUS_QUASI_ATTR_KEYS.has(name) && value !== undefined && value !== null && String(value).length > 0) {
+        return bucketContinuousMs(value);
       }
       return redactComplianceData(value, { redactPii: true });
     });
@@ -1162,35 +1176,44 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     const provVals = new Set<string>();
     const modelVals = new Set<string>();
     const repoVals = new Set<string>();
+    const actorVals = new Set<string>();
+    const svcVals = new Set<string>();
+    const ttftVals = new Set<string>();
+
+    const collectQuasiFromAttrs = (
+      attrs: readonly RpmAttributeLike[] | readonly unknown[] | Record<string, unknown> | undefined
+    ) => {
+      const p = readAttrStr(attrs, "provider_id");
+      const m = readAttrStr(attrs, "model_id");
+      const r = readAttrStr(attrs, "repo");
+      if (p) provVals.add(p);
+      if (m) modelVals.add(m);
+      if (r) repoVals.add(r);
+      for (const ak of ACTOR_ATTR_KEYS) {
+        const av = readAttrStr(attrs, ak);
+        if (av && av !== "REDACTED" && av !== "[REDACTED]") actorVals.add(av);
+      }
+      const svc = readAttrStr(attrs, "service_ms");
+      const ttft = readAttrStr(attrs, "ttft_ms");
+      if (svc) svcVals.add(svc);
+      if (ttft) ttftVals.add(ttft);
+    };
 
     for (const e of evs) {
-      const ep = readAttrStr(e.attributes, "provider_id");
-      const em = readAttrStr(e.attributes, "model_id");
-      const er = readAttrStr(e.attributes, "repo");
-      if (ep) provVals.add(ep);
-      if (em) modelVals.add(em);
-      if (er) repoVals.add(er);
+      collectQuasiFromAttrs(e.attributes);
 
       for (const rel of e.relationships ?? []) {
         const o = objById.get(rel.objectId);
         if (!o) continue;
-        const op = readAttrStr(o.attributes, "provider_id");
-        const om = readAttrStr(o.attributes, "model_id");
-        const or = readAttrStr(o.attributes, "repo");
-        if (op) provVals.add(op);
-        if (om) modelVals.add(om);
-        if (or) repoVals.add(or);
+        if (ACTOR_OBJECT_TYPES.has(o.type)) actorVals.add(o.id);
+        collectQuasiFromAttrs(o.attributes);
       }
     }
     for (const oid of linkedObjectIds) {
       const o = objById.get(oid);
       if (!o) continue;
-      const op = readAttrStr(o.attributes, "provider_id");
-      const om = readAttrStr(o.attributes, "model_id");
-      const or = readAttrStr(o.attributes, "repo");
-      if (op) provVals.add(op);
-      if (om) modelVals.add(om);
-      if (or) repoVals.add(or);
+      if (ACTOR_OBJECT_TYPES.has(o.type)) actorVals.add(o.id);
+      collectQuasiFromAttrs(o.attributes);
     }
 
     const formatQuasiSet = (vals: Set<string>): string =>
@@ -1198,14 +1221,18 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     const prov = formatQuasiSet(provVals);
     const model = formatQuasiSet(modelVals);
     const repo = formatQuasiSet(repoVals);
+    const actorQuasi = formatQuasiSet(actorVals);
+    const svcQuasi = formatQuasiSet(svcVals);
+    const ttftQuasi = formatQuasiSet(ttftVals);
     const timeBucket =
       timestampBucket !== "none"
         ? formatQuasiSet(new Set(evs.map((e) => generalizeTimestamp(e.time, timestampBucket))))
         : "*";
+    const baseQuasi = `${prov}|${model}|${repo}|${actorQuasi}|${svcQuasi}|${ttftQuasi}`;
     const quasiKey =
       timestampBucket !== "none"
-        ? `${variant}::${prov}|${model}|${repo}|${timeBucket}`
-        : `${variant}::${prov}|${model}|${repo}`;
+        ? `${variant}::${baseQuasi}|${timeBucket}`
+        : `${variant}::${baseQuasi}`;
     traces.push({
       caseKey,
       events: evs,
@@ -1236,8 +1263,8 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
   const postGenKey = (tr: TraceInfo, gen: boolean): string =>
     gen
       ? timestampBucket !== "none"
-        ? `${tr.variant}::*|*|*|${tr.timeBucket}`
-        : `${tr.variant}::*|*|*`
+        ? `${tr.variant}::*|*|*|*|*|*|${tr.timeBucket}`
+        : `${tr.variant}::*|*|*|*|*|*`
       : tr.quasiKey;
 
   if (generalizeQuasi) {
@@ -1301,6 +1328,20 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
         item.suppressed = true;
       }
     }
+  } else {
+    for (const item of tracePlan) {
+      if (item.suppressed) continue;
+      const pk = postGenKey(item.tr, item.generalize);
+      const eqSize = preFinalEqCounts.get(pk) ?? 0;
+      const eqDiversity = preFinalEqOutcomes.get(pk)?.size ?? 0;
+      if (eqSize < k || eqDiversity < lDiversity) {
+        throw new ComplianceRefusalError(
+          "REDACTION_FAILURE",
+          `Cannot satisfy k=${k}, l=${lDiversity} anonymity with suppressBelowK=false (equivalence class size=${eqSize}, lDiversity=${eqDiversity})`,
+          "admission_vacuous"
+        );
+      }
+    }
   }
 
   // Track object usage across generalized vs non-generalized retained traces so QUASI_ATTR_KEYS
@@ -1315,14 +1356,27 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     }
   }
 
-  const objectHasQuasiAttr = (obj: RpmObjectLike): boolean =>
-    readAttrStr(obj.attributes, "provider_id") !== undefined ||
-    readAttrStr(obj.attributes, "model_id") !== undefined ||
-    readAttrStr(obj.attributes, "repo") !== undefined;
+  const objectHasQuasiAttr = (obj: RpmObjectLike): boolean => {
+    for (const key of QUASI_ATTR_KEYS) {
+      if (readAttrStr(obj.attributes, key) !== undefined) return true;
+    }
+    for (const key of CONTINUOUS_QUASI_ATTR_KEYS) {
+      if (readAttrStr(obj.attributes, key) !== undefined) return true;
+    }
+    for (const key of ACTOR_ATTR_KEYS) {
+      if (readAttrStr(obj.attributes, key) !== undefined) return true;
+    }
+    return false;
+  };
 
   const generalizeQuasiAttrs = (
     attrs: readonly RpmAttributeLike[] | readonly unknown[] | Record<string, unknown>
-  ) => mapAttributes(attrs, (name, value) => (QUASI_ATTR_KEYS.has(name) ? "*" : value));
+  ) =>
+    mapAttributes(attrs, (name, value) => {
+      if (QUASI_ATTR_KEYS.has(name) || CONTINUOUS_QUASI_ATTR_KEYS.has(name)) return "*";
+      if (ACTOR_ATTR_KEYS.has(name)) return "REDACTED";
+      return value;
+    });
 
   const splitObjectIds = new Map<string, string>();
   const needsGenVariant = new Set<string>();

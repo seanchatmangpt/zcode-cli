@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ComplianceRefusalError } from "../src/compliance/config.ts";
 import {
+  analyzeOcelKingmanMetrics,
   computeKingmanQueueEstimate,
   KingmanScheduler
 } from "../src/compliance/kingman-scheduler.ts";
@@ -224,10 +225,10 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     expect(spikeDecision.reason).toBe("ttft_spike_md");
     expect(spikeDecision.newWip).toBe(Math.max(1, Math.floor(wipBeforeSpike * 0.5)));
 
-    // Low RPM headroom also triggers MD
+    // Low RPM headroom also triggers MD without conflating into ttftMdTriggered
     const rpmWipBefore = sched.wip;
     const rpmDecision = sched.onSuccess(3500, { ttftMs: 105, rpmHeadroomRatio: 0.02 });
-    expect(rpmDecision.ttftMdTriggered).toBe(true);
+    expect(rpmDecision.ttftMdTriggered).toBe(false);
     expect(rpmDecision.reason).toBe("rpm_headroom_md");
     expect(rpmDecision.newWip).toBe(Math.max(1, Math.floor(rpmWipBefore * 0.5)));
   });
@@ -330,7 +331,7 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
   test("regression F13: KingmanScheduler avoids downward WIP cliff on heavy-tailed turn when WIP > kingmanCeiling", () => {
     const sched = new KingmanScheduler({ minWip: 1, maxWip: 64 });
     for (let i = 0; i < 30; i++) {
-      sched.onSuccess(100, { ttftMs: 50, rpmHeadroomRatio: 0.9, tpmHeadroomRatio: 0.9, interArrivalMs: 100 });
+      sched.onSuccess(100, { ttftMs: 50, rpmHeadroomRatio: 0.9, tpmHeadroomRatio: 0.9, interArrivalMs: 200 });
     }
     const wipBeforeHeavyTurn = sched.wip;
     expect(wipBeforeHeavyTurn).toBeGreaterThan(20);
@@ -539,7 +540,7 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     // KingmanScheduler.currentEstimate() passes Math.max(1, this.wip) as servers
     const sched = new KingmanScheduler({ minWip: 1, maxWip: 16, useWallClockFallback: false });
     for (let i = 0; i < 6; i++) {
-      sched.onSuccess(400, { ttftMs: 50, interArrivalMs: 100 });
+      sched.onSuccess(80, { ttftMs: 50, interArrivalMs: 100 });
     }
     const snap = sched.getSnapshot();
     expect(snap.wip).toBeGreaterThan(1);
@@ -653,5 +654,74 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
         expect(wipAttr?.value).toBe("1");
       }
     }
+  });
+
+  test("regression V11-Kingman-WIP (Gap 1): true overload rho >= 1 surfaces saturated=true and holds WIP instead of AI", () => {
+    const sched = new KingmanScheduler({ maxWip: 16, useWallClockFallback: false });
+    for (let i = 0; i < 10; i++) {
+      const dec = sched.onSuccess(1000, { interArrivalMs: 10 });
+      expect(dec.reason).toBe("saturated_hold");
+      expect(dec.changed).toBe(false);
+      expect(dec.estimate.saturated).toBe(true);
+    }
+    const snap = sched.getSnapshot();
+    expect(snap.estimate.saturated).toBe(true);
+    expect(snap.rho).toBeGreaterThan(1);
+    expect(snap.estimate.expectedQueueWaitMs).toBe(Number.POSITIVE_INFINITY);
+    expect(snap.estimate.lambdaAlivePerSec).toBe(0);
+    expect(snap.wip).toBe(1);
+  });
+
+  test("regression V11-Kingman-WIP (Gap 2): zero-delta interArrivalMs is ignored online and matches offline analyzeOcelKingmanMetrics", () => {
+    const sched = new KingmanScheduler({ maxWip: 16, useWallClockFallback: false });
+    // Simulate 4 concurrent forks at t=0 (0ms deltas) followed by spaced arrivals
+    const baseMs = Date.parse("2026-11-21T00:00:00.000Z");
+    const timestamps = [0, 0, 0, 0, 200, 500, 900];
+    const events = timestamps.map((offset, idx) => ({
+      id: `e${idx}`,
+      type: "transition_completed",
+      time: new Date(baseMs + offset).toISOString(),
+      attributes: [{ name: "service_ms", value: "50" }],
+      relationships: []
+    }));
+
+    for (let i = 0; i < timestamps.length; i++) {
+      const delta = i === 0 ? undefined : timestamps[i]! - timestamps[i - 1]!;
+      sched.onSuccess(50, { interArrivalMs: delta });
+    }
+
+    const online = sched.getSnapshot();
+    const offline = analyzeOcelKingmanMetrics({ events, objects: [] }, { maxWip: 16 });
+    expect(online.ca2).toBeCloseTo(offline.ca2, 10);
+    expect(online.rho).toBeCloseTo(offline.rho, 10);
+    expect(online.wip).toBe(offline.wip);
+    expect(online.ca2).toBeGreaterThan(0);
+  });
+
+  test("regression V11-Kingman-WIP (Gap 3): RPM/TPM headroom and transport timeout MD do not set ttftMdTriggered", () => {
+    const sched = new KingmanScheduler({ maxWip: 16, useWallClockFallback: false });
+    // Warm up WIP > 4 with healthy TTFT
+    for (let i = 0; i < 8; i++) {
+      sched.onSuccess(50, { ttftMs: 50, rpmHeadroomRatio: 0.9, tpmHeadroomRatio: 0.9, interArrivalMs: 200 });
+    }
+    expect(sched.wip).toBeGreaterThan(4);
+
+    const rpmDec = sched.onSuccess(50, { ttftMs: 50, rpmHeadroomRatio: 0.01 });
+    expect(rpmDec.reason).toBe("rpm_headroom_md");
+    expect(rpmDec.ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().mdCount).toBe(1);
+
+    const tpmDec = sched.onSuccess(50, { ttftMs: 50, tpmHeadroomRatio: 0.01 });
+    expect(tpmDec.reason).toBe("tpm_headroom_md");
+    expect(tpmDec.ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().mdCount).toBe(2);
+
+    const timeoutDec = sched.onTransportBackpressure();
+    expect(timeoutDec.reason).toBe("transport_timeout_md");
+    expect(timeoutDec.ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().ttftMdTriggered).toBe(false);
+    expect(sched.getSnapshot().mdCount).toBe(3);
   });
 });

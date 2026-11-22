@@ -40,11 +40,56 @@ export interface CleanRoomDriftVerdict {
   noopStub?: boolean;
 }
 
+function basenameOf(bin: string): string {
+  return bin.includes("/") ? bin.slice(bin.lastIndexOf("/") + 1) : bin;
+}
+
+function unwrapEnvCmd(cmd: string[]): string[] {
+  if (cmd.length === 0) return cmd;
+  if (basenameOf(cmd[0]!) !== "env") return cmd;
+  let i = 1;
+  while (i < cmd.length) {
+    const tok = cmd[i]!;
+    if (tok === "--") {
+      i += 1;
+      break;
+    }
+    if (tok.startsWith("-") || tok.includes("=")) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  return cmd.slice(i);
+}
+
+function extractShellScript(cmd: string[]): string | null {
+  if (cmd.length < 3) return null;
+  const base = basenameOf(cmd[0]!);
+  if (base !== "sh" && base !== "bash" && base !== "zsh" && base !== "dash") return null;
+  for (let i = 1; i < cmd.length - 1; i++) {
+    if (cmd[i] === "-c" || cmd[i] === "-lc") {
+      return cmd[i + 1] ?? null;
+    }
+  }
+  return null;
+}
+
 /** Historical Chicago identity stub — not a Jobs/C4 check. */
 export function isNoopCleanRoomCmd(cmd: string[] | undefined | null): boolean {
   if (!cmd || cmd.length === 0) return true;
-  const bin = cmd[0]!;
-  return bin === "true" || bin === "/bin/true" || bin === "/usr/bin/true";
+  const unwrapped = unwrapEnvCmd(cmd);
+  if (unwrapped.length === 0) return true;
+  const base = basenameOf(unwrapped[0]!);
+  if (base === "true" || base === ":") return true;
+  const script = extractShellScript(unwrapped);
+  if (script !== null) {
+    const trimmed = script.trim();
+    if (trimmed === "true" || trimmed === ":" || trimmed === "/bin/true" || trimmed === "/usr/bin/true") {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -53,9 +98,15 @@ export function isNoopCleanRoomCmd(cmd: string[] | undefined | null): boolean {
  */
 export function isGitSyncCmd(cmd: string[] | undefined | null): boolean {
   if (!cmd || cmd.length === 0) return false;
-  const bin = cmd[0]!;
-  const base = bin.includes("/") ? bin.slice(bin.lastIndexOf("/") + 1) : bin;
-  return base === "git" || base.startsWith("git");
+  const unwrapped = unwrapEnvCmd(cmd);
+  if (unwrapped.length === 0) return false;
+  const base = basenameOf(unwrapped[0]!);
+  if (base === "git" || base.startsWith("git")) return true;
+  const script = extractShellScript(unwrapped);
+  if (script !== null && /(^|[;&|(\s])(?:\/[^\s]*\/)?git(?:\s|$)/.test(script)) {
+    return true;
+  }
+  return false;
 }
 
 export function isIgniterCheckCmd(cmd: string[]): boolean {
@@ -156,16 +207,22 @@ export function evaluateCleanRoomDrift(cmd: string[], result: RunResult): CleanR
     };
   }
 
-  // Default / igniter --check path (also covers mix ggen_igniter.sync --check).
+  if (!isIgniterCheckCmd(cmd)) {
+    return {
+      kind: "refuse",
+      exitCode: 1,
+      diagnostics: [
+        `clean-room refused: unadmitted sync cmd ${JSON.stringify(cmd)} is not Jobs/C4 — use mix ggen_igniter.sync --check or ggen sync run --dry-run`
+      ]
+    };
+  }
+
+  // Igniter --check path (mix ggen_igniter.sync --check).
   if (result.status === 0) {
     return {
       kind: "pass",
       exitCode: 0,
-      diagnostics: [
-        isIgniterCheckCmd(cmd)
-          ? "ggen_igniter.sync --check: clean (Jobs/C4)"
-          : `clean-room check exited 0: ${(result.stdout || result.stderr).trim().slice(0, 200)}`
-      ]
+      diagnostics: ["ggen_igniter.sync --check: clean (Jobs/C4)"]
     };
   }
   if (result.status === IGNITER_CHECK_DRIFT_EXIT) {

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import type { WorkflowNetJson } from "../src/compliance/conformance.ts";
 import {
   captureWorkspaceSnapshot,
-  executeTransactionalLifecycle
+  executeTransactionalLifecycle,
+  SignatureRetryLimiter
 } from "../src/compliance/transactional-net.ts";
 
 const tempDirs: string[] = [];
@@ -331,5 +332,147 @@ describe("07-Transactional-Nets ERRC improvements", () => {
     expect(res.standing).toBe("ALIVE");
     expect(res.rolledBackCount).toBe(1);
     expect(readFileSync(join(ws, "state.txt"), "utf8")).toBe("committed-attempt-2\n");
+  });
+
+  test("HARDENING: SignatureRetryLimiter persists counts/history across restarts and enforces RETRY_BUDGET_EXHAUSTED", async () => {
+    const dir = makeTempDir("zcode-tx-retry-persist-");
+    const statePath = join(dir, "retry-state.json");
+
+    // Instance 1 records attempt 1
+    const lim1 = new SignatureRetryLimiter(2, { statePath });
+    expect(lim1.recordFailure("SIG_A", "t1").count).toBe(1);
+    expect(existsSync(statePath)).toBe(true);
+
+    // Fresh instance 2 hydrates from disk and records attempt 2
+    const lim2 = SignatureRetryLimiter.load(statePath);
+    expect(lim2.maxRetriesPerSignature).toBe(2);
+    expect(lim2.attemptsFor("SIG_A")).toBe(1);
+    expect(lim2.recordFailure("SIG_A", "t1").count).toBe(2);
+
+    // Fresh instance 3 hydrates from disk and hits RETRY_BUDGET_EXHAUSTED on attempt 3
+    const lim3 = new SignatureRetryLimiter(2, { statePath });
+    expect(lim3.attemptsFor("SIG_A")).toBe(2);
+    expect(lim3.canRetry("SIG_A")).toBe(false);
+    expect(() => lim3.recordFailure("SIG_A", "t1")).toThrow(/RETRY_BUDGET_EXHAUSTED/);
+
+    // toJSON / fromJSON round-trip preserves counts and history
+    const cloned = SignatureRetryLimiter.fromJSON(lim3.toJSON());
+    expect(cloned.attemptsFor("SIG_A")).toBe(3);
+    expect(cloned.getHistory().length).toBe(3);
+
+    // Reset persists cleanly
+    lim3.reset("SIG_A");
+    const lim4 = new SignatureRetryLimiter(2, { statePath });
+    expect(lim4.attemptsFor("SIG_A")).toBe(0);
+
+    // executeTransactionalLifecycle with retryStatePath enforces cap across separate invocations
+    const lifecycleStatePath = join(dir, "lifecycle-retry.json");
+    const singleNet: WorkflowNetJson = {
+      places: [{ id: "p0" }, { id: "p1" }],
+      transitions: [{ id: "t_fail", label: "fail", activityId: "fail", silent: false }],
+      pre: { t_fail: ["p0"] },
+      post: { t_fail: ["p1"] },
+      sourcePlace: "p0",
+      sinkPlace: "p1"
+    };
+
+    const run1 = await executeTransactionalLifecycle(
+      singleNet,
+      { fail: async () => ({ ok: false, retryable: true, errorSignature: "PERSIST_SIG", detail: "boom" }) },
+      { maxRetriesPerSignature: 2, maxAttemptsTotal: 1, retryStatePath: lifecycleStatePath }
+    );
+    expect(run1.ok).toBe(false);
+
+    const run2 = await executeTransactionalLifecycle(
+      singleNet,
+      { fail: async () => ({ ok: false, retryable: true, errorSignature: "PERSIST_SIG", detail: "boom" }) },
+      { maxRetriesPerSignature: 2, maxAttemptsTotal: 1, retryStatePath: lifecycleStatePath }
+    );
+    expect(run2.ok).toBe(false);
+
+    const run3 = await executeTransactionalLifecycle(
+      singleNet,
+      { fail: async () => ({ ok: false, retryable: true, errorSignature: "PERSIST_SIG", detail: "boom" }) },
+      { maxRetriesPerSignature: 2, maxAttemptsTotal: 5, retryStatePath: lifecycleStatePath }
+    );
+    expect(run3.ok).toBe(false);
+    expect(run3.refusalCode).toBe("RETRY_BUDGET_EXHAUSTED");
+    expect(run3.attemptsExecuted).toBe(1);
+  });
+
+  test("HARDENING: clean-git rollback restores modified/deleted pre-existing gitignored files without ROLLBACK_FAILED", () => {
+    const repo = makeTempDir("zcode-tx-gitignored-rb-");
+    initCleanGitRepo(repo);
+
+    writeFileSync(join(repo, ".gitignore"), ".env\n*.secret\n", "utf8");
+    execFileSync("git", ["add", ".gitignore"], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "add gitignore"], { cwd: repo });
+
+    // Pre-existing gitignored file .env with content "A"
+    writeFileSync(join(repo, ".env"), "A", "utf8");
+
+    const snap = captureWorkspaceSnapshot(repo);
+    try {
+      expect(snap.isGit).toBe(true);
+      expect(snap.wasCleanBefore).toBe(true);
+      expect(snap.manifest.has(".env")).toBe(true);
+
+      // Mutate pre-existing gitignored file and add a new gitignored file
+      writeFileSync(join(repo, ".env"), "B", "utf8");
+      writeFileSync(join(repo, "leaked.secret"), "tmp-secret", "utf8");
+      expect(snap.isDirty()).toBe(true);
+
+      const rb = snap.rollback("test_gitignored", "t1", true);
+      expect(rb.rolledBack).toBe(true);
+      expect(readFileSync(join(repo, ".env"), "utf8")).toBe("A");
+      expect(existsSync(join(repo, "leaked.secret"))).toBe(false);
+      expect(snap.isDirty()).toBe(false);
+    } finally {
+      snap.dispose();
+    }
+  });
+
+  test("HARDENING: dirty-tree rollback restores git HEAD and index after git add / git commit side effects", () => {
+    const repo = makeTempDir("zcode-tx-dirty-gitmeta-");
+    initCleanGitRepo(repo);
+
+    const origHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+    // Make working tree dirty before snapshot (unstaged modification + untracked file)
+    writeFileSync(join(repo, "tracked.txt"), "dirty-before-step\n", "utf8");
+    writeFileSync(join(repo, "untracked.txt"), "before-step-untracked\n", "utf8");
+
+    const snap = captureWorkspaceSnapshot(repo);
+    try {
+      expect(snap.isGit).toBe(true);
+      expect(snap.wasCleanBefore).toBe(false);
+      expect(snap.headSha).toBe(origHead);
+
+      // Failed step stages and commits changes, mutating both .git/index and HEAD
+      writeFileSync(join(repo, "tracked.txt"), "step-mutation\n", "utf8");
+      execFileSync("git", ["add", "tracked.txt", "untracked.txt"], { cwd: repo });
+      execFileSync("git", ["commit", "-q", "-m", "bad step commit"], { cwd: repo });
+
+      const mutatedHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+      expect(mutatedHead).not.toBe(origHead);
+      expect(snap.isDirty()).toBe(true);
+
+      const rb = snap.rollback("test_dirty_git_meta", "t2", true);
+      expect(rb.rolledBack).toBe(true);
+
+      const restoredHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+      expect(restoredHead).toBe(origHead);
+      // Staged diff must be empty (index restored to unstaged state)
+      const stagedDiff = execFileSync("git", ["diff", "--cached", "--name-only"], {
+        cwd: repo,
+        encoding: "utf8"
+      }).trim();
+      expect(stagedDiff).toBe("");
+      // Working tree files restored to exact pre-step dirty state
+      expect(readFileSync(join(repo, "tracked.txt"), "utf8")).toBe("dirty-before-step\n");
+      expect(readFileSync(join(repo, "untracked.txt"), "utf8")).toBe("before-step-untracked\n");
+      expect(snap.isDirty()).toBe(false);
+    } finally {
+      snap.dispose();
+    }
   });
 });

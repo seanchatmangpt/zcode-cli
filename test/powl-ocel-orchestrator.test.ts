@@ -88,9 +88,9 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
 
   test("AIMD never MD on long serviceMs with healthy transport (no false build/test backoff)", () => {
     const aimd = new AimdWipController();
-    // Fast activities establish a low median (~100ms).
+    // Fast activities establish a low median (~100ms) under healthy unsaturated arrival rate.
     for (let i = 0; i < 12; i++) {
-      const adj = aimd.onSuccess(80 + (i % 5) * 10);
+      const adj = aimd.onSuccess(80 + (i % 5) * 10, { interArrivalMs: 60_000 });
       expect(adj.reason).toBe("clean_completion_ai");
     }
     const wipBefore = aimd.wip;
@@ -103,9 +103,9 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
     let falseMd = 0;
     for (const ms of buildSamples) {
       expect(ms).toBeGreaterThan(median * 2);
-      const adj = aimd.onSuccess(ms);
+      const adj = aimd.onSuccess(ms, { interArrivalMs: 60_000 });
       if (adj.reason === "latency_spike_md" || adj.newWip < adj.oldWip) falseMd += 1;
-      expect(adj.reason).toBe("clean_completion_ai");
+      expect(["clean_completion_ai", "heavy_tail_protected_ai"]).toContain(adj.reason);
       expect(adj.newWip).toBe(adj.oldWip + 1);
     }
     expect(falseMd).toBe(0);
@@ -114,13 +114,13 @@ describe("POWL v2 -> Workflow Net -> Token-Based Replay & OCEL 2.0", () => {
 
   test("AIMD MD only on transport backpressure, then recovers with AI", () => {
     const aimd = new AimdWipController();
-    for (let i = 0; i < 6; i++) aimd.onSuccess(100);
+    for (let i = 0; i < 6; i++) aimd.onSuccess(100, { interArrivalMs: 60_000 });
     expect(aimd.wip).toBe(7);
     const md = aimd.onTransportBackpressure();
     expect(md.reason).toBe("transport_timeout_md");
     expect(md.newWip).toBe(3);
-    const ai = aimd.onSuccess(50_000); // long but healthy
-    expect(ai.reason).toBe("clean_completion_ai");
+    const ai = aimd.onSuccess(50_000, { interArrivalMs: 60_000 }); // long but healthy
+    expect(["clean_completion_ai", "heavy_tail_protected_ai"]).toContain(ai.reason);
     expect(ai.newWip).toBe(4);
   });
 

@@ -1365,4 +1365,104 @@ describe("F14 Responsible Process Mining (FACT) & k-Anonymity (Chicago)", () => 
     expect(hrRes.suppressedTraces).toBe(1);
     expect(hrRes.doc.events.every((e) => e.time === "2026-08-03T12:00:00.000Z")).toBe(true);
   });
+
+  test("v27.1.1 hardening V14-RPM-KAnon: default hour timestamp bucketing, actor+continuous quasiKey generalization, and fail-closed suppressBelowK=false", () => {
+    // Gap 1: default timestampBucket buckets exact millisecond timestamps to hour and includes them in quasiKey
+    const t1 = Date.parse("2026-11-21T10:00:00.123Z");
+    const t2 = Date.parse("2026-11-21T10:00:05.789Z");
+    const d1 = buildChainedSession({
+      id: "ts_1",
+      baseMs: t1,
+      providerId: "p1",
+      modelId: "m1",
+      overseerId: "a".repeat(64)
+    });
+    const d2 = buildChainedSession({
+      id: "ts_2",
+      baseMs: t2,
+      providerId: "p1",
+      modelId: "m1",
+      overseerId: "a".repeat(64)
+    });
+    const tsDoc: OcelDoc = {
+      objectTypes: [],
+      eventTypes: [],
+      objects: [...d1.objects, ...d2.objects],
+      events: [...d1.events, ...d2.events]
+    };
+    const tsRes = anonymizeOcel2KAnon(tsDoc, 2, "valid-salt-ts");
+    expect(tsRes.minEquivalenceClassSize).toBe(2);
+    expect(tsRes.retainedTraces).toBe(2);
+    for (const ev of tsRes.doc.events) {
+      expect(ev.time).toBe("2026-11-21T10:00:00.000Z");
+      expect(ev.time).not.toContain(".123Z");
+      expect(ev.time).not.toContain(".789Z");
+    }
+    expect(verifyChain(tsRes.doc as OcelDoc, "sha256")).toBeNull();
+
+    // Gap 2: distinct actor pseudonyms and continuous service_ms/ttft_ms are included in quasiKey and generalized
+    const s1 = buildChainedSession({
+      id: "ac_1",
+      baseMs: t1,
+      providerId: "p1",
+      modelId: "m1",
+      overseerId: "alice"
+    });
+    const s2 = buildChainedSession({
+      id: "ac_2",
+      baseMs: t2,
+      providerId: "p1",
+      modelId: "m1",
+      overseerId: "bob"
+    });
+    (s1.events[0]!.attributes as Array<{ name: string; value: string }>).push(
+      { name: "service_ms", value: "1423" },
+      { name: "ttft_ms", value: "85" }
+    );
+    (s2.events[0]!.attributes as Array<{ name: string; value: string }>).push(
+      { name: "service_ms", value: "9812" },
+      { name: "ttft_ms", value: "620" }
+    );
+    const acDoc: OcelDoc = {
+      objectTypes: [],
+      eventTypes: [],
+      objects: [...s1.objects, ...s2.objects],
+      events: [...s1.events, ...s2.events]
+    };
+    const acRes = anonymizeOcel2KAnon(acDoc, 2, "valid-salt-ac");
+    expect(acRes.minEquivalenceClassSize).toBe(2);
+    expect(acRes.generalizedTraces).toBe(2);
+    const acSerialized = JSON.stringify(acRes.doc);
+    expect(acSerialized).not.toContain("1423");
+    expect(acSerialized).not.toContain("9812");
+    const overseerVals = acRes.doc.events
+      .map((e) => (e.attributes as Array<{ name: string; value: unknown }>).find((a) => a.name === "overseer_id")?.value)
+      .filter((v) => v !== undefined);
+    expect(overseerVals.length).toBe(2);
+    expect(new Set(overseerVals)).toEqual(new Set(["REDACTED"]));
+    const svcVals = acRes.doc.events
+      .map((e) => (e.attributes as Array<{ name: string; value: unknown }>).find((a) => a.name === "service_ms")?.value)
+      .filter((v) => v !== undefined);
+    expect(svcVals.length).toBe(2);
+    expect(new Set(svcVals)).toEqual(new Set(["*"]));
+    expect(verifyChain(acRes.doc as OcelDoc, "sha256")).toBeNull();
+    expect(auditRpmFact(acRes.doc).confidentiality.passed).toBe(true);
+
+    // Gap 3: suppressBelowK=false fails closed with ComplianceRefusalError when <k or <l-diversity
+    const singletonDoc = buildChainedSession({
+      id: "single_1",
+      baseMs: t1,
+      providerId: "p1",
+      modelId: "m1",
+      overseerId: "a".repeat(64)
+    });
+    expect(() =>
+      anonymizeOcel2KAnon(singletonDoc, 5, "valid-salt-refuse", { suppressBelowK: false })
+    ).toThrow(ComplianceRefusalError);
+
+    // Also refuses when lDiversity is violated with suppressBelowK=false
+    expect(() =>
+      anonymizeOcel2KAnon(tsDoc, 2, "valid-salt-refuse-l", { suppressBelowK: false, lDiversity: 2 })
+    ).toThrow(ComplianceRefusalError);
+  });
 });
