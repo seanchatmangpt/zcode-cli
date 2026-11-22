@@ -1,0 +1,117 @@
+{
+  "work_order_id": "ECOSYSTEM-SPEC-27.1.1-PHOTO-HOP5-UI-LAYOUT-FOUNDRY",
+  "origin_authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "ECOSYSTEM-SPEC-27.1.1 Gate 1 photolithography hop 5 + foundry spine (ui-layout-court live subject)",
+    "actor": "cursor-cloud-agent bc-a0884303-9fe2-5b9e-8c6f-7401ed69f3c5"
+  },
+  "provider": {
+    "name": "zcode-cli",
+    "transport": "local",
+    "authority_ceiling": "CONSTRUCT",
+    "receipt_protocol": "https://chatmangpt.com/schema/receipt/v2"
+  },
+  "provider_execution_id": "bc-a0884303-9fe2-5b9e-8c6f-7401ed69f3c5",
+  "identity": {
+    "subject": "src/adapters/ui-layout-court.ts + src/powl-ocel-orchestrator.ts (deriveFollowUpPowl / runAutonomicLoop bounded refusal) + scripts/powl-foundry-loop.ts",
+    "repo": "/agent/repos/zcode-cli",
+    "subject_sha": "02a9d86e53dcaefcf7ef0c528edaf5dc0cf9eb0a",
+    "base_sha": "02a9d86e53dcaefcf7ef0c528edaf5dc0cf9eb0a"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "ECOSYSTEM-SPEC-27.1.1 Gate 1 photolithography hop 5 + foundry spine",
+    "actor": "cursor-cloud-agent bc-a0884303-9fe2-5b9e-8c6f-7401ed69f3c5"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "receipts/v27.1.1/hop5-ui-layout-foundry-spine.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "bun test test/ui-layout-court.test.ts",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 0,
+        "summary": "35 pass / 0 fail — Chicago anti-vacuity + Mode B geometry (in-process subjects; not live Taffy CLI)"
+      },
+      {
+        "cmd": "bun test test/powl-ocel-orchestrator.test.ts -t autonomic",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 0,
+        "summary": "2 pass — runAutonomicLoop follow-up POWL + refused→remediate-cN; SignatureRetryLimiter default maxRetriesPerSignature=3"
+      },
+      {
+        "cmd": "bun test test/powl-ocel-chicago.test.ts -t 'anti-vacuity: real failing'",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 0,
+        "summary": "1 pass — real failing subprocess fitness < 1.0 triggers remediation follow-up POWL"
+      },
+      {
+        "cmd": "bun scripts/powl-foundry-loop.ts --dry-run",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 2,
+        "summary": "aggregateStanding=PARTIAL_ALIVE exitCode=2 (Gall dry-run spine; ui_layout disabled in dry-run driver)"
+      },
+      {
+        "cmd": "cargo run -p ggen-layout-court --bin layout_court -- fixtures/ui-layout-court/product-subject.json",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 101,
+        "summary": "could not find Cargo.toml — ggen workspace (tip 5e00619a4) not mounted"
+      },
+      {
+        "cmd": "mix ggen_igniter.sync --check",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 127,
+        "summary": "mix: command not found — ggen_igniter + Elixir toolchain absent"
+      },
+      {
+        "cmd": "bun -e 'UiLayoutCourtAdapter.verifyPostTransition(cwd) with requireCleanRoom:true (DEFAULT_TAFFY_CMD)'",
+        "cwd": "/agent/repos/zcode-cli",
+        "exit": 2,
+        "summary": "standing=BLOCKED diagnostics=Taffy CLI subject missing (layout_court binary not found) — SUBJECT_MISSING; no live CLI subject executed"
+      }
+    ],
+    "durable_location": "receipts/v27.1.1/hop5-ui-layout-foundry-spine.json"
+  },
+  "standing": {
+    "value": "BLOCKED",
+    "derived_from": "Live ui-layout-court subject (cargo -p ggen-layout-court --bin layout_court) was not executed: SUBJECT_MISSING → exit 2 / BLOCKED. In-process Chicago + Mode B suites and POWL autonomic remediation (maxRemediationAttempts=3 / maxRetriesPerSignature=3) are green on tip 02a9d86e, but ALIVE requires the live Taffy CLI subject. Required mounts absent: seanchatmangpt/ggen@5e00619a422a0d8e451029f0aaf8b7a63e27da46 and seanchatmangpt/ggen_igniter (mix). Foundry dry-run honest PARTIAL_ALIVE/exit 2."
+  },
+  "provider_ext.zcode_cli": {
+    "hop": 5,
+    "spec": "ECOSYSTEM-SPEC-27.1.1",
+    "gate": "Gate 1: Horizontal Spine & UI Loop",
+    "paths": {
+      "ui_layout_court": "src/adapters/ui-layout-court.ts",
+      "powl_ocel_autonomic": "src/powl-ocel-orchestrator.ts#deriveFollowUpPowl+runAutonomicLoop",
+      "foundry_spine": "scripts/powl-foundry-loop.ts",
+      "documented_suite": "bun test test/ui-layout-court.test.ts"
+    },
+    "bounded_refusal": {
+      "ui_layout_max_remediation_attempts": 3,
+      "autonomic_max_retries_per_signature": 3,
+      "refusal_codes": ["RETRY_BUDGET_EXHAUSTED", "DIRTY_TIMEOUT_REFUSED", "ROLLBACK_FAILED"]
+    },
+    "required_mounts": {
+      "ggen": {
+        "repo": "https://github.com/seanchatmangpt/ggen",
+        "tip": "5e00619a422a0d8e451029f0aaf8b7a63e27da46",
+        "tip_short": "5e00619a4",
+        "present": false,
+        "crate": "ggen-layout-court",
+        "bin": "layout_court"
+      },
+      "ggen_igniter": {
+        "repo": "https://github.com/seanchatmangpt/ggen_igniter",
+        "present": false,
+        "clean_room_cmd": ["mix", "ggen_igniter.sync", "--check"],
+        "elixir_mix_present": false
+      }
+    },
+    "next_verifier": "Mount ~/ggen @ 5e00619a4 and ~/ggen_igniter with mix on PATH; then: (cd ~/ggen && cargo run -p ggen-layout-court --bin layout_court -- /agent/repos/zcode-cli/fixtures/ui-layout-court/product-subject.json); mix ggen_igniter.sync --check; re-run UiLayoutCourtAdapter.verifyPostTransition with requireCleanRoom — ALIVE only if live layout_court exit 0 + clean-room exit 0"
+  }
+}
