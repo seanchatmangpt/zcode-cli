@@ -429,8 +429,10 @@ export function loadAiroRiskRegister(options: LoadRiskRegisterOptions = {}): Ris
   articles.sort((a, b) => Number(a.articleNumber) - Number(b.articleNumber));
 
   // Extract Article 9/12/14/15 mappings from airo_risk_description.ttl
+  // Supports both legacy zc:EuAiActArticleMapping nodes and unified direct euai:addressesArticle links.
   const mappings: RiskRegisterMapping[] = [];
   const articlesByControlId = new Map<string, Set<string>>();
+  const seenMappingArticles = new Set<string>();
   for (const [subj, preds] of airoParsed.subjects.entries()) {
     if (!hasRdfType(preds, `${ZC}EuAiActArticleMapping`)) continue;
     const artNum = getLiteral(preds, `${ZC}articleNumber`) ?? "";
@@ -444,6 +446,7 @@ export function loadAiroRiskRegister(options: LoadRiskRegisterOptions = {}): Ris
       }
       if (artNum) set.add(`Art. ${artNum}`);
     }
+    if (artNum) seenMappingArticles.add(artNum);
     mappings.push({
       id: localName(subj),
       articleNumber: artNum,
@@ -451,6 +454,54 @@ export function loadAiroRiskRegister(options: LoadRiskRegisterOptions = {}): Ris
       label: getLiteral(preds, RDFS_LABEL) ?? localName(subj),
       riskControls: mappedControls,
       seeAlso: getAllValues(preds, RDFS_SEE_ALSO)
+    });
+  }
+
+  // Synthesize mappings from unified direct euai:addressesArticle links on airo_risk_description.ttl
+  const directByArticle = new Map<
+    string,
+    { targetArticle: string; controls: Set<string>; seeAlso: Set<string> }
+  >();
+  for (const [subj, preds] of airoParsed.subjects.entries()) {
+    const addressed = getAllValues(preds, `${EUAI}addressesArticle`);
+    if (addressed.length === 0) continue;
+    const isControl = hasRdfType(preds, `${AIRO}RiskControl`);
+    const subjId = localName(subj);
+    const subjSeeAlso = getAllValues(preds, RDFS_SEE_ALSO);
+    for (const artIri of addressed) {
+      const target = localName(artIri);
+      const artMeta = articles.find((a) => a.id === target);
+      const numMatch = target.match(/(\d+)/);
+      const artNum = artMeta?.articleNumber ?? (numMatch ? numMatch[1]! : "");
+      if (!artNum || seenMappingArticles.has(artNum)) continue;
+      let bucket = directByArticle.get(artNum);
+      if (!bucket) {
+        bucket = { targetArticle: target, controls: new Set(), seeAlso: new Set() };
+        directByArticle.set(artNum, bucket);
+      }
+      if (isControl) {
+        bucket.controls.add(subjId);
+        let set = articlesByControlId.get(subjId);
+        if (!set) {
+          set = new Set();
+          articlesByControlId.set(subjId, set);
+        }
+        set.add(`Art. ${artNum}`);
+      }
+      for (const s of subjSeeAlso) bucket.seeAlso.add(s);
+    }
+  }
+  for (const [artNum, bucket] of [...directByArticle.entries()].sort(
+    (a, b) => Number(a[0]) - Number(b[0])
+  )) {
+    const artMeta = articles.find((a) => a.articleNumber === artNum);
+    mappings.push({
+      id: `Article_${artNum}_Mapping`,
+      articleNumber: artNum,
+      targetArticle: bucket.targetArticle,
+      label: artMeta?.label ?? `EU AI Act Article ${artNum}`,
+      riskControls: [...bucket.controls].sort(),
+      seeAlso: [...bucket.seeAlso].sort()
     });
   }
 

@@ -780,4 +780,205 @@ describe("F08: EU AI Act Art. 50(2) machine-readable provenance marking", () => 
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("ERRC RAISE: runRuntime records Art. 50 disclosure O2O/E2O objects, notice_sha256, and provenance_marked in session OCEL", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-errc-raise-ocel-"));
+    const prevOcel = process.env.ZCODE_OCEL;
+    const prevOcelDir = process.env.ZCODE_OCEL_DIR;
+    try {
+      const wsDir = join(root, "ws");
+      const ocelDir = join(root, "ocel");
+      mkdirSync(wsDir, { recursive: true });
+      mkdirSync(ocelDir, { recursive: true });
+
+      const runtimeStub = join(root, "stream-and-write.mjs");
+      writeFileSync(
+        runtimeStub,
+        [
+          'import { writeFileSync } from "node:fs";',
+          'process.stdout.write(JSON.stringify({ type: "session.start", sessionId: "sess_raise_01", timestamp: "2026-08-02T14:00:00.000Z" }) + "\\n");',
+          'writeFileSync("doc.md", "# AI Output\\nHello\\n", "utf8");',
+          'process.stdout.write(JSON.stringify({ type: "turn.end", sessionId: "sess_raise_01", timestamp: "2026-08-02T14:00:01.000Z" }) + "\\n");'
+        ].join("\n"),
+        "utf8"
+      );
+
+      process.env.ZCODE_OCEL = "1";
+      process.env.ZCODE_OCEL_DIR = ocelDir;
+
+      const regCfg = parseComplianceConfigToml('[compliance]\nprofile = "high-risk-annex-iii"\n', { env: {} });
+      const exitCode = await runRuntime(
+        process.execPath,
+        ["-p", "generate doc.md", "--output-format", "stream-json"],
+        {},
+        {
+          config: regCfg,
+          providerId: "zai",
+          modelId: "glm-5.3",
+          sessionId: "sess_raise_01"
+        },
+        { runtimeScriptPath: runtimeStub, cwd: wsDir }
+      );
+      expect(exitCode).toBe(0);
+
+      const ocelFiles = readdirSync(ocelDir).filter(
+        (f) => f.endsWith(".jsonocel") || f.endsWith(".ocel.json")
+      );
+      expect(ocelFiles.length).toBeGreaterThan(0);
+      const ocelDoc = JSON.parse(readFileSync(join(ocelDir, ocelFiles[0]!), "utf8"));
+
+      const validation = validateOcel2(ocelDoc, { requireHashChain: true, requireAttrHash: true });
+      expect(validation.ok).toBe(true);
+
+      // Verify art50_disclosure_emitted has notice_sha256 and full E2O + O2O links
+      const discEvt = ocelDoc.events.find((e: { type: string }) => e.type === "art50_disclosure_emitted");
+      expect(discEvt).toBeDefined();
+      const noticeShaAttr = discEvt.attributes.find((a: { name: string }) => a.name === "notice_sha256");
+      expect(noticeShaAttr?.value).toMatch(/^[a-f0-9]{64}$/);
+      expect(discEvt.relationships.some((r: { qualifier: string }) => r.qualifier === "in_session")).toBe(true);
+      expect(discEvt.relationships.some((r: { qualifier: string }) => r.qualifier === "governs")).toBe(true);
+      expect(discEvt.relationships.some((r: { qualifier: string }) => r.qualifier === "about_disclosure")).toBe(true);
+
+      const discObj = ocelDoc.objects.find((o: { type: string }) => o.type === "disclosure_notice");
+      const profObj = ocelDoc.objects.find((o: { type: string }) => o.type === "compliance_profile");
+      expect(discObj).toBeDefined();
+      expect(profObj).toBeDefined();
+      expect(profObj.relationships.some((r: { qualifier: string }) => r.qualifier === "governs")).toBe(true);
+      expect(discObj.relationships.some((r: { qualifier: string }) => r.qualifier === "in_session")).toBe(true);
+
+      // Verify provenance_marked and provenance_artifact are recorded in the session OCEL
+      const provEvt = ocelDoc.events.find((e: { type: string }) => e.type === "provenance_marked");
+      expect(provEvt).toBeDefined();
+      expect(provEvt.relationships.some((r: { qualifier: string }) => r.qualifier === "in_session")).toBe(true);
+      expect(provEvt.relationships.some((r: { qualifier: string }) => r.qualifier === "seals")).toBe(true);
+
+      const provObj = ocelDoc.objects.find((o: { type: string }) => o.type === "provenance_artifact");
+      expect(provObj).toBeDefined();
+      expect(provObj.relationships.some((r: { qualifier: string }) => r.qualifier === "seals")).toBe(true);
+
+      const sidecarPath = join(wsDir, ".zcode-provenance", "sess_raise_01.json");
+      const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8")) as { seal_sha256: string };
+      expect(provEvt.attributes.find((a: { name: string }) => a.name === "seal_sha256")?.value).toBe(
+        sidecar.seal_sha256
+      );
+    } finally {
+      if (prevOcel === undefined) delete process.env.ZCODE_OCEL;
+      else process.env.ZCODE_OCEL = prevOcel;
+      if (prevOcelDir === undefined) delete process.env.ZCODE_OCEL_DIR;
+      else process.env.ZCODE_OCEL_DIR = prevOcelDir;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ERRC CREATE: runRuntime delivers Art. 50(1) disclosure on plain-text headless, TUI, non-object --json, and unparseable --json channels", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-errc-create-disc-"));
+    const origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    try {
+      const wsDir = join(root, "ws");
+      mkdirSync(wsDir, { recursive: true });
+      const regCfg = parseComplianceConfigToml('[compliance]\nprofile = "art50-only"\n', { env: {} });
+
+      const captureWrites = async (fn: () => Promise<number>) => {
+        let out = "";
+        let err = "";
+        process.stdout.write = ((chunk: string | Uint8Array) => {
+          out += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+          return true;
+        }) as typeof process.stdout.write;
+        process.stderr.write = ((chunk: string | Uint8Array) => {
+          err += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+          return true;
+        }) as typeof process.stderr.write;
+        try {
+          const code = await fn();
+          return { code, out, err };
+        } finally {
+          process.stdout.write = origStdoutWrite;
+          process.stderr.write = origStderrWrite;
+        }
+      };
+
+      // 1. Plain-text headless mode emits Art. 50(1) notice to stderr
+      const noopStub = join(root, "noop.mjs");
+      writeFileSync(noopStub, 'process.exit(0);\n', "utf8");
+      const plainRes = await captureWrites(() =>
+        runRuntime(
+          process.execPath,
+          ["-p", "hello"],
+          {},
+          { config: regCfg, providerId: "zai", modelId: "glm-5.3", sessionId: "sess_plain_01" },
+          { runtimeScriptPath: noopStub, cwd: wsDir }
+        )
+      );
+      expect(plainRes.code).toBe(0);
+      expect(plainRes.err).toContain("EU AI Act Art. 50");
+      expect(plainRes.err).toContain("session=sess_plain_01");
+
+      // 2. TUI mode emits Art. 50(1) notice to stderr and passes ZCODE_ART50_DISCLOSURE_* env to child
+      const envDumpPath = join(root, "tui-env.json");
+      const tuiStub = join(root, "tui-stub.mjs");
+      writeFileSync(
+        tuiStub,
+        `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(envDumpPath)}, JSON.stringify({ notice: process.env.ZCODE_ART50_DISCLOSURE_NOTICE, json: process.env.ZCODE_ART50_DISCLOSURE_JSON }));\n`,
+        "utf8"
+      );
+      const tuiRes = await captureWrites(() =>
+        runRuntime(
+          process.execPath,
+          ["tui"],
+          {},
+          { config: regCfg, providerId: "zai", modelId: "glm-5.3", sessionId: "sess_tui_01" },
+          { runtimeScriptPath: tuiStub, cwd: wsDir }
+        )
+      );
+      expect(tuiRes.code).toBe(0);
+      expect(tuiRes.err).toContain("EU AI Act Art. 50");
+      const tuiEnv = JSON.parse(readFileSync(envDumpPath, "utf8")) as { notice?: string; json?: string };
+      expect(tuiEnv.notice).toContain("EU AI Act Art. 50");
+      expect(JSON.parse(tuiEnv.json!).disclosed).toBe(true);
+
+      // 3. Non-object --json stdout (JSON array) is wrapped with ai_disclosure
+      const arrayStub = join(root, "array-json.mjs");
+      writeFileSync(arrayStub, 'process.stdout.write("[1, 2, 3]\\n");\n', "utf8");
+      const arrayRes = await captureWrites(() =>
+        runRuntime(
+          process.execPath,
+          ["-p", "list", "--json"],
+          {},
+          { config: regCfg, providerId: "zai", modelId: "glm-5.3", sessionId: "sess_arr_01" },
+          { runtimeScriptPath: arrayStub, cwd: wsDir }
+        )
+      );
+      expect(arrayRes.code).toBe(0);
+      const parsedArr = JSON.parse(arrayRes.out.trim()) as {
+        result: number[];
+        ai_disclosure: { disclosed: boolean; article: string };
+      };
+      expect(parsedArr.result).toEqual([1, 2, 3]);
+      expect(parsedArr.ai_disclosure.disclosed).toBe(true);
+      expect(parsedArr.ai_disclosure.article).toBe("EU-AI-ACT-Art.50");
+
+      // 4. Unparseable --json stdout preserves raw stdout AND emits Art. 50(1) notice to stderr
+      const badJsonStub = join(root, "bad-json.mjs");
+      writeFileSync(badJsonStub, 'process.stdout.write("not valid json\\n");\n', "utf8");
+      const badJsonRes = await captureWrites(() =>
+        runRuntime(
+          process.execPath,
+          ["-p", "broken", "--json"],
+          {},
+          { config: regCfg, providerId: "zai", modelId: "glm-5.3", sessionId: "sess_badjson_01" },
+          { runtimeScriptPath: badJsonStub, cwd: wsDir }
+        )
+      );
+      expect(badJsonRes.code).toBe(0);
+      expect(badJsonRes.out).toBe("not valid json\n");
+      expect(badJsonRes.err).toContain("EU AI Act Art. 50");
+      expect(badJsonRes.err).toContain("session=sess_badjson_01");
+    } finally {
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
