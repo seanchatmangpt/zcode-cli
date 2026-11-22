@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 
 import { RULES, SOURCES, hashHex } from "../src/generated/ocel.ts";
 import { APP_SERVER_SOURCE, STREAM_SOURCE } from "../src/ocel-tap.ts";
-import { readRuntimeEvents, wireOf } from "../scripts/zcode-events.ts";
+import { OMITTED_WIRE, readRuntimeEvents, wireOf } from "../scripts/zcode-events.ts";
 import { declaredInternal, declaredRuntimeEvents, ontologyPath, runtimeMissing, toolchain } from "./support/ocel.ts";
 
 const declared = declaredRuntimeEvents();
@@ -49,8 +49,7 @@ describe.skipIf(!toolchain("vendor/zcode.cjs", !runtimeMissing))("runtime drift 
 
   test("sealed alphabet equals vendor wire minus omitted part.delta/result", () => {
     // ELIMINATE-3: part.delta + result are dropped (no EventType / Unmapped RuntimeEvent).
-    const omitted = new Set(["part.delta", "result"]);
-    const sealed = events!.wire.filter((w) => !omitted.has(w)).slice().sort();
+    const sealed = events!.wire.filter((w) => !OMITTED_WIRE.has(w)).slice().sort();
     expect(declared.filter((e) => e.source === APP_SERVER_SOURCE).map((e) => e.name).sort()).toEqual(sealed);
     expect(declared.filter((e) => e.source === STREAM_SOURCE).map((e) => e.name).sort()).toEqual(sealed);
   });

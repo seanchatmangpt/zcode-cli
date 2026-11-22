@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { OMITTED_WIRE } from "../scripts/zcode-events.ts";
 import { EVENT_TYPES, OBJECT_TYPES, RULES, Tap, verifyChain, type OcelDoc } from "../src/generated/ocel.ts";
 import { verify as verifyReceiptChain, seal as sealReceipt, appendPending, appendOutcome, unpaired, type Chain } from "../src/generated/receipt.ts";
 import { OcelRecorder, STREAM_SOURCE, normalizeRecord, toEx4pmReceipt } from "../src/ocel-tap.ts";
@@ -14,11 +15,10 @@ const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "zcode-ocel-")); dirs.push(d); return d; };
 afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
-// Former Unmapped names + ELIMINATE-3 omitted wire alphabet (Tap drops; no sealed EventType).
+// Unmapped RuntimeEvents (if any) + ELIMINATE-3 omitted wire alphabet (Tap drops; no sealed EventType).
 const unmapped = new Set([
   ...declaredRuntimeEvents().filter((e) => e.source === STREAM_SOURCE && e.unmappedReason).map((e) => e.name),
-  "result",
-  "part.delta"
+  ...OMITTED_WIRE
 ]);
 const schemas = JSON.parse(readFileSync(join(repoRoot, "src", "generated", "schemas.json"), "utf8"));
 

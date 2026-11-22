@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 
 export const runtimePath = join(dirname(fileURLToPath(import.meta.url)), "..", "vendor", "zcode.cjs");
 
+/** Wire names omitted from the sealed OCEL alphabet (ELIMINATE-3). */
+export const OMITTED_WIRE: ReadonlySet<string> = new Set(["part.delta", "result"]);
+
 export interface RuntimeEvents {
   internal: Record<string, string>; // key -> value, e.g. TurnStarted -> turn_started
   wire: string[];

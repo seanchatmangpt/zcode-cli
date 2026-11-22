@@ -4,15 +4,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readRuntimeEvents, wireOf } from "./zcode-events.ts";
+import { OMITTED_WIRE, readRuntimeEvents, wireOf } from "./zcode-events.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Wire names omitted from the sealed OCEL alphabet (ELIMINATE-3).
-// Tap already drops names with no MappingRule; do not keep phantom EventTypes /
-// Unmapped RuntimeEvents for token deltas or the stream-json result envelope.
+// OMITTED_WIRE (part.delta / result) lives in zcode-events.ts — Tap drops names
+// with no MappingRule; do not keep phantom EventTypes / Unmapped RuntimeEvents.
 // PACK_DEMO_ALPHABET guard in gen-ocel.ts remains the pack-demo quarantine.
-const OMITTED_WIRE: ReadonlySet<string> = new Set(["part.delta", "result"]);
 
 type Rel = { object: string; qualifier: string; path: string };
 const OBJECTS = ["session", "turn", "tool_call", "model_request", "subagent", "permission"] as const;
