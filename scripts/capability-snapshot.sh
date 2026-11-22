@@ -68,12 +68,13 @@ redact_tree() {
   local root="$1"
   find "$root" -type f -size -2M \( "${REDACT_EXTS[@]}" \) -print0 |
     xargs -0 perl -0777 -pi -e '
-      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|token|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
+      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|token|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|pwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
       s{((?<!\\)\\\\\\"$k\\\\\\"\s*:\s*\\\\\\")(?!REDACTED\\\\\\")(?:[^"\\]|\\(?!(?:\\{0,2})"))+(\\\\\\")}{${1}REDACTED${2}}gi;
       s{((?<!\\)\\"$k\\"\s*:\s*\\")(?!REDACTED\\")(?:[^"\\]|\\(?!"))+(\\")}{${1}REDACTED${2}}gi;
       s{((?<!\\)"$k(?<!\\)"\s*:\s*(?<!\\)")(?!REDACTED")(?:[^"\\]|\\.)+(")}{${1}REDACTED${2}}gi;
       s{^(\s*$k\s*=\s*")(?!REDACTED")(?:[^"\\]|\\.)+(")}{${1}REDACTED${2}}gim;
       s{^(\s*$k\s*=\s*'\'')(?!REDACTED'\'')[^'\''\r\n]+('\'')}{${1}REDACTED${2}}gim;
+      s{^(\s*$k\s*=\s*)(?!["'\''\s#])(?!REDACTED(?:\s|$|#))([^\s#\r\n]+)}{${1}REDACTED}gim;
       s{-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----}{REDACTED}g;
       s{\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b}{REDACTED}g;
       s{(authorization\s*[:=]\s*(?:bearer|basic|token|digest|apikey)\s+)(?!REDACTED\b)[^\s"'\''\\]+}{${1}REDACTED}gi;
@@ -90,12 +91,13 @@ assert_no_secrets() {
   local root="$1" hits
   hits=$(find "$root" -type f \( "${REDACT_EXTS[@]}" \) -print0 |
     xargs -0 perl -ne '
-      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
+      my $k = qr/(?:[A-Za-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|(?:[A-Za-z0-9_-]+[-_])?secret|password|passwd|pwd|private[-_]?key|authorization|set[-_]?cookie|cookie/i;
       if (m{(?<!\\)\\\\\\"$k\\\\\\"\s*:\s*\\\\\\"(?!REDACTED\\\\\\")(?:[^"\\]|\\(?!(?:\\{0,2})"))+\\\\\\"}i
        || m{(?<!\\)\\"$k\\"\s*:\s*\\"(?!REDACTED\\")(?:[^"\\]|\\(?!"))+\\"}i
        || m{(?<!\\)"$k(?<!\\)"\s*:\s*(?<!\\)"(?!REDACTED")(?:[^"\\]|\\.)+"}i
        || m{^\s*$k\s*=\s*"(?!REDACTED")(?:[^"\\]|\\.)+"}i
        || m{^\s*$k\s*=\s*'\''(?!REDACTED'\'')[^'\''\r\n]+'\''}i
+       || m{^\s*$k\s*=\s*(?!["'\''\s#])(?!REDACTED(?:\s|$|#))[^\s#\r\n]+}i
        || m{-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----}
        || m{\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b}
        || m{authorization\s*[:=]\s*(?:bearer|basic|token|digest|apikey)\s+(?!REDACTED\b)[^\s"'\''\\]+}i
@@ -211,9 +213,9 @@ files under repo/.
 
 Non-empty credential values (including <8-character secrets, case-insensitive and
 compound keys such as refresh_token/access_token/authorization/private_key,
-escaped JSON payloads, TOML quoted keys, JWTs, PEM private keys, and
-Bearer/Authorization schemes) are REDACTED in the snapshot while empty values
-and ordinary prose survive (see docs/CAPABILITY_SNAPSHOT.md). After a restore,
+escaped JSON payloads, TOML quoted and bare key= assignments, JWTs, PEM private
+keys, and Bearer/Authorization schemes) are REDACTED in the snapshot while empty
+values and ordinary prose survive (see docs/CAPABILITY_SNAPSHOT.md). After a restore,
 re-enter credentials from the live registry / failover copy, which snapshots
 exclude by design.
 

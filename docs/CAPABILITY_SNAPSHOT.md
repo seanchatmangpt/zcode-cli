@@ -44,10 +44,12 @@ Snapshots must never carry credential values:
   `src/compliance/redactor.ts` (secret-only mode):
   - Case-insensitive credential keys (`apiKey`, `api_key`, `*_api_key`,
     `token`, `refresh_token`, `access_token`, `refreshtoken`, `authToken`,
-    `secret`, `*_secret`, `password`, `passwd`, `private_key`,
+    `secret`, `*_secret`, `password`, `passwd`, `pwd`, `private_key`,
     `authorization`, `cookie`/`set-cookie`) in plain JSON, 1- and 2-level
     escaped JSON (`\"key\":\"val\"`, `\\\"key\\\":\\\"val\\\"`), and TOML
-    `"..."` / `'...'` assignments.
+    `"..."` / `'...'` assignments plus bare unquoted `key = value` /
+    `key=value` forms (also applied by `src/compliance/redactor.ts` /
+    `src/ocel-tap.ts` when those shapes appear inside string payloads).
   - Compact JWTs (`eyJ...`), multi-line and single-line PEM private key blocks
     (`-----BEGIN ... PRIVATE KEY----- ... -----END ... PRIVATE KEY-----`),
     `Bearer` tokens, and `Authorization` header schemes (`Basic`, `Token`,
@@ -60,6 +62,23 @@ Snapshots must never carry credential values:
   the redaction window, `save` is killed with `refusing to snapshot:
   credential-shaped values remain in staging` and no snapshot husk is left
   behind.
+- OCEL tap parity (`src/ocel-tap.ts`): `OcelRecorder.finish` runs
+  `containsUnredactedSecretsOrPii` / `prepareOcelDiskWrite` after seal;
+  survivors refuse the secretful husk (schema stub + `redaction_refused` /
+  standing `blocked`). Lease identity (`work_order_iri` / `epoch_id` /
+  `base_sha`) is redact-or-refuse scrubbed before E2O bind and receipt write.
+  Landed on disk by sibling lane `61d6568f` (2026-11-21; not a git commit —
+  verify `prepareOcelDiskWrite` / `redaction_refused` in `src/ocel-tap.ts`).
+- **Honesty — OCEL `chain_intact` ≠ ALOOP seal**: `<session>.receipt.json`
+  carries two independent witnesses — `chain_intact` (OCEL `verifyChain`
+  pi_hash AND `event_count > 0`) and `receipt_chain_intact` (ALOOP
+  `verify(chain)`). Standing is `"alive"` iff `chain_intact`; an empty tap
+  can still show `receipt_chain_intact: true` with `chain_intact: false`.
+- **Dual-log join sidecar**: when a leased run seals both stream and gall
+  `.jsonocel` files, `sealDualLogJoinIfBothExist` writes
+  `gall-work-<epoch>.join.json` (`zcode.dual-log-join/1`) beside them — lease
+  identity scrubbed, no merge/rehash; absent either log → no sidecar.
+  Consumer: `scripts/ocel-dual-log-join.ts`.
 - Intentional boundary with `src/compliance/redactor.ts`:
   `capability-snapshot.sh` preserves OS home paths (`/Users/<user>`) and user
   config emails because snapshots restore local user capability trees, whereas
