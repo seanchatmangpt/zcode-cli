@@ -1,8 +1,12 @@
 # Week 1 LinkedIn 10-Slide PDF Carousel & Personal Newsletter Issue #1
 
+> **DO NOT PUBLISH / OUTBOUND BLOCKED** until live `/readyz` **200** (billing∧JWKS∧redeploy) **∧** 2× durable LOW-only receipts on disk — Jobs **AND-gate** blast unlock.  
+> **Honesty (align cos Week-1 GTM):** No `@fnox/*` GA · no RAID / WebGPU / 120 Hz shipping claims.  
+> Shepherd = **on-disk FFB shims only**. Steward RAID = **target** until measured. CTA host = `cos.fnox.io` (SlotLease/`/readyz` ∧ 2× LOW gated). **No LinkedIn send.**
+
 **Brand:** Fourth Watch AI Cybersecurity (`brands/fourth-watch.brand.toml`)  
 **Format:** 1080×1350 px native LinkedIn PDF Carousel (<60 words/slide) + Personal Newsletter Issue #1  
-**Distribution Rules (360Brew Reach Protection):** Zero external links in post bodies; zero calendar booking links; all inbound points strictly to Featured `/drop/:lease_id`.
+**Distribution Rules (360Brew Reach Protection):** Zero external links in post bodies; zero calendar booking links; all inbound points strictly to Featured `/drop/:lease_id` on **`cos.fnox.io`**.
 
 ---
 
@@ -33,17 +37,15 @@ Pinned static and live probes (`anti-cheat-scorecard`, Trivy, OpenGrep, Gitleaks
 
 ### Slide 6 (Step 2 — Shepherd: Wrap)
 Keep your existing staff screens. Zero retraining.  
-Keyless `@fnox/*` shims wrap legacy UIs over WebTransport `h3` and 64-byte binary frames—eliminating browser tokens, cookies, and REST/JSON endpoints in Week 1.
+Keyless FFB **compat shims** wrap legacy staff screens—on-disk inventory only. No `@fnox/*` package GA. No WebTransport/Hz shipping claims.
 
 ### Slide 7 (Step 3 — Steward: Replace)
-Drain fragile SaaS backends onto your own **4-Cloud Hyperscaler RAID** (AWS, Azure, GCP, OCI) under your own EIN.  
-- **0%** vendor custody  
-- **0.00%** transaction rent  
-- Provisioned in under 20 minutes.
+Own the rails you depend on: **0%** vendor custody, **0.00%** transaction rent, Client-EIN cloud faces.  
+**4-Cloud RAID** stays a **target architecture** until measured — commercial cells are not RAID GA.
 
 ### Slide 8 (Offline Proof for Insurers)
 Underwriters and auditors do not need access to your data to verify your posture.  
-A free, air-gapped `< 250 KB` WASM verifier checks cryptographic `ALIVE` receipts offline with zero PII exposure.
+Slim air-gapped Affidavit **gatekeeper** WASM (`verify_witness`, Ed25519; **28673 B** ALIVE, ≤250 KiB court) checks witnesses offline with zero PII — not the fat provenance ABI.
 
 ### Slide 9 (The Economics)
 Self-funded from eliminated SaaS bloat and 25%–40% cyber/crime insurance discounts.  
@@ -68,8 +70,8 @@ Under the EU Data Act, California SB 923, EU AI Act Annex III, and CRA/NIS2, com
 ### The Three-Step Exit: Diagnose → Wrap → Replace
 
 1. **Sentinel (Diagnose):** Replace opinions with falsifiable, air-gapped probes. A read-only snapshot produces a binary **Claims vs. Code** board PDF showing exact control failures and dollar recovery exposure.
-2. **Shepherd (Wrap):** Do not force staff into a 12-month migration. Keyless `@fnox/*` shims wrap existing React and legacy SaaS screens in Week 1, stripping browser tokens and REST/JSON while keeping familiar workflows intact.
-3. **Steward (Replace):** Move durable state onto a client-owned **4-Cloud Hyperscaler RAID** (AWS, Azure, GCP, OCI) under your own EIN—zero vendor custody, zero transaction rent, and offline `< 250 KB` WASM proof for your insurer and board.
+2. **Shepherd (Wrap):** Do not force staff into a 12-month migration. On-disk FFB **compat shims** wrap existing React and legacy SaaS screens so workflows stay familiar—shim inventory is on-disk truth only; no `@fnox/*` GA, no canvas Hz shipping claims.
+3. **Steward (Replace):** Own Client-EIN cloud faces with zero vendor custody and zero transaction rent. Multi-cloud RAID remains a **target** until measured. Offline slim gatekeeper WASM (`verify_witness`, Ed25519; **28673 B** ALIVE) for insurer/board witness checks — fat provenance ABI is not the gatekeeper.
 
 ### Next Step (Zero Discovery Calls)
 

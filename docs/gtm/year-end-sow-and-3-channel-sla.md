@@ -1,24 +1,29 @@
 # 1-Page Year-End Statement of Work (SOW) & 3-Channel SLA
 
+> **DRAFT / DO NOT PUBLISH** until live `/readyz` **200** (billing∧JWKS∧redeploy) **∧** 2× durable LOW-only — Jobs AND-gate.  
+> **Honesty fence (align cos `YEAR-END-SOW-1PAGE`):** No `@fnox/*` GA · no 4-Cloud RAID GA · no 120 Hz as shipping.  
+> Shepherd = **on-disk FFB shims only** (repo-local `repop` compat; not published npm).  
+> Steward RAID = **target architecture** until measured. Featured CTA host = `cos.fnox.io` only (never `revops.fnox.io`). SlotLease/`/readyz` ∧ 2× LOW gated.
+
 **Provider:** FNOX / Fourth Watch AI Cybersecurity  
-**Engagement Model:** Deterministic 4-Cloud RAID Cell (`$5,000/week`, Monday Prepaid Pull-Rails)  
+**Engagement Model:** White-glove pilot **cell** (`$5,000/week`, Monday Prepaid Pull-Rails) — commercial meter only; **not** a 4-Cloud RAID GA entitlement  
 **Authority Ceiling:** Provider executes `CONSTRUCT` artifacts; Client retains exclusive `DO` ownership of Client-EIN cloud accounts.
 
 ---
 
 ## 1. Scope of Work (Year-End Cutover)
-1. **Diagnose (CASTLE):** Air-gapped execution of pinned static/live probes and delivery of a binary *Claims vs. Code* board PDF and remediation ledger.
-2. **Wrap (FFB):** Deployment of `@fnox/*` keyless shims over existing client UIs (zero staff retraining; removal of browser bearer tokens and REST/JSON exposure).
-3. **Replace (4-Cloud RAID):** Provisioning of Client-owned 4-Cloud Hyperscaler RAID (AWS, Azure, GCP, OCI under Client's own EIN; `0%` Provider custody; `0.00%` transaction rent).
+1. **Diagnose (CASTLE / Sentinel):** Air-gapped execution of pinned static/live probes and delivery of a binary *Claims vs. Code* board PDF and remediation ledger (where CASTLE publish/probes are ALIVE on disk; incomplete lanes stay underwire).
+2. **Wrap (Shepherd / FFB):** On-disk FFB **compat-shim** wrapping of Client-owned tooling (zero staff retraining). Shim inventory is **repo-local truth only** — do **not** claim published `@fnox/*` GA, WebGPU canvas Hz, or Week-1 token/REST elimination as shipping.
+3. **Replace (Steward target):** Intent toward Client-owned cloud faces under Client EIN (`0%` Provider custody; `0.00%` transaction rent). **4-Cloud Hyperscaler RAID** (AWS+Azure+GCP+OCI erasure-coded cell) remains a **Steward target architecture**, not a proven shipping entitlement / GA under this SOW.
 
 ## 2. Commercial Terms & Monday Prepaid Stop-Work Invariant
-- **Rate:** `$5,000/week` per active 4-Cloud RAID cell, cleared automatically via Monday prepaid pull-rails (ACH / Card / Cloud MACC).
+- **Rate:** `$5,000/week` per active pilot cell, cleared automatically via Monday prepaid pull-rails (ACH / Card / Cloud MACC).
 - **Stop-Work Invariant:** All automated build, verification, and deployment rails pause automatically if Monday clearing does not settle; zero unbilled arrears accrue.
 - **Custom Legal Redlines (`odrl:Duty`):** This 1-page SOW is offered as-is. Any Client-requested custom paper or legal redline triggers a non-refundable **`$25,000`** `odrl:Duty` review fee payable prior to legal engagement.
 
 ## 3. Intellectual Property & Explicit `cos.fnox.io` Fence
 - **Background IP Carve-Out:** Provider retains 100% exclusive ownership of all pre-existing and generalized compiler, verification, wire, storage, and runtime substrates (`zcode-cli`, `ggen`, `ggen-marketplace`, `PurRDF`, `Eyeron`, `ferroplan`, `Arcus`, `cgap`, `GraphLaw`, `Affidavit`, `Smalt`, `XaaS`, `FFB`, and `CASTLE`).
-- **Client Ownership:** Client owns 100% of its domain data, `.aod` shards, cloud accounts, and business-specific configurations deployed into its EIN-held 4-Cloud RAID.
+- **Client Ownership:** Client owns 100% of its domain data, `.aod` shards, cloud accounts, and business-specific configurations on Client-EIN cloud faces (RAID striping aspirational/MISSING).
 - **Explicit `cos.fnox.io` Fence:** `cos.fnox.io` (FinFab / Sovereign HoldCo OS treasury clearinghouse and `RECOVERY-VAULT` infrastructure) is **strictly excluded** from this SOW. Nothing in this agreement grants license, source access, or derivative rights to `cos.fnox.io`.
 
 ## 4. 3-Channel Batch Ingress SLA (Zero WhatsApp / Zero Ad-Hoc Chat)

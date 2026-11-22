@@ -137,7 +137,7 @@ Do **not** copy `Construct seed` into `Verified`.
 | C4 Rel overclaim noise (fortune5 / BRCE / diode↛proof) | Gap P1 fitness | `docs/c4-sovereign-ecosystem.md` Rel edges vs receipts | PENDING_SIBLING | PENDING_SIBLING | yes | R2 `a4478193…` |
 | Seed-7 cascade / sibling barrier noise | Construct: seed-7 **13 pass** local; live drop still 503 | Seed-7 harness + barrier inventory | PENDING_SIBLING | PENDING_SIBLING | yes | R3 `2fce064f…` |
 | GTM false-ready framing while `/readyz` ≠ 200 | Seal: live **503**; honesty = 200 ∧ 2× LOW | Live probe + GTM prose | PENDING_SIBLING | PENDING_SIBLING | park (operator AND-gate) | R4 `def71167…` |
-| Fat Affidavit WASM pointed at as gatekeeper | Construct slim **28673 B** ALIVE; fat **718736** remains | Affidavit docs/WASM paths vs slim pack size | PENDING_SIBLING | PENDING_SIBLING | yes | R5 `183e65cc…` |
+| Fat Affidavit WASM pointed at as gatekeeper | Construct slim **28673 B** ALIVE; fat **718736** remains | Affidavit docs/WASM paths vs slim pack size | **VERIFIED** slim=gatekeeper; fat=provenance only | Docs mop: C4/JOBS-LOCK/research plan point at slim; fat ≠ gatekeeper | yes | R5 `183e65cc…` |
 
 ---
 

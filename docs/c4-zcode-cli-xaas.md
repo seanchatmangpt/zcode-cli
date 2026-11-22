@@ -155,7 +155,7 @@ C4Dynamic
 
 Where the coupling is not yet at law, stated as of 2026-09-22.
 
-- **権 (authority)** — gall-work was branch-only until today's landing (`w9-sweep/zcode-pr3`, `454ed62`); the PreToolUse gate was configured off until today (`hooks.enabled` now true). The gate is inert unless `XAAS_WORKER=1`, and subagents bypass PreToolUse entirely — a documented runtime hole.
+- **権 (authority)** — gall-work was branch-only until today's landing (`w9-sweep/zcode-pr3`, `454ed62`); plugin `hooks/hooks.json` registers PreToolUse → `xaas-gate.mjs` with **no `enabled` field** (the prior "`hooks.enabled` now true" claim was stale — that flag is config-file hooks, not plugin hooks). The gate is inert unless `XAAS_WORKER=1`, and subagents bypass PreToolUse entirely — a documented runtime hole; yolo mute-grant residual remains OPEN (Honesty note above).
 - **証 (evidence)** — zero schema-conformant receipts exist. Five divergent receipt formats are in circulation, and standing is stored as unbound literals with no invalidation when refs change.
 - **並 (scale)** — the MCP server was triple-registered until today's dedupe, and a plaintext dev token sits in 3 files. The second xaas MCP server (`/mcp`) is unregistered, and `AuditMcpToolCall` covers `/mcp` but NOT `/internal-api/execution/mcp` — an audit asymmetry, tracked as an open work order.
 - **票 (tickets)** — no v26.9.22 milestone existed until today, and four divergent ticket formats are in use. The `_RUNBOOK.md` canonical form lives only in `~/ggen_igniter`, and the calver-ticket-day-pack pin `d018ed4` is on a deleted branch.
