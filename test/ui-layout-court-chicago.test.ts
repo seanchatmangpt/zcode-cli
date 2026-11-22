@@ -33,7 +33,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,21 +41,26 @@ import {
   DEFAULT_MIN_TOUCH_GAP_PX,
   DEFAULT_MIN_TOUCH_TARGET_PX,
   DEFAULT_TAFFY_CMD,
+  FALLBACK_CLEAN_ROOM_CHECK_CMD,
   UI_LAYOUT_AOT_VIEWPORTS,
   UI_LAYOUT_PLAYWRIGHT_VIEWPORTS,
   UI_LAYOUT_VIEWPORTS,
   UiLayoutCourtAdapter,
   checkSpatialSubject,
+  cleanRoomSyncMissingRemediation,
   fixtureAdjacentGapBelowFloor,
   fixtureGestaltRatioBreach,
   fixtureOverflow360in320,
   fixturePrimaryButton18px,
+  layoutCourtSubjectPresent,
+  resolveCleanRoomSyncCmd,
   resolveTaffySubject,
   withViewportArgv,
   type LayoutBox,
   type SpatialSubject
 } from "../src/adapters/ui-layout-court.ts";
 import { antiVacuityExpectFail } from "../src/adapters/receipt-sink.ts";
+import { DEFAULT_CLEAN_ROOM_CHECK_CMD } from "../src/adapters/clean-room-drift.ts";
 
 /**
  * TOML SoT 9-wide (`zcode-cli.toml` `[adapters.ui_layout].viewports`).
@@ -676,6 +681,117 @@ describe("Chicago ui-layout-court (anti-vacuity)", () => {
     expect(v.exitCode).toBe(3);
     expect(v.standing).toBe("UNVERIFIED");
     expect(v.diagnostics.join(" ")).toMatch(/LOUD_SKIP|noop/);
+  });
+
+  test("mix ABSENT after spatial PASS + layout_court PRESENT → exit 0 (Jobs/C4 deferred)", async () => {
+    const root = tempWorkspace();
+    mkdirSync(join(root, "crates/ggen-layout-court"), { recursive: true });
+    writeFileSync(join(root, "crates/ggen-layout-court/Cargo.toml"), "[package]\nname=\"ggen-layout-court\"\n");
+    mkdirSync(join(root, "fixtures/ui-layout-court"), { recursive: true });
+    writeFileSync(join(root, "fixtures/ui-layout-court/product-subject.json"), "{\"root\":\"product\"}\n");
+    expect(layoutCourtSubjectPresent(root)).toBe(true);
+
+    const court = new UiLayoutCourtAdapter({
+      spatialSubjects: [fixtureGreen320()],
+      requireCleanRoom: true,
+      forceCleanRoom: true,
+      cleanRoomSyncCmd: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolveBinary: () => false // mix + ggen ABSENT
+    });
+    const v = await court.verifyPostTransition(root);
+    expect(v.exitCode).toBe(0);
+    expect(v.standing).toBe("ALIVE");
+    expect(v.diagnostics.join(" ")).toMatch(/Jobs\/C4 deferred|layout_court PRESENT/);
+    expect(v.diagnostics.join(" ")).toMatch(/Remediation/);
+    expect(v.artifactDigests["clean_room_sync"]).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test("mix ABSENT without layout_court subject → SUBJECT_MISSING + typed remediation", async () => {
+    const root = tempWorkspace();
+    expect(layoutCourtSubjectPresent(root)).toBe(false);
+
+    const court = new UiLayoutCourtAdapter({
+      spatialSubjects: [fixtureGreen320()],
+      requireCleanRoom: true,
+      forceCleanRoom: true,
+      cleanRoomSyncCmd: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolveBinary: () => false
+    });
+    const v = await court.verifyPostTransition(root);
+    expect(v.exitCode).toBe(2);
+    expect(v.standing).toBe("BLOCKED");
+    expect(v.diagnostics.join(" ")).toMatch(/SUBJECT_MISSING/);
+    expect(v.diagnostics.join(" ")).toMatch(/Remediation/);
+    expect(v.diagnostics.join(" ")).toMatch(/mix ggen_igniter\.sync --check|ggen.*--dry-run|requireCleanRoom:false/);
+  });
+
+  test("mix ABSENT + ggen PRESENT → fall back to ggen sync --dry-run", async () => {
+    const root = tempWorkspace();
+    const captured: string[][] = [];
+    const court = new UiLayoutCourtAdapter({
+      spatialSubjects: [fixtureGreen320()],
+      requireCleanRoom: true,
+      forceCleanRoom: true,
+      cleanRoomSyncCmd: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolveBinary: (bin) => bin === "ggen",
+      run: (cmd) => {
+        captured.push(cmd);
+        return {
+          status: 0,
+          stdout: JSON.stringify({ planned_writes: [] }),
+          stderr: ""
+        };
+      }
+    });
+    const v = await court.verifyPostTransition(root);
+    expect(v.exitCode).toBe(0);
+    expect(v.standing).toBe("ALIVE");
+    expect(captured.some((c) => c[0] === "ggen" && c.includes("--dry-run"))).toBe(true);
+    expect(v.diagnostics.join(" ")).toMatch(/fell back to ggen sync --dry-run/);
+    expect([...FALLBACK_CLEAN_ROOM_CHECK_CMD]).toEqual([
+      "ggen",
+      "sync",
+      "run",
+      "--dry-run"
+    ]);
+  });
+
+  test("resolveCleanRoomSyncCmd + remediation helpers are Chicago-honest", () => {
+    const remediation = cleanRoomSyncMissingRemediation("mix");
+    expect(remediation).toMatch(/SUBJECT_MISSING/);
+    expect(remediation).toMatch(/Remediation/);
+    expect(remediation).toMatch(/requireCleanRoom:false/);
+
+    const missing = resolveCleanRoomSyncCmd({
+      requested: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolve: () => false,
+      workspaceDir: tempWorkspace(),
+      hasInjectedRunner: false,
+      layoutCourtPresent: false
+    });
+    expect(missing.kind).toBe("subject_missing");
+
+    const spatial = resolveCleanRoomSyncCmd({
+      requested: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolve: () => false,
+      workspaceDir: "/workspace",
+      hasInjectedRunner: false,
+      layoutCourtPresent: true
+    });
+    expect(spatial.kind).toBe("spatial_only");
+
+    const fallback = resolveCleanRoomSyncCmd({
+      requested: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
+      resolve: (bin) => bin === "ggen",
+      workspaceDir: tempWorkspace(),
+      hasInjectedRunner: false,
+      layoutCourtPresent: false
+    });
+    expect(fallback.kind).toBe("run");
+    if (fallback.kind === "run") {
+      expect(fallback.fallbackFromMix).toBe(true);
+      expect(fallback.cmd).toEqual([...FALLBACK_CLEAN_ROOM_CHECK_CMD]);
+    }
   });
 
   test("validateWriteScope refuses generated/ mutation paths", async () => {

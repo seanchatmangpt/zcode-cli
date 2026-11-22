@@ -3,13 +3,17 @@
  * + Jobs/C4 clean-room hooks, wired as a TransitionCourtAdapter.
  *
  * Exit taxonomy (Explore + Exploit):
- *   0 PASS            — spatial checks + Jobs/C4 clean (exit 0 / planned_writes:[])
+ *   0 PASS            — spatial checks (+ Jobs/C4 when runnable / required)
  *   1 FAIL_REFUSED    — spatial defect or sync --check drift (process exit 4)
  *   2 SUBJECT_MISSING — Taffy CLI / Playwright / sync binary absent
  *   3 LOUD_SKIP       — suite disabled OR noop clean-room stub (`true`)
  *
- * Jobs/C4: `mix ggen_igniter.sync --check` or `ggen sync run --dry-run` with
- * `planned_writes: []` — never `git diff --exit-code` as the refuse gate.
+ * Jobs/C4: prefer `mix ggen_igniter.sync --check`; secondary
+ * `ggen sync run --dry-run` with `planned_writes: []`. Never `git diff
+ * --exit-code` as the refuse gate. After Taffy+Mode B PASS on a workspace
+ * where `layout_court` + product-subject fixture are PRESENT, absent `mix`
+ * must not collapse the court into SUBJECT_MISSING — fall back to `ggen`
+ * dry-run, or spatial-only exit 0 with a typed Jobs/C4 diagnostic.
  *
  * Remediation of REFUSED defects is bounded by `maxRemediationAttempts`
  * (default 3); this court records the budget on refuse diagnostics — the
@@ -27,8 +31,20 @@ import {
   DEFAULT_CLEAN_ROOM_CHECK_CMD,
   collectGitDiffDiagnostic,
   evaluateCleanRoomDrift,
-  isGitSyncCmd
+  isGitSyncCmd,
+  isIgniterCheckCmd
 } from "./clean-room-drift.ts";
+
+/**
+ * Secondary Jobs/C4 argv when `mix` is ABSENT — `planned_writes: []` contract.
+ * Prefer this over SUBJECT_MISSING after spatial PASS on a ggen tip.
+ */
+export const FALLBACK_CLEAN_ROOM_CHECK_CMD: readonly string[] = [
+  "ggen",
+  "sync",
+  "run",
+  "--dry-run"
+] as const;
 
 /**
  * Canonical viewport sweep (CSS px) — **one SoT** with
@@ -436,41 +452,54 @@ export class UiLayoutCourtAdapter implements TransitionCourtAdapter {
     const runCleanRoom =
       this.opts.requireCleanRoom && (!usedInProcessSubjects || this.opts.forceCleanRoom === true);
     if (runCleanRoom) {
-      const syncCmd =
+      const requested =
         this.opts.cleanRoomSyncCmd && this.opts.cleanRoomSyncCmd.length > 0
           ? this.opts.cleanRoomSyncCmd
           : [...DEFAULT_CLEAN_ROOM_CHECK_CMD];
       // Refuse git* before spawn — clean index ≠ ontology match (ELIMINATE-2).
-      if (isGitSyncCmd(syncCmd)) {
-        const drift = evaluateCleanRoomDrift(syncCmd, { status: 0, stdout: "", stderr: "" });
+      if (isGitSyncCmd(requested)) {
+        const drift = evaluateCleanRoomDrift(requested, { status: 0, stdout: "", stderr: "" });
         diagnostics.push(...drift.diagnostics);
         digests["clean_room_sync"] = sha256("refused:git*");
         return verdict(drift.exitCode, standingFromExit(drift.exitCode), diagnostics, digests);
       }
-      const syncBin = syncCmd[0]!;
-      if (!resolve(syncBin) && !this.opts.run) {
-        // Without an injected runner, missing sync binary is SUBJECT_MISSING
-        // (cannot honestly claim clean-room).
-        return verdict(
-          2,
-          "BLOCKED",
-          [
-            `ui-layout-court: clean-room sync binary missing ("${syncBin}") — SUBJECT_MISSING`
-          ],
-          digests
-        );
+
+      const resolved = resolveCleanRoomSyncCmd({
+        requested,
+        resolve,
+        workspaceDir,
+        hasInjectedRunner: Boolean(this.opts.run),
+        layoutCourtPresent: layoutCourtSubjectPresent(workspaceDir)
+      });
+
+      if (resolved.kind === "subject_missing") {
+        return verdict(2, "BLOCKED", [resolved.diagnostic], digests);
       }
-      const sync = run(syncCmd, workspaceDir);
-      digests["clean_room_sync"] = sha256(`${sync.status}\n${sync.stdout}\n${sync.stderr}`);
-      const drift = evaluateCleanRoomDrift(syncCmd, sync);
-      diagnostics.push(...drift.diagnostics);
-      if (drift.kind !== "pass") {
-        return verdict(drift.exitCode, standingFromExit(drift.exitCode), diagnostics, digests);
-      }
-      if (this.opts.gitDiffDiagnostic) {
-        diagnostics.push(
-          ...collectGitDiffDiagnostic(run, workspaceDir, this.opts.gitDiffPaths ?? ["."])
-        );
+
+      if (resolved.kind === "spatial_only") {
+        // layout_court PRESENT + spatial PASS; mix/ggen ABSENT — do not
+        // collapse hop-5 into SUBJECT_MISSING. Jobs/C4 remains open.
+        diagnostics.push(resolved.diagnostic);
+        digests["clean_room_sync"] = sha256(`spatial_only:${resolved.diagnostic}`);
+      } else {
+        const syncCmd = resolved.cmd;
+        const sync = run(syncCmd, workspaceDir);
+        digests["clean_room_sync"] = sha256(`${sync.status}\n${sync.stdout}\n${sync.stderr}`);
+        if (resolved.fallbackFromMix) {
+          diagnostics.push(
+            `ui-layout-court: clean-room fell back to ggen sync --dry-run (mix ABSENT)`
+          );
+        }
+        const drift = evaluateCleanRoomDrift(syncCmd, sync);
+        diagnostics.push(...drift.diagnostics);
+        if (drift.kind !== "pass") {
+          return verdict(drift.exitCode, standingFromExit(drift.exitCode), diagnostics, digests);
+        }
+        if (this.opts.gitDiffDiagnostic) {
+          diagnostics.push(
+            ...collectGitDiffDiagnostic(run, workspaceDir, this.opts.gitDiffPaths ?? ["."])
+          );
+        }
       }
     }
 
@@ -829,6 +858,91 @@ function defaultResolveBinary(bin: string): boolean {
     env: process.env
   });
   return which.status === 0 && (which.stdout || "").trim().length > 0;
+}
+
+/** True when ggen tip carries the hop-5 layout_court subject + product fixture. */
+export function layoutCourtSubjectPresent(workspaceDir: string): boolean {
+  return (
+    existsSync(join(workspaceDir, "crates/ggen-layout-court/Cargo.toml")) &&
+    existsSync(join(workspaceDir, "fixtures/ui-layout-court/product-subject.json"))
+  );
+}
+
+/** Exact remediation when Jobs/C4 sync binaries are ABSENT. */
+export function cleanRoomSyncMissingRemediation(syncBin: string): string {
+  return (
+    `ui-layout-court: clean-room sync binary missing ("${syncBin}") — SUBJECT_MISSING. ` +
+    `Remediation: (1) install Elixir and put \`mix\` on PATH in an igniter workspace, then ` +
+    `re-run \`mix ggen_igniter.sync --check\`; (2) OR set cleanRoomSyncCmd to ` +
+    `["ggen","sync","run","--dry-run"] with \`ggen\` on PATH; (3) OR set ` +
+    `requireCleanRoom:false for spatial-only verify (does not claim Jobs/C4 ALIVE). ` +
+    `On a ggen tip with layout_court PRESENT, absent mix after Taffy+Mode B PASS is ` +
+    `spatial-only exit 0 (Jobs/C4 deferred) — not SUBJECT_MISSING.`
+  );
+}
+
+export type CleanRoomSyncResolution =
+  | { kind: "run"; cmd: string[]; fallbackFromMix?: boolean }
+  | { kind: "spatial_only"; diagnostic: string }
+  | { kind: "subject_missing"; diagnostic: string };
+
+/**
+ * Resolve Jobs/C4 argv after spatial PASS.
+ *
+ * Honesty:
+ * - Prefer requested cmd when its binary resolves (or an injected runner is set).
+ * - Default `mix ggen_igniter.sync --check` → fall back to `ggen sync --dry-run`
+ *   when mix is ABSENT but ggen resolves.
+ * - When both ABSENT on a workspace with layout_court + product-subject PRESENT,
+ *   return spatial-only (exit 0 path) with typed Jobs/C4 deferred diagnostic —
+ *   never collapse hop-5 into SUBJECT_MISSING after Taffy+Mode B PASS.
+ * - Otherwise SUBJECT_MISSING with {@link cleanRoomSyncMissingRemediation}.
+ */
+export function resolveCleanRoomSyncCmd(args: {
+  requested: string[];
+  resolve: (bin: string) => boolean;
+  workspaceDir: string;
+  hasInjectedRunner: boolean;
+  layoutCourtPresent: boolean;
+}): CleanRoomSyncResolution {
+  const { requested, resolve, hasInjectedRunner, layoutCourtPresent } = args;
+  const syncBin = requested[0] ?? "";
+
+  // Prefer the requested binary when it resolves on PATH / fs.
+  if (syncBin && resolve(syncBin)) {
+    return { kind: "run", cmd: requested };
+  }
+
+  // Secondary Jobs/C4 path when the default igniter mix gate is unrunnable.
+  if (isIgniterCheckCmd(requested) && resolve(FALLBACK_CLEAN_ROOM_CHECK_CMD[0]!)) {
+    return {
+      kind: "run",
+      cmd: [...FALLBACK_CLEAN_ROOM_CHECK_CMD],
+      fallbackFromMix: true
+    };
+  }
+
+  // Injected runners own spawn (Chicago stubs). Keep requested argv when the
+  // caller supplied `run` and neither mix nor ggen resolved as a fallback.
+  if (hasInjectedRunner) {
+    return { kind: "run", cmd: requested };
+  }
+
+  if (layoutCourtPresent && isIgniterCheckCmd(requested)) {
+    return {
+      kind: "spatial_only",
+      diagnostic:
+        "ui-layout-court: Jobs/C4 deferred — mix/ggen ABSENT after spatial PASS " +
+        "(layout_court PRESENT). Remediation for full Jobs/C4 ALIVE: install Elixir/`mix` " +
+        "or put `ggen` on PATH for sync --dry-run. Spatial standing may exit 0; " +
+        "foundry --live / igniter sync still open."
+    };
+  }
+
+  return {
+    kind: "subject_missing",
+    diagnostic: cleanRoomSyncMissingRemediation(syncBin || "mix")
+  };
 }
 
 /** True when argv[0] is cargo (PATH name or path ending in /cargo) — never the court subject. */
