@@ -1,0 +1,73 @@
+# Fourth Watch AI Cybersecurity — Canonical Brand & DTCG 2025.10 Token Manifest
+# Consumed by: `castle publish --public-anonymize --brand brands/fourth-watch.brand.toml` and `ggen`
+# Authority Ceiling: CONSTRUCT (zero ambient DO)
+
+[brand]
+id = "fourth-watch"
+name = "Fourth Watch AI Cybersecurity"
+short_name = "Fourth Watch"
+tagline = "Sentinel, Steward, and Shepherd for Mission-Critical Infrastructure"
+domain = "fourthwatch.ai"
+intake_airlock = "https://revops.fnox.io/drop/:lease_id"
+intake_policy = "self-serve-airlock-only"
+discovery_calls = false
+custom_redline_duty_usd = 25000
+weekly_raid_cell_usd = 5000
+custody_pct = 0.0
+transaction_rent_pct = 0.0
+target_verticals = ["holdco", "enterprise-cyber", "church-anchor", "msp-oem"]
+
+[messaging.triad]
+sentinel = "Continuous cryptographic vigilance: pinned CASTLE probes, zero-mock evidence, and instant REFUSED verdicts before attackers or auditors arrive."
+steward = "Zero-custody, zero-rent ownership: client-owned 4-Cloud Hyperscaler RAID under your own EIN with 0% vendor lock-in and 0.00% Neshek rent."
+shepherd = "Protective clarity without disruption: keyless FFB shims wrap legacy screens at 120 Hz so your staff keep working with zero retraining."
+
+[messaging.voice]
+register = "calm-decisive-protective"
+prohibited_patterns = [
+  "book a demo",
+  "schedule a call",
+  "calendly.com",
+  "hop on a quick call",
+  "synergy",
+  "AI-powered magic"
+]
+required_cta = "Drop a read-only snapshot at Featured /drop/:lease_id for a binary Claims vs Code board PDF."
+
+[redaction_court]
+forbid_private_client_names = true
+forbid_local_user_paths = true
+forbid_bearer_tokens = true
+forbid_external_links_in_post_body = true
+forbid_calendar_links = true
+
+# W3C Design Tokens Community Group (DTCG 2025.10)
+[tokens.dtcg]
+spec_version = "2025.10"
+surface_target = "webgpu-zero-dom-taffy-aot"
+
+[tokens.color]
+bg_obsidian = { value = "#0B0F14", type = "color", description = "Primary watchtower canvas" }
+bg_slate = { value = "#131A22", type = "color", description = "Elevated card & sight-glass surface" }
+border_steel = { value = "#24303F", type = "color", description = "1px hairline structural divider" }
+text_primary = { value = "#F3F6FA", type = "color", description = "High-contrast primary copy (WCAG AAA)" }
+text_muted = { value = "#9AA8B8", type = "color", description = "Secondary metadata & receipt hashes" }
+accent_brass = { value = "#C89B3C", type = "color", description = "Sentinel watch-lamp highlight" }
+status_alive = { value = "#22C55E", type = "color", description = "Verified ALIVE standing" }
+status_refused = { value = "#EF4444", type = "color", description = "Fail-closed REFUSED standing" }
+status_partial = { value = "#F59E0B", type = "color", description = "PARTIAL_ALIVE / bounded caution" }
+
+[tokens.typography]
+font_display = { value = "Inter, system-ui, sans-serif", type = "fontFamily" }
+font_mono = { value = "JetBrains Mono, ui-monospace, monospace", type = "fontFamily" }
+scale_h1_px = { value = 48, type = "dimension" }
+scale_h2_px = { value = 32, type = "dimension" }
+scale_body_px = { value = 18, type = "dimension" }
+scale_caption_px = { value = 13, type = "dimension" }
+
+[tokens.spacing]
+unit_px = { value = 8, type = "dimension" }
+touch_target_min_px = { value = 48, type = "dimension", description = "WCAG 2.2 mobile control surface floor" }
+carousel_width_px = { value = 1080, type = "dimension" }
+carousel_height_px = { value = 1350, type = "dimension" }
+safe_margin_px = { value = 72, type = "dimension" }
