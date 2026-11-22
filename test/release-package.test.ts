@@ -93,7 +93,10 @@ describe("release package", () => {
           "已知限制：`.mcp.json` 使用普通环境变量时安装失败",
         "See Also": "参见",
         "Turn cap (`--max-turns`)": "回合上限（--max-turns）",
-        "Subagent turn cap (`subagents.maxTurns`)": "子代理回合上限（subagents.maxTurns）"
+        "Subagent turn cap (`subagents.maxTurns`)": "子代理回合上限（subagents.maxTurns）",
+        "EU AI Act compliance and OCEL telemetry (`zcode-cli.toml`)":
+          "EU AI Act 合规与 OCEL 2.0 留存配置（`zcode-cli.toml`）",
+        "Key environment overrides": "环境变量覆盖与运行约束"
       },
       "docs/PROVIDER_CONFIG.md": {
         "Using the example": "使用示例文件",

@@ -1023,7 +1023,7 @@ function findMultiPhaseRecurring(
   vals: readonly number[],
   alpha: number,
   adjAlpha = alpha
-): { pValue: number; statistic: number; firstCp: number } | null {
+): { pValue: number; rawPValue: number; internalTests: number; statistic: number; firstCp: number } | null {
   const n = vals.length;
   const eligibleM = [4, 5, 6].filter((m) => n >= m * 4);
   if (eligibleM.length === 0) return null;
@@ -1032,7 +1032,7 @@ function findMultiPhaseRecurring(
   const totalInternalTests = eligibleM.reduce((acc, m) => acc + 2 * (m - 1), 0);
   const perTestAdjAlpha = adjAlpha / totalInternalTests;
 
-  let best: { pValue: number; statistic: number; firstCp: number } | null = null;
+  let best: { pValue: number; rawPValue: number; internalTests: number; statistic: number; firstCp: number } | null = null;
   for (const m of eligibleM) {
     const cuts = [0];
     for (let i = 1; i < m; i++) cuts.push(Math.floor((i * n) / m));
@@ -1041,6 +1041,8 @@ function findMultiPhaseRecurring(
     if (rec) {
       const adjustedRec = {
         pValue: Math.min(1, rec.pValue * totalInternalTests),
+        rawPValue: rec.pValue,
+        internalTests: totalInternalTests,
         statistic: rec.statistic,
         firstCp: rec.firstCp
       };
@@ -1115,7 +1117,7 @@ function classifyDriftPattern(
     if (cpCuts.length >= 4) {
       const cpRec = checkSegmentedRecurring(vals, cpCuts, alpha, alpha);
       if (cpRec && (!bestMultiRec || cpRec.pValue < bestMultiRec.pValue)) {
-        bestMultiRec = cpRec;
+        bestMultiRec = { ...cpRec, rawPValue: cpRec.pValue, internalTests: 1 };
       }
     }
   }
@@ -1410,9 +1412,6 @@ export function detectConceptDrift(
     const cs2 = metric === "service_ms" ? (kingmanCs2ByStratum[stratum] ?? 0) : 0;
     const isHeavyTailSvc = metric === "service_ms" && cs2 > 1.5;
     const multiRec = findMultiPhaseRecurring(vals, alpha, isHeavyTailSvc ? alpha / 2 : alpha);
-    if (multiRec !== null) {
-      splitPs.push(multiRec.pValue);
-    }
 
     // Out-of-sample split confirmation when ADWIN and Page-Hinkley both fire (no in-sample double-dipping)
     let holdout: { pValue: number; statistic: number; changeIdx: number | null } | null = null;
@@ -1424,8 +1423,16 @@ export function detectConceptDrift(
     }
 
     const holmPs = holmBonferroni(splitPs);
-    const rawMinP = splitPs.length > 0 ? Math.min(...splitPs) : 1;
-    const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
+    const multiRecWithinAdjP =
+      multiRec !== null ? Math.min(1, multiRec.rawPValue * (splitPs.length + multiRec.internalTests)) : 1;
+    const rawMinP = Math.min(
+      splitPs.length > 0 ? Math.min(...splitPs) : 1,
+      multiRec !== null ? multiRec.pValue : 1
+    );
+    const withinAdjP = Math.min(
+      holmPs.length > 0 ? Math.min(...holmPs) : 1,
+      multiRecWithinAdjP
+    );
     const admitAlpha = isHeavyTailSvc ? alpha / 2 : alpha;
 
     perfCandidates.push({
@@ -1544,9 +1551,6 @@ export function detectConceptDrift(
       }
 
       const multiRec = findMultiPhaseRecurring(series, alpha, alpha);
-      if (multiRec !== null) {
-        splitPs.push(multiRec.pValue);
-      }
 
       let holdout: { pValue: number; statistic: number; changeIdx: number | null } | null = null;
       if (adw.driftDetected && ph.driftDetected) {
@@ -1557,8 +1561,16 @@ export function detectConceptDrift(
       }
 
       const holmPs = holmBonferroni(splitPs);
-      const rawMinP = splitPs.length > 0 ? Math.min(...splitPs) : 1;
-      const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
+      const multiRecWithinAdjP =
+        multiRec !== null ? Math.min(1, multiRec.rawPValue * (splitPs.length + multiRec.internalTests)) : 1;
+      const rawMinP = Math.min(
+        splitPs.length > 0 ? Math.min(...splitPs) : 1,
+        multiRec !== null ? multiRec.pValue : 1
+      );
+      const withinAdjP = Math.min(
+        holmPs.length > 0 ? Math.min(...holmPs) : 1,
+        multiRecWithinAdjP
+      );
 
       cfCandidates.push({
         rawPValue: rawMinP,

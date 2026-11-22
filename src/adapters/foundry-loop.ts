@@ -620,6 +620,9 @@ export function frontierActivitySignature(node: PowlNode): string {
     if (n.kind === "xor") {
       return `xor(${n.id}:[${n.branches.map(canon).join(",")}])`;
     }
+    if (n.kind === "oneof") {
+      return `oneof(${n.id}:[${n.branches.map(canon).join(",")}],resolved=${n.resolvedBranchIndex ?? ""})`;
+    }
     if (n.kind === "loop") {
       return `loop(${n.id}:do=${canon(n.doBranch)},redo=${canon(n.redoBranch)},max=${n.maxIterations ?? ""})`;
     }

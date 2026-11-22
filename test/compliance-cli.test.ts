@@ -60,7 +60,9 @@ function createSampleOcelDoc(sessionId = "sess_cli_test") {
   b.upsertObject(sessionId, "session", { compliance_profile: "high-risk-annex-iii" }, t0);
   b.upsertObject("turn_01", "turn", { standing: "ALIVE" }, t0);
   b.upsertObject("perm_01", "permission", { overseer_id: "overseer-alice-eu", decision: "allow" }, t0);
+  b.upsertObject("wo_01", "work_order", { status: "completed" }, t0);
   b.addO2O("turn_01", "in_session", sessionId);
+  b.addO2O("wo_01", "in_session", sessionId);
 
   b.recordEvent({
     id: `${sessionId}_ev_1`,
@@ -126,6 +128,26 @@ function createSampleOcelDoc(sessionId = "sess_cli_test") {
     relationships: [
       { objectId: sessionId, qualifier: "in_session" },
       { objectId: "turn_01", qualifier: "in_turn" }
+    ]
+  });
+  b.recordEvent({
+    id: `${sessionId}_ev_6b`,
+    type: "worker_claim",
+    time: "2026-08-02T10:00:02.100Z",
+    attributes: { work_order_id: "wo_01" },
+    relationships: [
+      { objectId: sessionId, qualifier: "in_session" },
+      { objectId: "wo_01", qualifier: "about_work_order" }
+    ]
+  });
+  b.recordEvent({
+    id: `${sessionId}_ev_6c`,
+    type: "receipt_persist",
+    time: "2026-08-02T10:00:02.200Z",
+    attributes: { work_order_id: "wo_01" },
+    relationships: [
+      { objectId: sessionId, qualifier: "in_session" },
+      { objectId: "wo_01", qualifier: "about_work_order" }
     ]
   });
   b.recordEvent({
@@ -267,7 +289,7 @@ describe("M4 Compliance CLI & Launcher Integration (zero-mock Chicago)", () => {
       expect(JSON.parse(assessRes.stdout).verdict).toBe("CONFORMITY_ADMITTED");
 
       const docOut = join(root, "doc.json");
-      expect(runCli("bun", ["compliance", "doc", "--out", docOut], cwd, home).exitCode).toBe(0);
+      expect(runCli("bun", ["compliance", "doc", "--out", docOut], cwd, home, { ZCODE_OCEL_DIR: logsDir }).exitCode).toBe(0);
       expect(existsSync(docOut)).toBe(true);
 
       const friaOut = join(root, "fria.md");

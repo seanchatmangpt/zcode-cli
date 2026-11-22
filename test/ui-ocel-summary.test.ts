@@ -131,16 +131,18 @@ describe("ui-ocel-summary SUPPLE T counts", () => {
   });
 
   test("spatial-court refuse/pass events cover exit taxonomy 0/1/2/3", () => {
-    const expected: Record<SpatialCourtExitEventType, { exitCode: 0 | 1 | 2 | 3; standing: string }> =
-      {
-        spatial_court_pass: { exitCode: 0, standing: "ALIVE" },
-        spatial_court_refused: { exitCode: 1, standing: "REFUSED" },
-        spatial_court_subject_missing: { exitCode: 2, standing: "BLOCKED" },
-        spatial_court_loud_skip: { exitCode: 3, standing: "UNVERIFIED" }
-      };
+    const expected: Record<
+      SpatialCourtExitEventType,
+      { exitCode: 0 | 1 | 2 | 3; standing: "ALIVE" | "REFUSED" | "BLOCKED" | "UNVERIFIED" }
+    > = {
+      spatial_court_pass: { exitCode: 0, standing: "ALIVE" },
+      spatial_court_refused: { exitCode: 1, standing: "REFUSED" },
+      spatial_court_subject_missing: { exitCode: 2, standing: "BLOCKED" },
+      spatial_court_loud_skip: { exitCode: 3, standing: "UNVERIFIED" }
+    };
 
     const types = spatialCourtExitEventTypes();
-    expect(types.sort()).toEqual(Object.keys(expected).sort());
+    expect([...types].map(String).sort()).toEqual(Object.keys(expected).sort());
     expect(new Set(Object.values(SPATIAL_COURT_EXIT_EVENT_TYPES))).toEqual(new Set([0, 1, 2, 3]));
 
     for (const eventType of types) {

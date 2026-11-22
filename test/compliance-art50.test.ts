@@ -796,9 +796,9 @@ describe("F08: EU AI Act Art. 50(2) machine-readable provenance marking", () => 
         runtimeStub,
         [
           'import { writeFileSync } from "node:fs";',
-          'process.stdout.write(JSON.stringify({ type: "session.start", sessionId: "sess_raise_01", timestamp: "2026-08-02T14:00:00.000Z" }) + "\\n");',
+          'process.stdout.write(JSON.stringify({ type: "turn.started", eventId: "evt_raise_01", sessionId: "sess_raise_01", turnId: "turn_raise_01", timestamp: "2026-08-02T14:00:00.000Z" }) + "\\n");',
           'writeFileSync("doc.md", "# AI Output\\nHello\\n", "utf8");',
-          'process.stdout.write(JSON.stringify({ type: "turn.end", sessionId: "sess_raise_01", timestamp: "2026-08-02T14:00:01.000Z" }) + "\\n");'
+          'process.stdout.write(JSON.stringify({ type: "turn.completed", eventId: "evt_raise_02", sessionId: "sess_raise_01", turnId: "turn_raise_01", timestamp: "2026-08-02T14:00:01.000Z" }) + "\\n");'
         ].join("\n"),
         "utf8"
       );

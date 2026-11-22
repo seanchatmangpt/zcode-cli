@@ -114,8 +114,6 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     this.opts = {
       allowedMutationGlobs: DEFAULT_ALLOWED_MUTATION_GLOBS,
       cleanRoomSyncCmd: [...DEFAULT_CLEAN_ROOM_CHECK_CMD],
-      requireSyncCheck,
-      gitDiffDiagnostic,
       forbidGeneratedDirs: true,
       forbidDomainWallClock: DEFAULT_FORBID_DOMAIN_WALL_CLOCK,
       generatedTrees: [],

@@ -12,6 +12,11 @@ export * from "./sjira-io.ts";
 export * from "./marketplace-court.ts";
 export * from "./igniter-sync.ts";
 export * from "./clean-room-drift.ts";
+export {
+  DEFAULT_IGNITER_SYNC_CHECK_CMD,
+  IGNITER_SYNC_CHECK_DRIFT_EXIT,
+  type RunResult
+} from "./clean-room-drift.ts";
 export * from "./receipt-sink.ts";
 export * from "./castle-publish.ts";
 export * from "./foundry-loop.ts";

@@ -322,7 +322,7 @@ export function summarizeUiOcelTrace(
 ): UiOcelSummary {
   const events: readonly OcelLikeEvent[] = Array.isArray(input)
     ? input
-    : input && Array.isArray(input.events)
+    : input && "events" in input && Array.isArray(input.events)
       ? input.events
       : [];
 
