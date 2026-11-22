@@ -111,18 +111,23 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     );
     expect(batchLines.length).toBe(2);
     const hasBatchRule = RULES.some(
-      (r) => r.source === APP_SERVER_SOURCE && r.event === "tool.updated" && r.path === "params.payload.toolCallIds"
+      (r) =>
+        r.source === APP_SERVER_SOURCE &&
+        r.name === "tool.updated" &&
+        r.event === "tool_updated" &&
+        r.path === "params.payload.toolCallIds"
     );
-    if (hasBatchRule) {
-      for (const batchLine of batchLines) {
-        const ev = doc.events.find((e) => e.id === batchLine.params.eventId);
-        expect(ev).toBeDefined();
-        const linkedToolCalls = ev!.relationships
-          .filter((r) => r.qualifier === "about_tool_call")
-          .map((r) => r.objectId);
-        for (const id of batchLine.params.payload.toolCallIds as string[]) {
-          expect(linkedToolCalls).toContain(id);
-        }
+    expect(hasBatchRule).toBe(true);
+    for (const batchLine of batchLines) {
+      const ev = doc.events.find((e) => e.id === batchLine.params.eventId);
+      expect(ev).toBeDefined();
+      const linkedToolCalls = ev!.relationships
+        .filter((r) => r.qualifier === "about_tool_call")
+        .map((r) => r.objectId);
+      const batchIds = batchLine.params.payload.toolCallIds as string[];
+      expect(batchIds.length).toBeGreaterThan(0);
+      for (const id of batchIds) {
+        expect(linkedToolCalls).toContain(id);
       }
     }
   });
@@ -153,47 +158,61 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     expect(ttl).toMatch(/zl:Rule-App-userInput-requested[\s\S]*?zl:Rel-App-user_input/);
     expect(ttl).toMatch(/zl:Rule-App-userInput-resolved[\s\S]*?zl:Rel-App-user_input/);
 
-    // Runtime verification when generated RULES include user_input binding
-    const hasUserInputRule = RULES.some(
-      (r) => r.source === APP_SERVER_SOURCE && r.event === "userInput.requested" && r.qualifier === "about_user_input"
+    // Runtime verification: generated RULES bind userInput.requested/resolved to user_input (not permission)
+    const hasUserInputRequestedRule = RULES.some(
+      (r) =>
+        r.source === APP_SERVER_SOURCE &&
+        r.name === "userInput.requested" &&
+        r.event === "user_input_requested" &&
+        r.qualifier === "about_user_input"
     );
-    if (hasUserInputRule) {
-      const outDir = makeTempDir("zcode-appserver-userinput-");
-      const rec = new OcelRecorder(APP_SERVER_SOURCE, outDir);
-      rec.write(
+    const hasUserInputResolvedRule = RULES.some(
+      (r) =>
+        r.source === APP_SERVER_SOURCE &&
+        r.name === "userInput.resolved" &&
+        r.event === "user_input_resolved" &&
+        r.qualifier === "about_user_input"
+    );
+    expect(hasUserInputRequestedRule).toBe(true);
+    expect(hasUserInputResolvedRule).toBe(true);
+
+    const outDir = makeTempDir("zcode-appserver-userinput-");
+    const rec = new OcelRecorder(APP_SERVER_SOURCE, outDir);
+    rec.write(
+      `${JSON.stringify({
+        method: "session/event",
+        params: {
+          type: "userInput.requested",
+          eventId: "ev-ui-1",
+          timestamp: 1790030095000,
+          sessionId: "sess-ui-1",
+          turnId: "turn-ui-1",
+          payload: { requestId: "req-ui-1" }
+        }
+      })}\n` +
         `${JSON.stringify({
           method: "session/event",
           params: {
-            type: "userInput.requested",
-            eventId: "ev-ui-1",
-            timestamp: 1790030095000,
+            type: "userInput.resolved",
+            eventId: "ev-ui-2",
+            timestamp: 1790030096000,
             sessionId: "sess-ui-1",
             turnId: "turn-ui-1",
             payload: { requestId: "req-ui-1" }
           }
-        })}\n` +
-          `${JSON.stringify({
-            method: "session/event",
-            params: {
-              type: "userInput.resolved",
-              eventId: "ev-ui-2",
-              timestamp: 1790030096000,
-              sessionId: "sess-ui-1",
-              turnId: "turn-ui-1",
-              payload: { requestId: "req-ui-1" }
-            }
-          })}\n`
-      );
-      const res = rec.finish();
-      const doc = JSON.parse(readFileSync(res.ocelPath, "utf8")) as OcelDoc;
-      expect(ocelProblems(doc)).toEqual([]);
-      for (const ev of doc.events) {
-        const quals = ev.relationships.map((r) => r.qualifier);
-        expect(quals).toContain("about_user_input");
-        expect(quals).not.toContain("about_permission");
-      }
-      expect(doc.objects.some((o) => o.type === "user_input" && o.id === "req-ui-1")).toBe(true);
+        })}\n`
+    );
+    const res = rec.finish();
+    const doc = JSON.parse(readFileSync(res.ocelPath, "utf8")) as OcelDoc;
+    expect(ocelProblems(doc)).toEqual([]);
+    expect(doc.events.length).toBe(2);
+    for (const ev of doc.events) {
+      const quals = ev.relationships.map((r) => r.qualifier);
+      expect(quals).toContain("about_user_input");
+      expect(quals).not.toContain("about_permission");
     }
+    expect(doc.objects.some((o) => o.type === "user_input" && o.id === "req-ui-1")).toBe(true);
+    expect(doc.objects.some((o) => o.type === "permission" && o.id === "req-ui-1")).toBe(false);
   });
 
   test("validates existing app-server-list.jsonocel + receipt fixture", () => {

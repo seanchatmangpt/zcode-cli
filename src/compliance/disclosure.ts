@@ -42,7 +42,7 @@ export interface Art50DisclosureInput {
   traceId?: string;
   eventId?: string;
   seq?: number;
-  channel?: "tui" | "headless-json" | "stream-json" | "app-server";
+  channel?: "tui" | "headless-json" | "headless-text" | "stream-json" | "app-server";
   notice?: string;
   disclosed?: boolean;
   workerNoticeAcknowledged?: boolean;
@@ -208,6 +208,11 @@ export function buildArt50DisclosureEnvelope(
   }
 
   return envelope;
+}
+
+export function formatArt50DisclosureNotice(envelope: Art50DisclosureEnvelope): string {
+  const d = envelope.ai_disclosure;
+  return `[EU AI Act Art. 50] ${d.notice} (provider=${d.provider_id}; model=${d.model_id}; profile=${d.compliance_profile}; session=${envelope.sessionId})`;
 }
 
 export interface EmittedArt50DisclosureResult {

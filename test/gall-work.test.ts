@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import {
+  CONSTRUCT_AMBIENT_WIDENERS,
+  WORKER_ENV_DENY_NAMES,
   constructPrompt,
   defaultFabricUrl,
   discoverFabricCapabilities,
@@ -22,6 +24,7 @@ import {
   resolveFabricTarget,
   runConstruct,
   standingForOutcome,
+  stripConstructChildEnv,
   toGallWorkResultWire,
   workOrderPath,
   workOrderPathKeyed,
@@ -563,17 +566,25 @@ describe("lease state file keying (XAAS_LEASE_ID)", () => {
 });
 
 describe("runConstruct child env strips WorkerEnv deny_names", () => {
-  test("XAAS_ALLOW_SUBAGENTS and XAAS_SURFACE_PATH do not reach the leased child", async () => {
+  test("WorkerEnv deny_names and XAAS_SWEEP do not reach the leased child", async () => {
     const recorded: { env: Record<string, unknown> } = { env: {} };
     const fakeChild = new EventEmitter() as unknown as import("node:child_process").ChildProcess;
     (fakeChild as unknown as { stdout: unknown }).stdout = null;
     (fakeChild as unknown as { stderr: unknown }).stderr = null;
-    const priorAllow = process.env.XAAS_ALLOW_SUBAGENTS;
-    const priorSurface = process.env.XAAS_SURFACE_PATH;
-    const priorLeaseId = process.env.XAAS_LEASE_ID;
+    const priors: Array<[string, string | undefined]> = [
+      ["XAAS_ALLOW_SUBAGENTS", process.env.XAAS_ALLOW_SUBAGENTS],
+      ["XAAS_SURFACE_PATH", process.env.XAAS_SURFACE_PATH],
+      ["XAAS_SWEEP", process.env.XAAS_SWEEP],
+      ["GITHUB_TOKEN", process.env.GITHUB_TOKEN],
+      ["NODE_OPTIONS", process.env.NODE_OPTIONS],
+      ["XAAS_LEASE_ID", process.env.XAAS_LEASE_ID]
+    ];
     const fenceId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     process.env.XAAS_ALLOW_SUBAGENTS = "1";
     process.env.XAAS_SURFACE_PATH = "/tmp/widened-surface.json";
+    process.env.XAAS_SWEEP = "1";
+    process.env.GITHUB_TOKEN = "ghp_ambient_bleed_test";
+    process.env.NODE_OPTIONS = "--require=/tmp/widen.js";
     process.env.XAAS_LEASE_ID = fenceId;
     try {
       const outcome = await runConstruct(
@@ -605,13 +616,26 @@ describe("runConstruct child env strips WorkerEnv deny_names", () => {
       expect(recorded.env.XAAS_LEASE_ID).toBe(fenceId);
       expect(recorded.env.XAAS_ALLOW_SUBAGENTS).toBeUndefined();
       expect(recorded.env.XAAS_SURFACE_PATH).toBeUndefined();
+      expect(recorded.env.XAAS_SWEEP).toBeUndefined();
+      expect(recorded.env.GITHUB_TOKEN).toBeUndefined();
+      expect(recorded.env.NODE_OPTIONS).toBeUndefined();
     } finally {
-      if (priorAllow === undefined) delete process.env.XAAS_ALLOW_SUBAGENTS;
-      else process.env.XAAS_ALLOW_SUBAGENTS = priorAllow;
-      if (priorSurface === undefined) delete process.env.XAAS_SURFACE_PATH;
-      else process.env.XAAS_SURFACE_PATH = priorSurface;
-      if (priorLeaseId === undefined) delete process.env.XAAS_LEASE_ID;
-      else process.env.XAAS_LEASE_ID = priorLeaseId;
+      for (const [key, prior] of priors) {
+        if (prior === undefined) delete process.env[key];
+        else process.env[key] = prior;
+      }
     }
+  });
+
+  test("stripConstructChildEnv deletes every WorkerEnv deny_name and ambient widener", () => {
+    const env: NodeJS.ProcessEnv = { PATH: "/bin", XAAS_WORKER: "1", XAAS_LEASE_ID: "keep" };
+    for (const name of WORKER_ENV_DENY_NAMES) env[name] = "bleed";
+    for (const name of CONSTRUCT_AMBIENT_WIDENERS) env[name] = "1";
+    stripConstructChildEnv(env);
+    for (const name of WORKER_ENV_DENY_NAMES) expect(env[name]).toBeUndefined();
+    for (const name of CONSTRUCT_AMBIENT_WIDENERS) expect(env[name]).toBeUndefined();
+    expect(env.PATH).toBe("/bin");
+    expect(env.XAAS_WORKER).toBe("1");
+    expect(env.XAAS_LEASE_ID).toBe("keep");
   });
 });

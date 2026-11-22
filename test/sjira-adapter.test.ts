@@ -203,6 +203,22 @@ describe("SjiraIoAdapter — igniter clean-room gate", () => {
     expect(r.detail).toMatch(/LOUD_SKIP|noop/);
   });
 
+  test("falsifier: git* syncCmd refuses without spawning git", () => {
+    const seen: string[][] = [];
+    const r = verifyIgniterCleanRoom("/tmp", {
+      required: true,
+      syncCmd: ["git", "diff", "--exit-code"],
+      run: (cmd) => {
+        seen.push(cmd);
+        return { status: 0, stderr: "", stdout: "" };
+      }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe("failed");
+    expect(r.detail).toMatch(/git\* sync cmd|clean-room fallacy/);
+    expect(seen).toEqual([]);
+  });
+
   test("ggen dry-run refuses non-empty planned_writes", () => {
     const r = verifyIgniterCleanRoom("/tmp", {
       required: true,

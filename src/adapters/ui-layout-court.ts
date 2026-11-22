@@ -26,7 +26,8 @@ import { standingFromExit } from "./types.ts";
 import {
   DEFAULT_CLEAN_ROOM_CHECK_CMD,
   collectGitDiffDiagnostic,
-  evaluateCleanRoomDrift
+  evaluateCleanRoomDrift,
+  isGitSyncCmd
 } from "./clean-room-drift.ts";
 
 /**
@@ -367,6 +368,13 @@ export class UiLayoutCourtAdapter implements TransitionCourtAdapter {
         this.opts.cleanRoomSyncCmd && this.opts.cleanRoomSyncCmd.length > 0
           ? this.opts.cleanRoomSyncCmd
           : [...DEFAULT_CLEAN_ROOM_CHECK_CMD];
+      // Refuse git* before spawn — clean index ≠ ontology match (ELIMINATE-2).
+      if (isGitSyncCmd(syncCmd)) {
+        const drift = evaluateCleanRoomDrift(syncCmd, { status: 0, stdout: "", stderr: "" });
+        diagnostics.push(...drift.diagnostics);
+        digests["clean_room_sync"] = sha256("refused:git*");
+        return verdict(drift.exitCode, standingFromExit(drift.exitCode), diagnostics, digests);
+      }
       const syncBin = syncCmd[0]!;
       if (!resolve(syncBin) && !this.opts.run) {
         // Without an injected runner, missing sync binary is SUBJECT_MISSING

@@ -6,6 +6,7 @@ import { ComplianceRefusalError } from "./compliance/config.ts";
 import {
   KingmanScheduler,
   type KingmanMetricsSnapshot,
+  type KingmanSchedulerConfig,
   type TransportTelemetrySample
 } from "./compliance/kingman-scheduler.ts";
 import {
@@ -905,7 +906,11 @@ export interface Ocel2Log {
  * healthy transport (ARD §5.3 / EU AI Act robustness: no false congestion backoff).
  */
 export class AimdWipController {
-  private readonly scheduler = new KingmanScheduler();
+  private readonly scheduler: KingmanScheduler;
+
+  constructor(config?: KingmanSchedulerConfig) {
+    this.scheduler = new KingmanScheduler(config);
+  }
 
   get wip(): number {
     return this.scheduler.wip;
@@ -933,24 +938,6 @@ export class AimdWipController {
     transport?: TransportTelemetrySample
   ): { changed: boolean; oldWip: number; newWip: number; reason: string; ttftMdTriggered: boolean } {
     const decision = this.scheduler.onSuccess(serviceMs, transport);
-    const hasTransportTelemetry =
-      transport !== undefined &&
-      (transport.ttftMs !== undefined ||
-        transport.rpmHeadroomRatio !== undefined ||
-        transport.tpmHeadroomRatio !== undefined ||
-        transport.interArrivalMs !== undefined);
-    if (!hasTransportTelemetry && !decision.ttftMdTriggered) {
-      const nextWip = decision.oldWip + 1;
-      this.scheduler.wip = nextWip;
-      this.scheduler.peakEquilibriumWip = Math.max(this.scheduler.peakEquilibriumWip, nextWip);
-      return {
-        changed: nextWip !== decision.oldWip,
-        oldWip: decision.oldWip,
-        newWip: nextWip,
-        reason: "clean_completion_ai",
-        ttftMdTriggered: false
-      };
-    }
     return {
       changed: decision.changed,
       oldWip: decision.oldWip,
@@ -1042,7 +1029,9 @@ export async function executePowlWithTokenReplay(
   options: OcelPowlRunOptions = {}
 ): Promise<OcelPowlRunResult> {
   const net = compilePowlToWorkflowNet(root);
-  const aimd = new AimdWipController();
+  const aimd = new AimdWipController(
+    options.workspaceDir ? { minWip: 1, maxWip: 1 } : undefined
+  );
   const limiter = options.retryLimiter ?? new SignatureRetryLimiter(options.maxRetriesPerSignature ?? 3);
   const rollbackOnDirty = options.rollbackOnDirty ?? true;
 
@@ -1120,6 +1109,7 @@ export async function executePowlWithTokenReplay(
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const executedActivities: string[] = [];
   const inFlight = new Set<Promise<void>>();
+  let lastStartTimestampMs: number | null = null;
   let haltedOnFailure = false;
   let refusalCode: string | undefined;
   let rolledBackCount = 0;
@@ -1317,6 +1307,9 @@ export async function executePowlWithTokenReplay(
       );
 
       const started = Date.now();
+      const interArrivalMs =
+        lastStartTimestampMs !== null ? Math.max(0, started - lastStartTimestampMs) : undefined;
+      lastStartTimestampMs = started;
       const job = (async () => {
         let res: ExecutionOutcome | undefined;
         let stepError: unknown;
@@ -1349,7 +1342,8 @@ export async function executePowlWithTokenReplay(
           const adj = aimd.onSuccess(serviceMs, {
             ttftMs: res.ttftMs,
             rpmHeadroomRatio: res.rpmHeadroomRatio,
-            tpmHeadroomRatio: res.tpmHeadroomRatio
+            tpmHeadroomRatio: res.tpmHeadroomRatio,
+            interArrivalMs
           });
           const kingmanSnap = aimd.getKingmanSnapshot();
           artObj.attributes.push({ name: "standing", value: "ALIVE", time: new Date().toISOString() });

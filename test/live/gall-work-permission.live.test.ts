@@ -335,10 +335,12 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
     };
     return fn as unknown as typeof spawnChild;
   })();
-  // Ambient bleed must not reach the leased child (WorkerEnv deny_names parity).
-  // XAAS_LEASE_ID must still forward — PreToolUse keyed-first fence key.
+  // Ambient bleed must not reach the leased child (WorkerEnv deny_names +
+  // XAAS_SWEEP ambient widener). XAAS_LEASE_ID must still forward — PreToolUse
+  // keyed-first fence key.
   setEnv("XAAS_ALLOW_SUBAGENTS", "1");
   setEnv("XAAS_SURFACE_PATH", "/tmp/widened-surface.json");
+  setEnv("XAAS_SWEEP", "1");
   setEnv("XAAS_LEASE_ID", epochId);
   const outcome = await runConstruct(
     {
@@ -374,4 +376,5 @@ test("runConstruct pins --mode yolo, stream-json output, and lease identity on t
   expect(recorded.env.XAAS_LEASE_ID).toBe(epochId);
   expect(recorded.env.XAAS_ALLOW_SUBAGENTS).toBeUndefined();
   expect(recorded.env.XAAS_SURFACE_PATH).toBeUndefined();
+  expect(recorded.env.XAAS_SWEEP).toBeUndefined();
 });

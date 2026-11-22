@@ -1,12 +1,14 @@
 # Week 1 LinkedIn 10-Slide PDF Carousel & Personal Newsletter Issue #1
 
 > **DO NOT PUBLISH / OUTBOUND BLOCKED** until live `/readyz` **200** (billing∧JWKS∧redeploy) **∧** 2× durable LOW-only receipts on disk — Jobs **AND-gate** blast unlock.  
+> Unlock phrase (Jobs lock SoT): `Live cos /readyz 200 (billing∧JWKS∧redeploy) ∧ 2× durable LOW-only receipts on disk — Jobs P3 blast authorized on cos drop path.`  
+> 2× LOW is a **required second gate** (not void). Stale “`/readyz` alone = unlock” is **void**. **No LinkedIn send.**  
 > **Honesty (align cos Week-1 GTM):** No `@fnox/*` GA · no RAID / WebGPU / 120 Hz shipping claims.  
-> Shepherd = **on-disk FFB shims only**. Steward RAID = **target** until measured. CTA host = `cos.fnox.io` (SlotLease/`/readyz` ∧ 2× LOW gated). **No LinkedIn send.**
+> Shepherd = **on-disk FFB shims only**. Steward RAID = **target** until measured. CTA host = **`cos.fnox.io` only** (never `revops.fnox.io`). Surface **SlotLease/`/readyz` ∧ 2× LOW** on Featured CTA while gated.
 
 **Brand:** Fourth Watch AI Cybersecurity (`brands/fourth-watch.brand.toml`)  
 **Format:** 1080×1350 px native LinkedIn PDF Carousel (<60 words/slide) + Personal Newsletter Issue #1  
-**Distribution Rules (360Brew Reach Protection):** Zero external links in post bodies; zero calendar booking links; all inbound points strictly to Featured `/drop/:lease_id` on **`cos.fnox.io`**.
+**Distribution Rules (360Brew Reach Protection):** Zero external links in post bodies; zero calendar booking links; all inbound points strictly to Featured `/drop/:lease_id` on **`cos.fnox.io`** — SlotLease-bound; treat as gated until Jobs AND-gate unlock.
 
 ---
 
@@ -49,17 +51,19 @@ Slim air-gapped Affidavit **gatekeeper** WASM (`verify_witness`, Ed25519; **2867
 
 ### Slide 9 (The Economics)
 Self-funded from eliminated SaaS bloat and 25%–40% cyber/crime insurance discounts.  
-Flat Monday prepaid rails (`$5,000/week` per 4-Cloud RAID cell). No lock-in, no rent, no multi-month consulting drag.
+Flat Monday prepaid rails (`$5,000/week` per pilot **cell** — commercial meter only; **not** 4-Cloud RAID GA). No lock-in, no rent, no multi-month consulting drag.
 
 ### Slide 10 (Call to Action)
 Stop guessing where your stack breaks.  
-Use the **Featured `/drop/:lease_id`** link on my profile to drop a read-only snapshot and receive your binary **Claims vs. Code** board PDF.
+Featured `/drop/:lease_id` on **`cos.fnox.io` only** — SlotLease/`/readyz` ∧ 2× LOW gated until Jobs AND-gate unlock. **DRAFT / DO NOT PUBLISH** as live intake. No calendar. No body URL.
 
 ---
 
 ## Part 2: Personal Newsletter Issue #1 — *"Why '80% Compliant' Is a 0% Verdict in 2027"*
 
 **Subject:** The 80% Ready Mirage (and how to clear the 2027 AND-gate without replacing your staff's screens)
+
+> **DO NOT PUBLISH / OUTBOUND BLOCKED** — same Jobs AND-gate as Part 1. No blast until `/readyz` **200** ∧ 2× durable LOW-only.
 
 Across HoldCos, mid-market operators, and anchor institutions, the same pattern repeats: leadership believes their security posture is "80% there" because they passed a questionnaire, bought a SIEM, and have a SOC 2 PDF in a folder.
 
@@ -75,4 +79,4 @@ Under the EU Data Act, California SB 923, EU AI Act Annex III, and CRA/NIS2, com
 
 ### Next Step (Zero Discovery Calls)
 
-We do not run exploratory sales calls. If you want a binary **Claims vs. Code** verdict on your current stack, go to my LinkedIn **Featured** section and use the self-serve `/drop/:lease_id` airlock (48-hour slot window, 256 MiB symlink-jailed SHA-256 staging).
+We do not run exploratory sales calls. Featured intake is **`cos.fnox.io/drop/:lease_id` only** (never `revops.fnox.io`) — SlotLease-bound, 48-hour window, 256 MiB symlink-jailed SHA-256 staging. Surface SlotLease/`/readyz` ∧ 2× LOW honesty while gated. **DRAFT / DO NOT treat as live intake** until Jobs AND-gate unlock (`/readyz` **200** ∧ 2× durable LOW-only).

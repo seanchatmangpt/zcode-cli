@@ -106,8 +106,6 @@ export interface DeclareEvaluationResult {
 export interface DeclareConformanceReport {
   schema: "zcode.declare-report/1";
   results: DeclareEvaluationResult[];
-  /** @deprecated Use `results`. Non-enumerable compatibility alias for existing consumers. */
-  readonly declareResults: DeclareEvaluationResult[];
   allMandatorySatisfied: boolean;
   witnessedCount: number;
   vacuousCount: number;
@@ -940,20 +938,12 @@ export function evaluateDeclareRules(
     (r) => !r.mandatory || (r.status !== "VIOLATED" && (!r.antiVacuityRequired || r.antiVacuityPassed))
   );
 
-  const report = {
-    schema: "zcode.declare-report/1" as const,
+  return {
+    schema: "zcode.declare-report/1",
     results,
     allMandatorySatisfied,
     witnessedCount,
     vacuousCount,
     violatedCount
   };
-  Object.defineProperty(report, "declareResults", {
-    get() {
-      return results;
-    },
-    enumerable: false,
-    configurable: true
-  });
-  return report as DeclareConformanceReport;
 }

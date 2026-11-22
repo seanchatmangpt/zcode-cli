@@ -630,7 +630,7 @@ describe("F10 Declare / LTLf Conformance Engine (Chicago)", () => {
     expect(byId.get("RESP-WINDOW-OK")!.status).toBe("SATISFIED_WITNESSED");
   });
 
-  test("ERRC ELIMINATE: objectless OCEL log yields 0 session traces (no __default_session__) and report JSON omits duplicate declareResults", () => {
+  test("ERRC ELIMINATE: objectless OCEL log yields 0 session traces (no __default_session__) and report completely removes duplicate declareResults alias", () => {
     const objectlessDoc: Ocel2DocLike = {
       objects: [],
       events: [
@@ -651,11 +651,11 @@ describe("F10 Declare / LTLf Conformance Engine (Chicago)", () => {
       expect(r.status).toBe("SATISFIED_VACUOUS");
     }
 
-    // Serialized JSON has `results` and does not duplicate `declareResults`
+    // Both live object and serialized JSON have `results` and completely omit `declareResults`
+    expect("declareResults" in report).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(report, "declareResults")).toBeUndefined();
     const parsed = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
     expect(Array.isArray(parsed.results)).toBe(true);
     expect("declareResults" in parsed).toBe(false);
-    // Compatibility alias remains accessible on the live object
-    expect(report.declareResults).toBe(report.results);
   });
 });

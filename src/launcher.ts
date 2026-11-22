@@ -67,6 +67,7 @@ import {
   applyRuntimeArt50Provenance,
   buildArt50DisclosureEnvelope,
   emitArt50DisclosureEvent,
+  formatArt50DisclosureNotice,
   formatGitProvenanceTrailer,
   snapshotWorkspaceFiles
 } from "./compliance/disclosure.ts";
@@ -460,10 +461,11 @@ function atomicWriteFile(path: string, content: string): void {
   }
 }
 
-function augmentOcelWithArt50Disclosure(
+function mergeOcelFragmentIntoFile(
   written: { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string },
+  fragment: Ocel2Document,
   ctx: RuntimeComplianceContext,
-  channel: "stream-json" | "headless-json" | "app-server" | "tui"
+  eventPlacement: "after_session_created" | "append"
 ): string {
   const rawDoc = JSON.parse(readFileSync(written.ocelPath, "utf8")) as Ocel2Document;
   const sessionId = written.sessionId || ctx.sessionId;
@@ -472,55 +474,72 @@ function augmentOcelWithArt50Disclosure(
     redactEnv: ctx.config.compliance.redact_env,
     env: process.env
   };
-  const firstTime = rawDoc.events[0]?.time ?? new Date().toISOString();
-  const baseMs = Number.isFinite(Date.parse(firstTime)) ? Date.parse(firstTime) : Date.now();
-  const preEvents = [...rawDoc.events];
 
-  if (!preEvents.some((e) => e.type === "session_created")) {
-    preEvents.unshift({
-      id: `session_created_${randomUUID()}`,
-      type: "session_created",
-      time: new Date(baseMs - 2).toISOString(),
-      attributes: [{ name: "compliance_profile", value: ctx.config.compliance.profile }],
-      relationships: [{ objectId: sessionId, qualifier: "in_session" }]
-    });
+  const mergedObjects = rawDoc.objects.map((o) => ({
+    ...o,
+    attributes: [...(o.attributes ?? [])],
+    relationships: [...(o.relationships ?? [])]
+  }));
+  const objById = new Map(mergedObjects.map((o) => [o.id, o]));
+
+  for (const fragObj of fragment.objects) {
+    const existing = objById.get(fragObj.id);
+    if (!existing) {
+      const cloned = {
+        ...fragObj,
+        attributes: [...(fragObj.attributes ?? [])],
+        relationships: [...(fragObj.relationships ?? [])]
+      };
+      mergedObjects.push(cloned);
+      objById.set(cloned.id, cloned);
+    } else {
+      const seenAttrs = new Set(existing.attributes.map((a) => `${a.name}:${a.time}:${String(a.value)}`));
+      for (const attr of fragObj.attributes ?? []) {
+        const key = `${attr.name}:${attr.time}:${String(attr.value)}`;
+        if (!seenAttrs.has(key)) {
+          existing.attributes.push(attr);
+          seenAttrs.add(key);
+        }
+      }
+      const seenRels = new Set(existing.relationships.map((r) => `${r.qualifier}:${r.objectId}`));
+      for (const rel of fragObj.relationships ?? []) {
+        const key = `${rel.qualifier}:${rel.objectId}`;
+        if (!seenRels.has(key)) {
+          existing.relationships.push(rel);
+          seenRels.add(key);
+        }
+      }
+    }
   }
 
-  if (!preEvents.some((e) => e.type === "art50_disclosure_emitted")) {
-    const discEnvelope = buildArt50DisclosureEnvelope({
-      profile: ctx.config.compliance.profile,
-      sessionId,
-      provider: ctx.providerId,
-      model: ctx.modelId,
-      channel: channel === "tui" ? "tui" : channel,
-      workerNoticeAcknowledged: ctx.config.deployer.worker_notice_acknowledged,
-      timestamp: new Date(baseMs - 1).toISOString(),
-      redactPii: ctx.config.compliance.redact_pii,
-      redactOptions: redactOpts
-    });
-    const discEvent = {
-      id: discEnvelope.eventId,
-      type: "art50_disclosure_emitted",
-      time: discEnvelope.timestamp,
-      attributes: [
-        { name: "channel", value: discEnvelope.ai_disclosure.channel },
-        { name: "regulation", value: "EU-2024-1689-Art50" },
-        { name: "provider_id", value: discEnvelope.ai_disclosure.provider_id },
-        { name: "model_id", value: discEnvelope.ai_disclosure.model_id },
-        { name: "compliance_profile", value: ctx.config.compliance.profile }
-      ],
-      relationships: [{ objectId: sessionId, qualifier: "in_session" }]
-    };
+  const preEvents = [...rawDoc.events];
+  const existingEventIds = new Set(preEvents.map((e) => e.id));
+  const newEvents = fragment.events.filter((e) => !existingEventIds.has(e.id));
+
+  if (eventPlacement === "after_session_created") {
+    const firstTime = preEvents[0]?.time ?? new Date().toISOString();
+    const baseMs = Number.isFinite(Date.parse(firstTime)) ? Date.parse(firstTime) : Date.now();
+    if (!preEvents.some((e) => e.type === "session_created")) {
+      preEvents.unshift({
+        id: `session_created_${randomUUID()}`,
+        type: "session_created",
+        time: new Date(baseMs - 2).toISOString(),
+        attributes: [{ name: "compliance_profile", value: ctx.config.compliance.profile }],
+        relationships: [{ objectId: sessionId, qualifier: "in_session" }]
+      });
+    }
     const scIdx = preEvents.findIndex((e) => e.type === "session_created");
-    if (scIdx >= 0) preEvents.splice(scIdx + 1, 0, discEvent);
-    else preEvents.unshift(discEvent);
+    if (scIdx >= 0) preEvents.splice(scIdx + 1, 0, ...newEvents);
+    else preEvents.unshift(...newEvents);
+  } else {
+    preEvents.push(...newEvents);
   }
 
   const upgraded = upgradeLegacyOcelToOcel2(
     {
-      objectTypes: rawDoc.objectTypes,
-      eventTypes: rawDoc.eventTypes,
-      objects: rawDoc.objects,
+      objectTypes: [...rawDoc.objectTypes, ...fragment.objectTypes],
+      eventTypes: [...rawDoc.eventTypes, ...fragment.eventTypes],
+      objects: mergedObjects,
       events: preEvents
     },
     {
@@ -550,6 +569,39 @@ function augmentOcelWithArt50Disclosure(
     atomicWriteFile(written.receiptPath, JSON.stringify(receipt, null, 2));
   }
   return headHash;
+}
+
+function augmentOcelWithArt50Disclosure(
+  written: { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string },
+  ctx: RuntimeComplianceContext,
+  channel: "stream-json" | "headless-json" | "headless-text" | "app-server" | "tui"
+): string {
+  const rawDoc = JSON.parse(readFileSync(written.ocelPath, "utf8")) as Ocel2Document;
+  const sessionId = written.sessionId || ctx.sessionId;
+  const redactOpts = {
+    redactPii: ctx.config.compliance.redact_pii,
+    redactEnv: ctx.config.compliance.redact_env,
+    env: process.env
+  };
+  const firstTime = rawDoc.events[0]?.time ?? new Date().toISOString();
+  const baseMs = Number.isFinite(Date.parse(firstTime)) ? Date.parse(firstTime) : Date.now();
+
+  const builder = new Ocel2ComplianceBuilder({ config: ctx.config, redactOptions: redactOpts });
+  if (!rawDoc.events.some((e) => e.type === "art50_disclosure_emitted")) {
+    emitArt50DisclosureEvent(builder, {
+      profile: ctx.config.compliance.profile,
+      sessionId,
+      provider: ctx.providerId,
+      model: ctx.modelId,
+      channel,
+      workerNoticeAcknowledged: ctx.config.deployer.worker_notice_acknowledged,
+      timestamp: new Date(baseMs - 1).toISOString(),
+      redactPii: ctx.config.compliance.redact_pii,
+      redactOptions: redactOpts
+    });
+  }
+
+  return mergeOcelFragmentIntoFile(written, builder.build(), ctx, "after_session_created");
 }
 
 function emitOversightRefusalAudit(
@@ -646,6 +698,15 @@ export async function runRuntime(
     regulated && complianceCtx ? snapshotWorkspaceFiles(workspaceDir) : undefined;
 
   let disclosureEnvelope: ReturnType<typeof buildArt50DisclosureEnvelope> | undefined;
+  let disclosureExtraEnv: NodeJS.ProcessEnv = {};
+  const isHeadlessPrompt = isHeadlessPromptArgs(args);
+  const disclosureChannel: "stream-json" | "headless-json" | "headless-text" | "tui" = isStreamJson
+    ? "stream-json"
+    : isJsonMode
+      ? "headless-json"
+      : isHeadlessPrompt
+        ? "headless-text"
+        : "tui";
   if (regulated && complianceCtx) {
     const redactOpts = {
       redactPii: complianceCtx.config.compliance.redact_pii,
@@ -657,13 +718,21 @@ export async function runRuntime(
       sessionId: complianceCtx.sessionId,
       provider: complianceCtx.providerId,
       model: complianceCtx.modelId,
-      channel: isStreamJson ? "stream-json" : isJsonMode ? "headless-json" : "tui",
+      channel: disclosureChannel,
       workerNoticeAcknowledged: complianceCtx.config.deployer.worker_notice_acknowledged,
       redactPii: complianceCtx.config.compliance.redact_pii,
       redactOptions: redactOpts
     });
+    const formattedNotice = formatArt50DisclosureNotice(disclosureEnvelope);
+    disclosureExtraEnv = {
+      ZCODE_ART50_DISCLOSURE_NOTICE: formattedNotice,
+      ZCODE_ART50_DISCLOSURE_JSON: JSON.stringify(disclosureEnvelope.ai_disclosure)
+    };
     if (isStreamJson) {
       process.stdout.write(JSON.stringify(disclosureEnvelope) + "\n");
+    } else if (!isJsonMode) {
+      // Deliver Art. 50(1) disclosure on TUI and plain-text headless channels
+      process.stderr.write(formattedNotice + "\n");
     }
   }
 
@@ -687,7 +756,7 @@ export async function runRuntime(
   const pipeStdoutForJson = !ocel && regulated && isJsonMode && Boolean(disclosureEnvelope);
   const child = spawnChild(node, [scriptPath, ...args], {
     cwd: workspaceDir,
-    env: runtimeEnvironment(extraEnv),
+    env: runtimeEnvironment({ ...disclosureExtraEnv, ...extraEnv }),
     stdio:
       ocel || pipeStdoutForJson
         ? ["inherit", "pipe", "inherit"]
@@ -745,39 +814,50 @@ export async function runRuntime(
       await jsonDrained;
       const rawOut = Buffer.concat(jsonBuffers).toString("utf8");
       const trimmed = rawOut.trim();
+      const trailer = formatGitProvenanceTrailer({
+        config: complianceCtx.config,
+        cliVersion: readDistributionVersion() ?? "0.0.0",
+        provider: complianceCtx.providerId,
+        model: complianceCtx.modelId,
+        sessionId: complianceCtx.sessionId
+      });
       let emitted = false;
       if (trimmed) {
         try {
           const parsed = JSON.parse(trimmed) as unknown;
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            const trailer = formatGitProvenanceTrailer({
-              config: complianceCtx.config,
-              cliVersion: readDistributionVersion() ?? "0.0.0",
-              provider: complianceCtx.providerId,
-              model: complianceCtx.modelId,
-              sessionId: complianceCtx.sessionId
-            });
-            const enriched = {
-              ...(parsed as Record<string, unknown>),
-              ai_disclosure: disclosureEnvelope.ai_disclosure,
-              ...(trailer ? { provenance_trailer: trailer } : {})
-            };
-            process.stdout.write(JSON.stringify(enriched) + "\n");
-            emitted = true;
-          }
+          const enriched =
+            parsed && typeof parsed === "object" && !Array.isArray(parsed)
+              ? {
+                  ...(parsed as Record<string, unknown>),
+                  ai_disclosure: disclosureEnvelope.ai_disclosure,
+                  ...(trailer ? { provenance_trailer: trailer } : {})
+                }
+              : {
+                  result: parsed,
+                  ai_disclosure: disclosureEnvelope.ai_disclosure,
+                  ...(trailer ? { provenance_trailer: trailer } : {})
+                };
+          process.stdout.write(JSON.stringify(enriched) + "\n");
+          emitted = true;
         } catch {
-          // fall through to raw write
+          // fall through to raw write + stderr Art. 50(1) disclosure
         }
       }
       if (!emitted) {
-        process.stdout.write(rawOut);
+        if (rawOut) process.stdout.write(rawOut);
+        process.stderr.write(formatArt50DisclosureNotice(disclosureEnvelope) + "\n");
       }
     }
     let ocelHeadHash: string | undefined;
+    let writtenOcel:
+      | { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string }
+      | undefined;
+    let ocelTapFailed = false;
     if (ocel && ocelDrained) {
       await ocelDrained;
       try {
         const written = ocel.finish();
+        writtenOcel = written;
         ocelHeadHash = written.head;
         if (regulated && complianceCtx) {
           ocelHeadHash = augmentOcelWithArt50Disclosure(
@@ -788,12 +868,21 @@ export async function runRuntime(
         }
         process.stderr.write(`OCEL: ${written.events} events -> ${written.ocelPath}\n`);
       } catch (error) {
+        ocelTapFailed = true;
         process.stderr.write(`OCEL tap failed: ${error instanceof Error ? error.message : String(error)}\n`);
       }
     }
     if (regulated && complianceCtx && beforeWorkspaceSnapshot) {
       try {
-        applyRuntimeArt50Provenance({
+        const redactOpts = {
+          redactPii: complianceCtx.config.compliance.redact_pii,
+          redactEnv: complianceCtx.config.compliance.redact_env,
+          env: process.env
+        };
+        const provBuilder = writtenOcel
+          ? new Ocel2ComplianceBuilder({ config: complianceCtx.config, redactOptions: redactOpts })
+          : undefined;
+        const provResult = applyRuntimeArt50Provenance({
           workspaceDir,
           beforeSnapshot: beforeWorkspaceSnapshot,
           sessionId: complianceCtx.sessionId,
@@ -801,14 +890,21 @@ export async function runRuntime(
           provider: complianceCtx.providerId,
           model: complianceCtx.modelId,
           ocelHeadHash,
+          ocelUnrecordedReason: ocelHeadHash
+            ? undefined
+            : ocelTapFailed
+              ? "ocel_tap_failed"
+              : !tapSource
+                ? "ocel_channel_untappable"
+                : "ocel_not_recorded",
           cliVersion: readDistributionVersion() ?? "0.0.0",
           redactPii: complianceCtx.config.compliance.redact_pii,
-          redactOptions: {
-            redactPii: complianceCtx.config.compliance.redact_pii,
-            redactEnv: complianceCtx.config.compliance.redact_env,
-            env: process.env
-          }
+          redactOptions: redactOpts,
+          ...(provBuilder ? { ocelSink: provBuilder } : {})
         });
+        if (provResult && writtenOcel && provBuilder) {
+          mergeOcelFragmentIntoFile(writtenOcel, provBuilder.build(), complianceCtx, "append");
+        }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         process.stderr.write(`Art. 50(2) provenance marking failed: ${msg}\n`);

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
 import type { PowlNode } from "../powl-ocel-orchestrator.ts";
 import {
@@ -14,38 +13,9 @@ import { analyzeOcelKingmanMetrics, type KingmanMetricsSnapshot } from "./kingma
 import { validateOcel2, type Ocel2Document, type Ocel2Event, type Ocel2Object } from "./ocel2.ts";
 import { discoverOcDfg, type OcDfgModel } from "./ocel-discover.ts";
 import { readOcel2Sqlite } from "./ocel-sqlite.ts";
-import { loadOcelLogsFromDirectory } from "./qms-conformity.ts";
+import { atomicWriteJson, loadOcelLogsFromDirectory, readAttr } from "./qms-conformity.ts";
 import { containsUnredactedSecretsOrPii, redactComplianceData } from "./redactor.ts";
 import { auditRpmFact, type RpmFactAuditReport } from "./rpm-fact.ts";
-
-function atomicWriteJson(targetPath: string, data: unknown): void {
-  mkdirSync(dirname(targetPath), { recursive: true });
-  const tmp = `${targetPath}.${process.pid}.tmp`;
-  try {
-    writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
-    renameSync(tmp, targetPath);
-  } catch (err) {
-    rmSync(tmp, { force: true });
-    throw err;
-  }
-}
-
-function readAttr(
-  attrs: readonly { name: string; value: unknown }[] | Record<string, unknown> | undefined,
-  key: string
-): string | undefined {
-  if (!attrs) return undefined;
-  if (Array.isArray(attrs)) {
-    for (const a of attrs) {
-      if (a && typeof a === "object" && (a as { name: string }).name === key) {
-        return String((a as { value: unknown }).value ?? "");
-      }
-    }
-    return undefined;
-  }
-  const rec = attrs as Record<string, unknown>;
-  return Object.prototype.hasOwnProperty.call(rec, key) ? String(rec[key] ?? "") : undefined;
-}
 
 export interface PmmAnalysisReport {
   schema: "zcode.pmm-report/1";

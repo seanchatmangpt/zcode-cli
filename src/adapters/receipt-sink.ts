@@ -152,25 +152,64 @@ export class ReceiptSink {
 
   /**
    * Fail-closed cycle-close stub (`zcode.dfcm.receipt/1`).
-   * Flat subject_sha/authority/external_do_count + admit:false — not Chatman-5 /
-   * ALOOP v2. A lease-bound writer is UNSUPPORTED until real provenance exists.
+   * Populates consequence and replay.commands from transition receipts and
+   * fails closed if git HEAD cannot be resolved (R_missing_identity).
+   * Still emits admit:false / non_admit:true — not Chatman-5 / ALOOP v2.
    */
   writeDfcmReceipt(input: CycleCloseInput, standing: Standing, exitCode: ExitCode): string {
     const path = this.opts.dfcmReceiptPath!;
+    const cwd = this.opts.cwd ?? process.cwd();
+    const head = gitHead(cwd);
+    if (!head) {
+      throw new Error(
+        `R_missing_identity: failed to resolve 40-char git HEAD in ${cwd}; refusing to emit DFCM receipt with UNKNOWN subject_sha`
+      );
+    }
     mkdirSync(dirname(path), { recursive: true });
-    const head = gitHead(this.opts.cwd ?? process.cwd());
+    const loopReceiptPath = join(this.opts.outDir, "loop_receipt.json");
+    const consequence = {
+      ledger_path: this.opts.ledgerPath,
+      loop_receipt_path: loopReceiptPath,
+      transition_count: input.receipts.length,
+      outcomes: input.receipts.map((r) => ({
+        work_order_id: r.workOrderId,
+        outcome: r.outcome,
+        standing: r.standing,
+        sha256_receipt: r.sha256Receipt,
+        ...(r.baseSha ? { base_sha: r.baseSha } : {}),
+        ...(r.ocelSha256 ? { ocel_sha256: r.ocelSha256 } : {}),
+        ...(r.artifactDigests ? { artifact_digests: r.artifactDigests } : {})
+      }))
+    };
+    const replayCommands: string[] = [`git -C ${cwd} rev-parse --verify ${head}`];
+    const seenBaseShas = new Set<string>();
+    for (const r of input.receipts) {
+      if (r.baseSha && /^[0-9a-f]{40}$/i.test(r.baseSha) && !seenBaseShas.has(r.baseSha)) {
+        seenBaseShas.add(r.baseSha);
+        replayCommands.push(`git -C ${cwd} rev-parse --verify ${r.baseSha}`);
+      }
+      replayCommands.push(
+        `# transition ${r.workOrderId} outcome=${r.outcome} standing=${r.standing} sha256=${r.sha256Receipt}`
+      );
+    }
     const body = {
       schema: "zcode.dfcm.receipt/1",
       admit: false,
       non_admit: true,
       non_admit_reason:
-        "cycle-close stub: missing Chatman-5 identity/consequence/replay + ALOOP work_order_id/origin_authority/provider/provider_execution_id; not admitted by dfcm validate_receipt",
+        "cycle-close stub: missing ALOOP work_order_id/origin_authority/provider/provider_execution_id; not admitted by dfcm validate_receipt",
       subject_sha: head,
       cycle_id: input.cycleId,
       standing,
       exit_code: exitCode,
       authority: "NONE",
       external_do_count: 0,
+      consequence,
+      replay: {
+        cwd,
+        subject_sha: head,
+        commands: replayCommands
+      },
       sha256: ""
     };
     body.sha256 = createHash("sha256")
@@ -200,6 +239,7 @@ export function aggregateStanding(standings: readonly Standing[]): Standing {
   if (standings.some((s) => s === "BLOCKED")) return "BLOCKED";
   if (standings.some((s) => s === "PARTIAL_ALIVE")) return "PARTIAL_ALIVE";
   if (standings.some((s) => s === "UNVERIFIED")) return "UNVERIFIED";
+  if (standings.some((s) => s === "UNSUPPORTED")) return "UNSUPPORTED";
   if (standings.every((s) => s === "ALIVE")) return "ALIVE";
   return "UNKNOWN";
 }
@@ -213,9 +253,11 @@ export function exitCodeForStanding(s: Standing): ExitCode {
   return 2;
 }
 
-function gitHead(cwd: string): string {
+function gitHead(cwd: string): string | null {
   const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
-  return (r.stdout || "").trim() || "UNKNOWN";
+  if (r.status !== 0) return null;
+  const sha = (r.stdout || "").trim();
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
 }
 
 /** Anti-vacuity: flip a known PASS court to REFUSED when mutation injected. */

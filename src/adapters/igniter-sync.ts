@@ -19,14 +19,16 @@ import {
   DEFAULT_CLEAN_ROOM_CHECK_CMD,
   IGNITER_CHECK_DRIFT_EXIT,
   collectGitDiffDiagnostic,
-  evaluateCleanRoomDrift
+  evaluateCleanRoomDrift,
+  isGitSyncCmd
 } from "./clean-room-drift.ts";
 
 export {
   DEFAULT_CLEAN_ROOM_CHECK_CMD,
   IGNITER_CHECK_DRIFT_EXIT,
   evaluateCleanRoomDrift,
-  collectGitDiffDiagnostic
+  collectGitDiffDiagnostic,
+  isGitSyncCmd
 } from "./clean-room-drift.ts";
 
 export const DEFAULT_ALLOWED_MUTATION_GLOBS = [
@@ -153,6 +155,18 @@ export class IgniterSyncCourtAdapter implements TransitionCourtAdapter {
     }
 
     const syncCmd = this.opts.cleanRoomSyncCmd;
+    // Refuse git* before spawn — clean index ≠ ontology match (ELIMINATE-2).
+    if (isGitSyncCmd(syncCmd)) {
+      const drift = evaluateCleanRoomDrift(syncCmd, { status: 0, stdout: "", stderr: "" });
+      diagnostics.push(...drift.diagnostics);
+      digests["igniter_sync_check"] = "refused:git*";
+      return {
+        exitCode: drift.exitCode,
+        standing: standingFromExit(drift.exitCode),
+        diagnostics,
+        artifactDigests: digests
+      };
+    }
     const sync = run(syncCmd, workspaceDir);
     digests["igniter_sync_check"] = `${sync.status}`;
     const drift = evaluateCleanRoomDrift(syncCmd, sync);

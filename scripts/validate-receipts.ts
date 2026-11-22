@@ -49,9 +49,12 @@ export const CHATMAN5_FIELDS = [
   "standing",
 ] as const;
 
+export const VALID_STANDING_RE =
+  /^(UNKNOWN|PARTIAL_ALIVE|ALIVE|BLOCKED(:.+)?|BUILD_BROKEN|UNSUPPORTED(\(.+\))?|REFUSED(\(.+\))?)$/;
+
 export type IntegrityFinding = {
   path: string;
-  rule: "ALIVE_WITH_NONZERO_EXIT" | "BOGUS_SHA" | "PARSE_ERROR";
+  rule: "ALIVE_WITH_NONZERO_EXIT" | "MALFORMED_REPLAY_COMMAND" | "BOGUS_SHA" | "PARSE_ERROR";
   detail: string;
 };
 
@@ -123,12 +126,27 @@ export function checkChatman5Structural(parsed: unknown): string[] {
     errs.push("replay.commands: required non-empty array");
   } else if (parsed.replay.commands.length < 1) {
     errs.push("replay.commands: minItems 1");
+  } else {
+    parsed.replay.commands.forEach((entry, i) => {
+      if (!isRecord(entry)) {
+        errs.push(`replay.commands[${i}]: must be an object`);
+        return;
+      }
+      if (typeof entry.cmd !== "string" || entry.cmd.trim().length === 0) {
+        errs.push(`replay.commands[${i}].cmd: required non-empty string`);
+      }
+      if (typeof entry.exit !== "number" || !Number.isInteger(entry.exit)) {
+        errs.push(`replay.commands[${i}].exit: required integer`);
+      }
+    });
   }
   if (!isRecord(parsed.standing)) {
     errs.push("standing: must be an object");
   } else {
     if (typeof parsed.standing.value !== "string" || !parsed.standing.value) {
       errs.push("standing.value: required non-empty string");
+    } else if (!VALID_STANDING_RE.test(parsed.standing.value)) {
+      errs.push(`standing.value: invalid standing enum '${parsed.standing.value}'`);
     }
     if (typeof parsed.standing.derived_from !== "string" || !parsed.standing.derived_from) {
       errs.push("standing.derived_from: required non-empty string");
@@ -235,23 +253,39 @@ function standingValue(node: Record<string, unknown>): string | null {
   return null;
 }
 
-function collectNonzeroExits(
-  node: Record<string, unknown>,
-): Array<{ cmd: string; exit: number }> {
+function collectReplayIssues(node: Record<string, unknown>): {
+  nonzero: Array<{ cmd: string; exit: number }>;
+  malformed: Array<{ index: number; detail: string }>;
+} {
   const replay = node.replay;
-  if (!isRecord(replay) || !Array.isArray(replay.commands)) return [];
-  const out: Array<{ cmd: string; exit: number }> = [];
-  for (const raw of replay.commands) {
-    if (!isRecord(raw)) continue;
+  if (!isRecord(replay) || !Array.isArray(replay.commands)) {
+    return { nonzero: [], malformed: [] };
+  }
+  const nonzero: Array<{ cmd: string; exit: number }> = [];
+  const malformed: Array<{ index: number; detail: string }> = [];
+  for (let i = 0; i < replay.commands.length; i++) {
+    const raw = replay.commands[i];
+    if (!isRecord(raw)) {
+      malformed.push({ index: i, detail: "entry is not an object" });
+      continue;
+    }
+    const hasCmd = typeof raw.cmd === "string" && raw.cmd.trim().length > 0;
+    if (!hasCmd) {
+      malformed.push({ index: i, detail: "missing or non-string cmd" });
+    }
     const exit = raw.exit;
-    if (typeof exit === "number" && exit !== 0) {
-      out.push({
-        cmd: typeof raw.cmd === "string" ? raw.cmd : "(unknown cmd)",
+    if (typeof exit !== "number" || !Number.isInteger(exit)) {
+      malformed.push({ index: i, detail: `non-integer exit (${String(exit)})` });
+      continue;
+    }
+    if (exit !== 0) {
+      nonzero.push({
+        cmd: hasCmd ? (raw.cmd as string) : "(unknown cmd)",
         exit,
       });
     }
   }
-  return out;
+  return { nonzero, malformed };
 }
 
 function walkIntegrity(
@@ -269,9 +303,17 @@ function walkIntegrity(
   }
   if (!isRecord(node)) return;
 
+  const { nonzero, malformed } = collectReplayIssues(node);
+  for (const mf of malformed) {
+    findings.push({
+      path: filePath,
+      rule: "MALFORMED_REPLAY_COMMAND",
+      detail: `${pathPrefix || "$"}.replay.commands[${mf.index}]: ${mf.detail}`,
+    });
+  }
+
   const standing = standingValue(node);
   if (standing === "ALIVE") {
-    const nonzero = collectNonzeroExits(node);
     for (const nz of nonzero) {
       findings.push({
         path: filePath,

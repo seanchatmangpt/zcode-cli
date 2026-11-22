@@ -834,6 +834,10 @@ Mine captured logs into Object-Centric Directly-Follows Graphs (OC-DFGs) to dete
 
 **`[PROMOTION-GATE]`:** H4 confirmed in Exp-4 (recurring pattern frequency \(\ge 0.2\)).
 
+### 6.4 Dual-Log Join Sidecar (`zcode.dual-log-join/1`) `[EXPLORE-SCOPE]`
+
+Stream OCEL (`<session>.jsonocel` from `src/ocel-tap.ts`) and gall-work OCEL (`gall-work-<epoch>.jsonocel`) remain **two files**. Seal-time `sealDualLogJoinIfBothExist` writes `gall-work-<epoch>.join.json` beside them **only when both logs exist**, indexing by lease identity (`work_order_iri`, `epoch_id`, optional session namespaces). No merge, no rehash of either log. Missing either file → refuse the sidecar write (fail-closed). Mining helper: `bun scripts/ocel-dual-log-join.ts` (resolve join → absolute `stream_ocel` / `gall_ocel` paths). This is OCEL/gall-work telemetry — not an Appendix E adapter court (distinct from receipt-sink “dual receipt” = `ledger.jsonl` + `loop_receipt.json`).
+
 ---
 
 # SECTION 7 — BOUNDED AUTONOMIC FOLLOW-UP SYNTHESIS (`runAutonomicLoop`)
@@ -1264,13 +1268,13 @@ Wire types (required fields):
 
 When `candidate.requiresIgniterCleanRoom === true`:
 
-1. Run Jobs/C4 drift gate (cwd = workspace), **either**:
+1. Run Jobs/C4 drift gate (cwd = workspace; shared law in `src/adapters/clean-room-drift.ts`), **either**:
    - `mix ggen_igniter.sync --check` — process exit **0** (clean); exit **4** = ontology↔artifact drift → refuse; **or**
    - `ggen sync run --dry-run` — JSON stdout must carry `planned_writes: []` (non-empty → refuse).
 2. Optionally run `candidate.verifyCmd`.
 3. On failure → transition `REFUSED` with detail; do **not** append `ALIVE`.
 
-Do **not** use `git diff --exit-code == 0` as the ontology drift gate (clean index ≠ ontology match). `git diff` may appear only as a non-gating diagnostic. Documented LOUD_SKIP (exit 3) applies when the sync-check suite is not in force or when a noop `["true"]` stub is injected (never fake ALIVE).
+**Refuse `git*` before spawn** as `clean_room_sync_cmd` / sync argv (ELIMINATE-2): a clean index ≠ ontology↔artifact match. Do **not** use `git diff --exit-code == 0` as the refuse gate. `git diff` / `git status` may appear only as a non-gating diagnostic (`gitDiffDiagnostic`). Documented LOUD_SKIP (exit 3) applies when the sync-check suite is not in force or when a noop `["true"]` stub is injected (never fake ALIVE).
 
 Agent prompts for such work orders MUST instruct mutation of upstream `.ttl` / `.eex` / `.tera` only — never compiler-emitted trees that `ggen_igniter.sync` overwrites.
 
@@ -1350,10 +1354,11 @@ export interface TransitionCourtAdapter {
 |---|---|---|
 | `src/adapters/sjira-io.ts` | Frontier ingress + ledger egress | Absolute `GGEN_BIN` (no PATH); ban `--authority` / TTY prompts; optional hands-free ancestor `fd4f99bbd…`; JSONL → `PartialOrder` |
 | `src/adapters/marketplace-court.ts` | Pack qualification | Minimal `pack.toml` keys; refuse `ASK` gates; public-ontology scan; `marketplace.py check` ×2 identical digests; refuse consumer `[packs.*]` (FM-CONFIG-101) |
-| `src/adapters/igniter-sync.ts` | Compiler-first clean-room | Allowlist mutation globs (`.ttl`/`.rq`/`.eex`/`.tera`); `rm -rf` generated trees + Jobs/C4 (`mix ggen_igniter.sync --check` exit 0/4 **or** `ggen sync run --dry-run` with `planned_writes:[]`); forbid `generated/` dirs; forbid domain wall-clock; LOUD_SKIP when `require_sync_check = false` or noop `["true"]`; git-diff optional diagnostic only |
-| `src/adapters/receipt-sink.ts` | Honest standing + dual receipt | Exit taxonomy 0/1/2/3; never promote sandbox → ALIVE; `ledger.jsonl` + `loop_receipt.json` + optional DFCM (5 Chatman fields @ HEAD) |
+| `src/adapters/clean-room-drift.ts` | Shared Jobs/C4 law | Prefer `mix ggen_igniter.sync --check` (exit 0 clean / 4 drift); secondary `ggen sync run --dry-run` with `planned_writes:[]`; **refuse `git*` argv before spawn** (ELIMINATE-2); noop `["true"]` → LOUD_SKIP; `collectGitDiffDiagnostic` non-gating only |
+| `src/adapters/igniter-sync.ts` | Compiler-first clean-room | Allowlist mutation globs (`.ttl`/`.rq`/`.eex`/`.tera`); `rm -rf` generated trees + Jobs/C4 via `clean-room-drift` (`--check` or `planned_writes:[]`); forbid `generated/` dirs; forbid domain wall-clock; LOUD_SKIP when `require_sync_check = false` or noop stub |
+| `src/adapters/receipt-sink.ts` | Honest standing + dual receipt | Exit taxonomy 0/1/2/3; never promote sandbox → ALIVE; `ledger.jsonl` + `loop_receipt.json` + optional DFCM stub; `enforce_twin_parity` runs `twin_parity_self_test_cmd` (real bun script — never `["true"]`); dual-receipt ≠ dual-log join (§6.4) |
 | `src/adapters/castle-publish.ts` | Optional publish redaction court | Require `--public-anonymize` on linkedin/gatekeeper targets; loud skip (exit 3) when argv unset |
-| `src/adapters/ui-layout-court.ts` | Mobile UI spatial court (Zero-HITL) | Taffy AOT pre-flight + Playwright rRLG/WCAG/Gestalt post-checks; Jobs/C4 clean-room (`--check` / `planned_writes:[]`); spatial defects → exit `1` with remediation capped at `max_remediation_attempts = 3`; missing binaries → exit `2`; suite disabled / noop stub → exit `3` |
+| `src/adapters/ui-layout-court.ts` | Mobile UI spatial court (Zero-HITL) | Taffy AOT pre-flight + Playwright rRLG/WCAG/Gestalt post-checks; Jobs/C4 clean-room via `clean-room-drift` (`--check` / `planned_writes:[]`; **refuse `git*`**); spatial defects → exit `1` with remediation capped at `max_remediation_attempts = 3`; missing binaries → exit `2`; suite disabled / noop stub → exit `3` |
 
 `src/io/sjira-adapter.ts` remains the JSONL/POWL primitive library; `SjiraWorkOrderSource` wraps it behind `WorkOrderSourceAdapter`.
 
@@ -1374,8 +1379,10 @@ ledger_env = "SJIRA_LEDGER"
 out_dir_env = "SJIRA_OUT_DIR"
 forbid_tty_prompts = true
 enforce_twin_parity = true
-# Safe stub arms twinParity.hands_free; no heavier twin court in-tree yet
-twin_parity_self_test_cmd = ["true"]
+# Fail-closed brand twin court: castle/brands ≡ zcode-cli/brands (SHA-256).
+# Exit 0 → twinParity.hands_free=self-test-ok; non-zero → FAILED + UNVERIFIED.
+# Never ["true"] — that stub armed hands_free without proving twins.
+twin_parity_self_test_cmd = ["bun", "scripts/twin-parity-self-test.ts"]
 
 [adapters.ggen_marketplace]
 enabled = true
@@ -1387,7 +1394,8 @@ forbid_consumer_packs_table = true
 [adapters.ggen_igniter]
 enabled = true
 allowed_mutation_globs = ["ontology/**/*.ttl", "queries/**/*.rq", "templates/**/*.eex", "templates/**/*.tera"]
-# Drift gate: process exit 0 clean / 4 drift — never git diff --exit-code
+# Jobs/C4 drift gate (clean-room-drift.ts): exit 0 clean / 4 drift.
+# Refuse git* argv before spawn (ELIMINATE-2) — never git diff --exit-code as refuse.
 clean_room_sync_cmd = ["mix", "ggen_igniter.sync", "--check"]
 require_sync_check = true
 forbid_generated_dirs = true
@@ -1407,7 +1415,7 @@ viewports = [320, 375, 393, 414, 600, 768, 840, 1024, 1280]
 # Stub-invoke paths — missing binary ⇒ ExitCode 2 (SUBJECT_MISSING), never fake ALIVE
 taffy_cmd = ["cargo", "run", "-p", "ggen-layout-court", "--"]
 playwright_court_glob = "**/*.spatial-court.spec.ts"
-# After spatial PASS: mix ggen_igniter.sync --check (exit 0/4), not git diff
+# After spatial PASS: Jobs/C4 --check (exit 0/4); refuse git*; git-diff diagnostic only
 require_clean_room = true
 # LOUD_SKIP (exit 3) when false / suite absent
 suite_enabled = true
@@ -1455,7 +1463,7 @@ Normative registration for Step 4 of the Zero-HITL Mobile-First UI Loop. The ada
 | Phase | Duty |
 |---|---|
 | `validateWriteScope` | Refuse mutation of generated UI trees / hand-patched CSS under generated globs (fail-closed like igniter); allow upstream `.ttl` / `*.brand.toml` / `.eex`/`.tera` layout templates |
-| `verifyPostTransition` | (1) Invoke Taffy AOT bbox sweep across configured viewports; (2) invoke Playwright spatial court (rRLG-lite + WCAG + Gestalt); (3) require Jobs/C4 clean-room (`mix ggen_igniter.sync --check` exit 0 / exit 4 → REFUSED, **or** `ggen sync run --dry-run` with `planned_writes:[]`) when `require_clean_room = true`; git-diff is non-gating diagnostic only |
+| `verifyPostTransition` | (1) Invoke Taffy AOT bbox sweep across configured viewports; (2) invoke Playwright spatial court (rRLG-lite + WCAG + Gestalt); (3) require Jobs/C4 clean-room via `clean-room-drift` (`mix ggen_igniter.sync --check` exit 0 / exit 4 → REFUSED, **or** `ggen sync run --dry-run` with `planned_writes:[]`; **refuse `git*` before spawn**) when `require_clean_room = true`; git-diff is non-gating diagnostic only |
 
 Missing Taffy or Playwright binaries MUST return exit `2` (SUBJECT_MISSING) via stub-invoke paths — never silent pass, never fabricated digests.
 

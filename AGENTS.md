@@ -47,10 +47,12 @@ Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0,
 
 - `src/` — launcher & runtime-adjacent modules: `launcher.ts` (runtime spawn + stdio),
   `config-paths.ts`, `runtime-config-bridge.ts` (legacy provider migration into the shared registry),
-  `builtin-provider-families.ts`, `ocel-tap.ts` (OCEL 2.0 event tap), `gall-work.ts`
-  (xaas claim → close lease lifecycle), `powl-ocel-orchestrator.ts` (POWL v2 recursive write-scope
-  validation, Hasse transitive reduction, Murata WF-net reductions), `foundry-cli.ts`
-  (closed-loop `zcode foundry` `R_t -> O*_{t+1}` + Chatman-5 DFCM receipts),
+  `builtin-provider-families.ts`, `ocel-tap.ts` (OCEL 2.0 event tap + dual-log join sidecar),
+  `gall-work.ts` (xaas claim → close lease lifecycle; `stripConstructChildEnv`),
+  `adapters/` (courts, `clean-room-drift.ts`, honest `ReceiptSink` cycle stub),
+  `powl-ocel-orchestrator.ts` (POWL v2 recursive write-scope validation, Hasse transitive
+  reduction, Murata WF-net reductions), `foundry-cli.ts` (closed-loop `zcode foundry`
+  `R_t -> O*_{t+1}` + `ReceiptSink` non-admit DFCM stub — not Chatman-5),
   `compliance-cli.ts`, `compliance/`, `generated/`
 - `src/compliance/` — EU AI Act (8/1/26) compliance suite across Articles 9, 10, 11, 12, 13, 14,
   15, 17, 26, 27, 43, 47, 50, 72, 73 and van der Aalst et al. process-mining engines:
@@ -73,7 +75,9 @@ Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0,
 - `test/` — unit tests at the top level; `test/runtime/` for real-bundle tests; `test/tui/` scenarios;
   `test/fixtures/` (incl. `gall-work.contract.json`), `test/support/`, `test/node/`, `test/py/`
 - `scripts/` — `sync-runtime.ts` (extract + patch pipeline), `gen-ocel.ts` / `gen-zcode-loop.ts` /
-  `zcode-events.ts` (ontology ↔ runtime enums), `ocel-verify.ts`, `validate-receipts.ts`,
+  `zcode-events.ts` (ontology ↔ runtime enums; `OMITTED_WIRE` Unmapped cut), `ocel-verify.ts`,
+  `ocel-dual-log-join.ts` (mining helper over the join sidecar), `twin-parity-self-test.ts`
+  (real castle↔zcode brand twin court — never noop `["true"]`), `validate-receipts.ts`,
   `check-runtime.ts`, plus `smoke-*`, `bench-*`, `release-*`
 - `docs/` — `CONFIGURATION.md` (+ `.zh-CN.md`), `PROVIDER_CONFIG.md` (+ `.zh-CN.md`),
   `HOST_INTEGRATION.md`, `INSTRUCTIONS_FOR_USE.md`, `RELEASING.md`, `DEVELOPMENT.md`,
@@ -87,16 +91,26 @@ Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0,
   `jira/` holds ticket projections; `plan/` HDDL plans; plus `receipts/`, `execution/`, `ard/`
 - `HANDWRITTEN.md` (repo root) — the handwritten-residue ledger
 - Root: `bin/zcode.ts` (bin entry is `bin/zcode.js`, built), `packages/zcode-tui`,
-  `provider.example.json`, `setting.example.json`
+  `provider.example.json`, `setting.example.json`, `zcode-cli.toml`
+  (`[adapters.sjira].twin_parity_self_test_cmd` pins the real twin script; igniter
+  `clean_room_sync_cmd` is `mix ggen_igniter.sync --check`)
 
 ## Rules of the house
 
 - `src/generated/` files are projections. Edit the ontology (`ontology/zcode-loop.ttl`) or the
   generator pack — never the projection. `bun scripts/gen-ocel.ts --check` is the drift gate.
+  Sealed alphabet omits `part.delta` / `result` via `OMITTED_WIRE` (ELIMINATE-3): no phantom
+  `pi:Unmapped` EventTypes; pack-demo ids stay quarantined by `PACK_DEMO_ALPHABET` in `gen-ocel.ts`.
 - Anything hand-written beside generated code gets a row in `HANDWRITTEN.md` with its
-  UNSUPPORTED (generator-capability) reason (currently: `src/ocel-tap.ts`, the `launcher.ts` tap hook,
-  `scripts/gen-ocel.ts`, `scripts/gen-zcode-loop.ts` + `zcode-events.ts`, the `test/ocel-*.test.ts` falsifiers).
-  No row, no hand-written file.
+  UNSUPPORTED (generator-capability) reason. Orientation anchors (not exhaustive — see the
+  ledger): `src/ocel-tap.ts` (+ dual-log join), `scripts/ocel-dual-log-join.ts`,
+  `scripts/twin-parity-self-test.ts`, `src/adapters/*` (`ReceiptSink` stub + `clean-room-drift.ts`),
+  `src/gall-work.ts` (`stripConstructChildEnv`), `scripts/gen-ocel.ts` /
+  `gen-zcode-loop.ts` + `zcode-events.ts`, the `test/ocel-*.test.ts` falsifiers. No row, no
+  hand-written file.
+- Clean-room drift gate is Jobs/C4 `mix ggen_igniter.sync --check` (exit 0 clean / 4 drift) or
+  `ggen sync run --dry-run` with empty `planned_writes` — never `git diff --exit-code` as refuse
+  (`src/adapters/clean-room-drift.ts` refuses `git*` sync cmds).
 - Do not edit `vendor/zcode.cjs` by hand. The bundle is patched by `runtimePatchPlan` in
   `scripts/sync-runtime.ts` (patch plan is authoritative; applied/skipped counts are recorded per
   sync in `vendor/extraction.json` after `sync:locked` / `sync:local`).
@@ -113,7 +127,10 @@ file), the plugin's `hooks/hooks.json` PreToolUse gate (`$CLAUDE_PLUGIN_ROOT/scr
 defers, never grants, fails closed), and the gall-work lease contract (`src/gall-work.ts`; the
 contract is byte-identical to `~/xaas/priv/zcode_plugin/gall-work.contract.json`, sha256 pinned in
 both repos, fixture at `test/fixtures/gall-work.contract.json` — drift resolved 2026-09-26 by
-forwarding the newer contract to the xaas side; both now hash `9f722813…e979`). The OCEL tap
+forwarding the newer contract to the xaas side; both now hash `9f722813…e979`). Construct child
+env strips fabric `WorkerEnv` deny_names plus ambient widener `XAAS_SWEEP`
+(`stripConstructChildEnv` — deny strip after `process.env` spread, not a full allowlist rebuild;
+yolo mute-grant residual stays OPEN). The OCEL tap
 (`src/ocel-tap.ts`,
 enabled with `ZCODE_OCEL=1`, output dir `ZCODE_OCEL_DIR`, default `~/.zcode/ocel`) feeds process
 mining on the xaas side. Every recorded event is credential-redacted at ingest (secret-shaped keys
@@ -122,5 +139,10 @@ and embedded/Bearer token values become `REDACTED` before the hash chain is comp
 (`containsUnredactedSecretsOrPii` → stub + `redaction_refused` / standing blocked; lease
 identity fields are redact-or-refuse before bind/receipt). Under `XAAS_WORKER=1` the receipt
 binds the scrubbed lease identity (`subject_sha`, `work_order_iri`, `epoch_id`, `base_sha`).
-The capability snapshot/restore tool (redacted, fail-closed) is documented in
-`docs/CAPABILITY_SNAPSHOT.md`. The xaas-side ticket tree lives at `~/xaas/docs/sjira/`.
+When both stream and gall OCEL files exist for an epoch, seal writes a dual-log join sidecar
+(`zcode.dual-log-join/1`; paths only — no merge/rehash; mining helper
+`scripts/ocel-dual-log-join.ts`). Cycle-close `ReceiptSink.writeDfcmReceipt` emits an honest
+non-admit stub (`zcode.dfcm.receipt/1`, `admit:false` / `non_admit:true`) — not Chatman-5 /
+ALOOP v2. Twin parity, when enforced, runs the real `bun scripts/twin-parity-self-test.ts`
+pin (never noop `["true"]`). The capability snapshot/restore tool (redacted, fail-closed) is
+documented in `docs/CAPABILITY_SNAPSHOT.md`. The xaas-side ticket tree lives at `~/xaas/docs/sjira/`.

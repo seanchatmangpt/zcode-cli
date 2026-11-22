@@ -14,6 +14,10 @@ import {
   type WorkOrderSourceAdapter
 } from "../src/adapters/index.ts";
 import { frontierActivitySignature } from "../src/adapters/foundry-loop.ts";
+import {
+  checkChatman5Structural,
+  checkReceiptIntegrity,
+} from "../scripts/validate-receipts.ts";
 
 function initTempGitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "zcode-hitl-free-"));
@@ -622,4 +626,77 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   }, 20_000);
+
+  test("ERRC RAISE (Fix-20-ValidateReceipts): rejects malformed replay.commands and non-enum standing values", () => {
+    const baseReceipt = {
+      identity: {
+        subject: "WO-20",
+        repo: "zcode-cli",
+        subject_sha: "a".repeat(40),
+        base_sha: "b".repeat(40),
+      },
+      authority: {
+        ceiling: "CONSTRUCT",
+        grant: "lease-1",
+        actor: "foundry",
+      },
+      consequence: {
+        commits: [],
+        files_changed: ["scripts/validate-receipts.ts"],
+        remote_effects: [],
+      },
+      replay: {
+        commands: [{ cmd: "bun test", exit: 0 }],
+      },
+      standing: {
+        value: "ALIVE",
+        derived_from: "bun test @ aaaa",
+      },
+    };
+
+    // Valid baseline passes both structural and integrity checks
+    expect(checkChatman5Structural(baseReceipt)).toEqual([]);
+    expect(
+      checkReceiptIntegrity("synthetic.json", {
+        raw: JSON.stringify(baseReceipt),
+        shaExists: () => true,
+      }),
+    ).toEqual([]);
+
+    // 1. Non-enum standing value rejected by checkChatman5Structural
+    const badStanding = {
+      ...baseReceipt,
+      standing: { value: "MOSTLY_FINE", derived_from: "bun test" },
+    };
+    const standingErrs = checkChatman5Structural(badStanding);
+    expect(standingErrs.some((e) => e.includes("standing.value") && e.includes("MOSTLY_FINE"))).toBe(true);
+
+    // 2. Non-record entry in replay.commands rejected by both structural and integrity checks
+    const nonRecordCmd = {
+      ...baseReceipt,
+      replay: { commands: ["bun test"] },
+    };
+    expect(
+      checkChatman5Structural(nonRecordCmd).some((e) => e.includes("replay.commands[0]: must be an object")),
+    ).toBe(true);
+    const nonRecordFindings = checkReceiptIntegrity("synthetic.json", {
+      raw: JSON.stringify(nonRecordCmd),
+      shaExists: () => true,
+    });
+    expect(nonRecordFindings.some((f) => f.rule === "MALFORMED_REPLAY_COMMAND")).toBe(true);
+
+    // 3. Non-integer exit (e.g. string "0" or float 0.5) and empty cmd rejected by both checks
+    const badExitCmd = {
+      ...baseReceipt,
+      replay: { commands: [{ cmd: "", exit: "0" }] },
+    };
+    const badExitErrs = checkChatman5Structural(badExitCmd);
+    expect(badExitErrs.some((e) => e.includes("replay.commands[0].cmd"))).toBe(true);
+    expect(badExitErrs.some((e) => e.includes("replay.commands[0].exit"))).toBe(true);
+    const badExitFindings = checkReceiptIntegrity("synthetic.json", {
+      raw: JSON.stringify(badExitCmd),
+      shaExists: () => true,
+    });
+    expect(badExitFindings.filter((f) => f.rule === "MALFORMED_REPLAY_COMMAND").length).toBe(2);
+  });
 });

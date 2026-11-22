@@ -150,8 +150,8 @@ export class KingmanScheduler {
   private lastCompletionTimestampMs: number | null = null;
 
   constructor(config: KingmanSchedulerConfig = {}) {
-    this.minWip = config.minWip ?? 1;
-    this.maxWip = config.maxWip ?? 64;
+    this.minWip = Math.max(1, config.minWip ?? 1);
+    this.maxWip = Math.max(this.minWip, config.maxWip ?? 64);
     this.wip = this.minWip;
     this.peakEquilibriumWip = this.minWip;
     this.ttftSpikeFactor = config.ttftSpikeFactor ?? 2.0;
@@ -260,7 +260,7 @@ export class KingmanScheduler {
     // Cap AI growth using Kingman recommendedMaxRho when combined arrival/service variability is high
     const kingmanCeiling =
       estimate.variabilityFactor > 1.25
-        ? Math.max(this.minWip + 1, Math.round(estimate.recommendedMaxRho * this.maxWip))
+        ? Math.min(this.maxWip, Math.max(this.minWip + 1, Math.round(estimate.recommendedMaxRho * this.maxWip)))
         : this.maxWip;
 
     const nextWip =

@@ -19,6 +19,7 @@ import {
   runFoundryLoop
 } from "../src/adapters/index.ts";
 import { structuralPrivateNamespaceScan } from "../src/adapters/marketplace-court.ts";
+import { aggregateStanding, exitCodeForStanding } from "../src/adapters/receipt-sink.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures/sjira/candidates.jsonl");
 
@@ -273,5 +274,73 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     const spoofRes = structuralPrivateNamespaceScan(spoofPack, rqPath);
     expect(spoofRes.status).toBe(1);
     expect(spoofRes.stderr).toContain("http://evil.example/http://www.w3.org/");
+  });
+
+  test("ERRC RAISE: ReceiptSink populates consequence/replay, fails closed on missing git HEAD, and preserves UNSUPPORTED (exit 3)", () => {
+    // 1. UNSUPPORTED standing aggregates to UNSUPPORTED (exit 3), not UNKNOWN (exit 2)
+    expect(aggregateStanding(["UNSUPPORTED"])).toBe("UNSUPPORTED");
+    expect(exitCodeForStanding("UNSUPPORTED")).toBe(3);
+    expect(aggregateStanding(["ALIVE", "UNSUPPORTED"])).toBe("UNSUPPORTED");
+
+    // 2. Valid git workspace populates consequence + replay.commands from transition receipts
+    const gitRoot = initWorkspace();
+    const dfcmPath = join(gitRoot, "out", "dfcm.json");
+    const sink = new ReceiptSink({
+      ledgerPath: join(gitRoot, "ledger.jsonl"),
+      outDir: join(gitRoot, "out"),
+      dfcmReceiptPath: dfcmPath,
+      cwd: gitRoot
+    });
+    const close = sink.closeCycle({
+      cycleId: "cycle-unsupported",
+      startedAt: new Date().toISOString(),
+      receipts: [
+        {
+          cycleId: "cycle-unsupported",
+          workOrderId: "WO-UNSUP-1",
+          outcome: "UNSUPPORTED",
+          standing: "UNSUPPORTED",
+          sha256Receipt: "deadbeef"
+        }
+      ]
+    });
+    expect(close.aggregateStanding).toBe("UNSUPPORTED");
+    expect(close.exitCode).toBe(3);
+
+    const dfcm = JSON.parse(readFileSync(dfcmPath, "utf8"));
+    expect(dfcm.subject_sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(dfcm.standing).toBe("UNSUPPORTED");
+    expect(dfcm.exit_code).toBe(3);
+    expect(dfcm.consequence.transition_count).toBe(1);
+    expect(dfcm.consequence.outcomes[0].work_order_id).toBe("WO-UNSUP-1");
+    expect(dfcm.consequence.outcomes[0].sha256_receipt).toBe("deadbeef");
+    expect(Array.isArray(dfcm.replay.commands)).toBe(true);
+    expect(dfcm.replay.commands.length).toBeGreaterThanOrEqual(2);
+    expect(dfcm.replay.commands[0]).toContain(dfcm.subject_sha);
+    expect(dfcm.replay.commands.some((c: string) => c.includes("WO-UNSUP-1"))).toBe(true);
+
+    // 3. Non-git directory fails closed with R_missing_identity (never emits UNKNOWN subject_sha)
+    const nonGitRoot = mkdtempSync(join(tmpdir(), "chicago-nongit-sink-"));
+    const nonGitSink = new ReceiptSink({
+      ledgerPath: join(nonGitRoot, "ledger.jsonl"),
+      outDir: join(nonGitRoot, "out"),
+      dfcmReceiptPath: join(nonGitRoot, "out", "dfcm.json"),
+      cwd: nonGitRoot
+    });
+    expect(() =>
+      nonGitSink.closeCycle({
+        cycleId: "cycle-nongit",
+        startedAt: new Date().toISOString(),
+        receipts: [
+          {
+            cycleId: "cycle-nongit",
+            workOrderId: "WO-NONGIT",
+            outcome: "ALIVE",
+            standing: "ALIVE",
+            sha256Receipt: "cafe"
+          }
+        ]
+      })
+    ).toThrow(/R_missing_identity/);
   });
 });

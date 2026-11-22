@@ -1050,6 +1050,15 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
       expect(pkt10d.first_failing_event_at).toBe("2026-08-10T08:30:00.000Z");
       expect(pkt10d.reporting_deadline_at).toBe("2026-08-20T08:30:00.000Z");
       expect(pkt10d.remediation_powl.id).toBe("powl_incident_10d_drift_declare_remediation");
+
+      // 5. REDUCE: pmm-incident.ts reuses shared atomicWriteJson, readAttr, and loadOcelLogsFromDirectory
+      // from qms-conformity.ts instead of duplicating them locally.
+      const pmmSource = readFileSync(join(process.cwd(), "src/compliance/pmm-incident.ts"), "utf8");
+      expect(pmmSource).not.toMatch(/\bfunction\s+atomicWriteJson\b/);
+      expect(pmmSource).not.toMatch(/\bfunction\s+readAttr\b/);
+      expect(pmmSource).toMatch(/import\s*\{[^}]*\batomicWriteJson\b[^}]*\breadAttr\b[^}]*\}\s*from\s*"\.\/qms-conformity\.ts"/);
+      expect(existsSync(join(dir, "pkt-2d.json"))).toBe(true);
+      expect(existsSync(join(dir, "pkt-10d.json"))).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

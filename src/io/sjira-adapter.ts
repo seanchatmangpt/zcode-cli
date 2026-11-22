@@ -23,7 +23,8 @@ import { spawnSync } from "node:child_process";
 import type { PowlNode } from "../powl-ocel-orchestrator.ts";
 import {
   DEFAULT_CLEAN_ROOM_CHECK_CMD,
-  evaluateCleanRoomDrift
+  evaluateCleanRoomDrift,
+  isGitSyncCmd
 } from "../adapters/clean-room-drift.ts";
 
 // ---------------------------------------------------------------------------
@@ -459,10 +460,19 @@ export function verifyIgniterCleanRoom(
 
   // Jobs/C4: mix ggen_igniter.sync --check (exit 0/4) or ggen dry-run + empty
   // planned_writes — never git-diff. Noop ["true"] → skipped (LOUD_SKIP).
+  // Refuse git* before spawn (ELIMINATE-2 clean-room fallacy).
   const syncCmd =
     options.syncCmd && options.syncCmd.length > 0
       ? options.syncCmd
       : [...DEFAULT_CLEAN_ROOM_CHECK_CMD];
+  if (isGitSyncCmd(syncCmd)) {
+    const drift = evaluateCleanRoomDrift(syncCmd, { status: 0, stdout: "", stderr: "" });
+    return {
+      ok: false,
+      status: "failed",
+      detail: drift.diagnostics.join("; ").slice(0, 500)
+    };
+  }
   const sync = run(syncCmd, cwd);
   const drift = evaluateCleanRoomDrift(syncCmd, sync);
   if (drift.kind === "loud_skip") {

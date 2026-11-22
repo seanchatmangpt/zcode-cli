@@ -568,4 +568,90 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     // WIP must be capped well below maxWip (64) by kingmanCeiling
     expect(snap.wip).toBeLessThan(40);
   });
+
+  test("ERRC 08-Kingman (ELIMINATE): AimdWipController respects maxWip and kingmanCeiling even when transport telemetry is absent", () => {
+    const aimdCapped = new AimdWipController({ minWip: 1, maxWip: 3, useWallClockFallback: false });
+    for (let i = 0; i < 10; i++) {
+      aimdCapped.onSuccess(100);
+    }
+    expect(aimdCapped.wip).toBe(3);
+    expect(aimdCapped.peakEquilibriumWip).toBe(3);
+    expect(aimdCapped.getKingmanSnapshot().wip).toBe(3);
+
+    // High service-time variability without transport telemetry must still respect kingmanCeiling
+    const aimdHeavy = new AimdWipController({ minWip: 1, maxWip: 64, useWallClockFallback: false });
+    for (let i = 0; i < 40; i++) {
+      const svc = i % 10 === 0 ? 10_000 : 10;
+      aimdHeavy.onSuccess(svc);
+    }
+    const snap = aimdHeavy.getKingmanSnapshot();
+    expect(snap.estimate.variabilityFactor).toBeGreaterThan(1.25);
+    expect(snap.wip).toBeLessThan(40);
+    expect(aimdHeavy.peakEquilibriumWip).toBeLessThan(40);
+  });
+
+  test("ERRC 08-Kingman (RAISE): executePowlWithTokenReplay feeds true start-to-start interArrivalMs into KingmanScheduler", async () => {
+    // 4 concurrent activities dispatched in a single burst (start delta ~0ms) followed by a delayed activity
+    const root: PowlNode = {
+      kind: "partial_order",
+      id: "po_interarrival",
+      children: [
+        { kind: "activity", id: "a1", label: "A1", objectType: "Artifact" },
+        { kind: "activity", id: "a2", label: "A2", objectType: "Artifact" },
+        { kind: "activity", id: "a3", label: "A3", objectType: "Artifact" },
+        { kind: "activity", id: "a4", label: "A4", objectType: "Artifact" }
+      ],
+      order: [
+        ["a1", "a2"],
+        ["a2", "a3"],
+        ["a3", "a4"]
+      ]
+    };
+    const delays: Record<string, number> = { a1: 5, a2: 5, a3: 40, a4: 5 };
+    const result = await executePowlWithTokenReplay(root, async (t) => {
+      const ms = delays[t.activityId ?? ""] ?? 5;
+      await new Promise((r) => setTimeout(r, ms));
+      return { ok: true, exitCode: 0 };
+    });
+
+    expect(result.replay.fitness).toBe(1);
+    expect(Number.isFinite(result.kingman.ca2)).toBe(true);
+    expect(result.kingman.ca2).toBeGreaterThanOrEqual(0);
+    expect(result.kingman.rho).toBeGreaterThan(0);
+    expect(result.kingman.rho).toBeLessThanOrEqual(0.99);
+  });
+
+  test("ERRC 08-Kingman (REDUCE): workspaceDir serializes AimdWipController to WIP=1 with no phantom WIP drift", async () => {
+    const wsDir = makeTempDir("zcode-kingman-ws-wip1-");
+    initGitWorkspace(wsDir);
+
+    const root: PowlNode = {
+      kind: "partial_order",
+      id: "po_ws_serial",
+      children: [
+        { kind: "activity", id: "s1", label: "S1", objectType: "Artifact" },
+        { kind: "activity", id: "s2", label: "S2", objectType: "Artifact" },
+        { kind: "activity", id: "s3", label: "S3", objectType: "Artifact" },
+        { kind: "activity", id: "s4", label: "S4", objectType: "Artifact" }
+      ],
+      order: []
+    };
+
+    const result = await executePowlWithTokenReplay(
+      root,
+      async () => ({ ok: true, exitCode: 0 }),
+      { workspaceDir: wsDir }
+    );
+
+    expect(result.replay.fitness).toBe(1);
+    expect(result.equilibriumWip).toBe(1);
+    expect(result.kingman.wip).toBe(1);
+    expect(result.kingman.peakEquilibriumWip).toBe(1);
+    for (const ev of result.ocel.events) {
+      if (ev.type === "transition_fired" || ev.type === "transition_completed") {
+        const wipAttr = ev.attributes.find((a) => a.name === "wip");
+        expect(wipAttr?.value).toBe("1");
+      }
+    }
+  });
 });

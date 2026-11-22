@@ -222,11 +222,26 @@ describe("F03 EU AI Act & AIRO ontology integrity (zero-mock Chicago + SHACL)", 
     expect([...airoText.matchAll(/rdf:type\s+airo:RiskControl/g)].length).toBe(2);
     expect([...airoText.matchAll(/rdf:type\s+airo:Risk\s*;/g)].length).toBeGreaterThanOrEqual(3);
 
-    // Verify Art. 9, 12, 14, 15 mappings in airo_risk_description.ttl
-    expect([...airoText.matchAll(/rdf:type\s+zc:EuAiActArticleMapping/g)].length).toBe(4);
-    for (const art of ["9", "12", "14", "15"]) {
-      expect(airoText).toContain(`zc:articleNumber "${art}"`);
+    // ELIMINATE: zero hardcoded test-count standings in airo_risk_description.ttl
+    expect(airoText).not.toMatch(/\d+\s+pass\s*\/\s*\d+\s+fail/i);
+    expect(airoText).not.toContain("1072 pass");
+    expect(airoText).not.toContain("268359 expect");
+
+    // REDUCE: single unified euai:addressesArticle vocabulary (zero duplicate zc: wrapper nodes)
+    expect(airoText).not.toContain("zc:EuAiActArticleMapping");
+    expect(airoText).not.toContain("zc:hasEuAiActMapping");
+    expect(airoText).not.toContain("zc:articleNumber");
+    expect(airoText).not.toContain("zc:mapsTarget");
+    expect(airoText).not.toContain("zc:mapsRiskControl");
+    for (const artIri of [
+      "euai:Art9_RiskManagement",
+      "euai:Art12_RecordKeeping",
+      "euai:Art14_HumanOversight",
+      "euai:Art15_AccuracyRobustnessCybersecurity"
+    ]) {
+      expect(airoText).toContain(artIri);
     }
+    expect(airoText).toContain("euai:addressesArticle");
     expect(airoText).toContain("<file:ontology/eu-ai-act.ttl>");
 
     // Preserve closed generated OCEL vocabulary counts

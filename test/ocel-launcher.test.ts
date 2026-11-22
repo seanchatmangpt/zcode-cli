@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { OMITTED_WIRE } from "../scripts/zcode-events.ts";
 import { normalizeClaudeAgentArgs } from "../src/claude-parity.ts";
 import {
   APP_SERVER_SOURCE,
@@ -82,16 +83,15 @@ describe("runtime turn contract fixture", () => {
   const contract = JSON.parse(readFileSync(path, "utf8"));
   test("every record keeps its event type and the tap records exactly the mapped events", () => {
     // ELIMINATE-3: result / part.delta stay on the wire fixture but are omitted from the sealed alphabet.
-    const omitted = new Set(["result", "part.delta"]);
     const declared = new Map(declaredRuntimeEvents().filter((e) => e.source === contract.source).map((e) => [e.name, e]));
     const types = contract.records.map((r: any) => r.type);
     expect(types).toEqual(contract.expectedTypes);
     for (const t of types) {
-      if (omitted.has(t)) continue;
+      if (OMITTED_WIRE.has(t)) continue;
       expect(declared.has(t)).toBe(true);
     }
     const mapped = contract.records.filter((r: any) => {
-      if (omitted.has(r.type)) return false;
+      if (OMITTED_WIRE.has(r.type)) return false;
       const d = declared.get(r.type);
       return d && !d.unmappedReason;
     }).length;

@@ -2,11 +2,12 @@
 // Provenance: CastleOcel vocabulary read from beam4pm lib/beam4pm_castle_ocel.ex
 // (closed vocabulary per its moduledoc: "It shares the OCEL wire shapes but NO
 // event names with BeamPM.GallOcel"). zcode side: src/generated/ocel.ts
-// EVENT_TYPES (31) / OBJECT_TYPES (15). The drift test
+// EVENT_TYPES (31) / OBJECT_TYPES (16). The drift test
 // test/ocel-vocab-manifest.test.ts refuses any classification that no longer
 // matches the live registries, so a new type cannot land unclassified.
 // Pack demo place_order/ship_order/order/item quarantined (process-intelligence-pack
 // examples/order-hook.ttl); falsifier_run kept — gall-work emits falsifier.run.
+// ELIMINATE-3: part_delta / result omitted (never Tap-emitted; OMITTED_WIRE).
 
 /** zcode-cli event type -> classification vs CastleOcel event vocabulary. */
 export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "deliberate-local"> = {
@@ -58,6 +59,7 @@ export const OBJECT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "deli
   subject: "disjoint",
   tool_call: "disjoint",
   turn: "disjoint",
+  user_input: "disjoint",
   work_order: "disjoint",
   worker: "disjoint",
 };
