@@ -1161,4 +1161,208 @@ describe("F14 Responsible Process Mining (FACT) & k-Anonymity (Chicago)", () => 
     expect(caseCJson).not.toContain("m_u1");
     expect(caseCJson).not.toContain("m_u2");
   });
+
+  test("ERRC ELIMINATE+RAISE: strictHashChain, derived RPM-TRANS-01 with exact OCEL evidenceIds, and dangling O2O validation", () => {
+    const base = Date.parse("2026-08-03T10:00:00.000Z");
+    const cleanDoc = buildChainedSession({
+      id: "errc_o2o",
+      baseMs: base,
+      providerId: "prov-a",
+      modelId: "m-1",
+      overseerId: "a".repeat(64)
+    });
+
+    // 1. strictHashChain: true downgrades ABSENT chain to UNVERIFIED
+    const unchainedDoc: RpmDocLike = {
+      objects: [{ id: "s_unchained", type: "session", attributes: [], relationships: [] }],
+      events: [
+        {
+          id: "ev_unchained_1",
+          type: "session_created",
+          time: new Date(base).toISOString(),
+          attributes: [],
+          relationships: [{ objectId: "s_unchained", qualifier: "in_session" }]
+        }
+      ]
+    };
+    const nonStrict = auditRpmFact(unchainedDoc);
+    expect(nonStrict.standing).toBe("PARTIAL_ALIVE");
+    const strict = auditRpmFact(unchainedDoc, { strictHashChain: true });
+    expect(strict.standing).toBe("UNVERIFIED");
+    expect(strict.passed).toBe(false);
+    const strictAcc = strict.explanations.find((e) => e.ruleId === "RPM-ACC-01")!;
+    expect(strictAcc.evidenceIds).toContain("ev_unchained_1");
+    expect(strict.transparency.passed).toBe(true);
+
+    // 2. Tampered pi_hash cites exact event ID (not chainFailureReason prose)
+    const tampered = structuredClone(cleanDoc);
+    tampered.events[1]!.attributes.find((a) => a.name === "pi_hash")!.value = "f".repeat(64);
+    const tamperedRep = auditRpmFact(tampered);
+    const tamperedAcc = tamperedRep.explanations.find((e) => e.ruleId === "RPM-ACC-01")!;
+    expect(tamperedAcc.evidenceIds).toEqual([tampered.events[1]!.id]);
+    expect(tamperedAcc.evidenceIds[0]).not.toContain("mismatch");
+
+    // 3. Dangling O2O link blocks ALIVE and cites offending object ID
+    const danglingO2oDoc = structuredClone(cleanDoc);
+    danglingO2oDoc.objects[0]!.relationships.push({
+      objectId: "nonexistent_parent_obj",
+      qualifier: "belongs_to"
+    });
+    const o2oRep = auditRpmFact(danglingO2oDoc);
+    expect(o2oRep.accuracy.danglingO2oCount).toBe(1);
+    expect(o2oRep.standing).toBe("PARTIAL_ALIVE");
+    const o2oAcc = o2oRep.explanations.find((e) => e.ruleId === "RPM-ACC-01")!;
+    expect(o2oAcc.evidenceIds).toContain(danglingO2oDoc.objects[0]!.id);
+    expect(o2oRep.transparency.passed).toBe(true);
+  });
+
+  test("ERRC REDUCE+RAISE: under-powered fairness strata emit WARN instead of FAIL, and service_ms/ttft_ms parity checks detect latency disparities", () => {
+    const base = Date.parse("2026-08-03T11:00:00.000Z");
+
+    // 1. 1-session vs 1-session (0/1 vs 1/1) -> under-powered WARN, NOT FAIL
+    const tinyLogs: RpmDocLike[] = [
+      buildChainedSession({
+        id: "tiny_good",
+        baseMs: base,
+        providerId: "prov-ok",
+        modelId: "m-1",
+        overseerId: "a".repeat(64),
+        failed: false
+      }),
+      buildChainedSession({
+        id: "tiny_bad",
+        baseMs: base + 1000,
+        providerId: "prov-tiny",
+        modelId: "m-2",
+        overseerId: "a".repeat(64),
+        failed: true
+      })
+    ];
+    const tinyRep = auditRpmFact(tinyLogs, { fairnessThreshold: 0.8, minGroupSessions: 2 });
+    expect(tinyRep.fairness.passed).toBe(true);
+    expect(tinyRep.fairness.dimensions.provider_id.insufficientSample).toBe(true);
+    expect(tinyRep.fairness.dimensions.provider_id.pValue).toBe(1);
+    const fairExp = tinyRep.explanations.find((e) => e.ruleId === "RPM-FAIR-01")!;
+    expect(fairExp.verdict).toBe("WARN");
+    expect(fairExp.evidenceIds.length).toBeGreaterThan(0);
+
+    // 2. Latency (service_ms / ttft_ms) disparity across powered groups with 100% conformingRate
+    const latencyLogs: RpmDocLike[] = [];
+    for (let i = 0; i < 6; i++) {
+      const isSlow = i >= 3;
+      const d = buildChainedSession({
+        id: `lat_${i}`,
+        baseMs: base + i * 2000,
+        providerId: isSlow ? "prov-slow" : "prov-fast",
+        modelId: "m-same",
+        overseerId: "a".repeat(64),
+        failed: false
+      });
+      (d.events[1]!.attributes as Array<{ name: string; value: string }>).push(
+        { name: "service_ms", value: isSlow ? "4000" : "400" },
+        { name: "ttft_ms", value: isSlow ? "1000" : "100" }
+      );
+      latencyLogs.push(d);
+    }
+    const latRep = auditRpmFact(latencyLogs, {
+      minGroupSessions: 3,
+      latencyParityThreshold: 0.5,
+      ttftParityThreshold: 0.5
+    });
+    expect(latRep.fairness.passed).toBe(false);
+    expect(latRep.fairness.dimensions.provider_id.serviceMsParityRatio).toBeCloseTo(0.1, 4);
+    expect(latRep.fairness.dimensions.provider_id.ttftMsParityRatio).toBeCloseTo(0.1, 4);
+    expect(latRep.fairness.disparities.some((d) => d.metric === "service_ms")).toBe(true);
+    expect(latRep.fairness.disparities.some((d) => d.metric === "ttft_ms")).toBe(true);
+  });
+
+  test("ERRC CREATE: anonymizeOcel2KAnon enforces l-diversity and uniform timestamp bucketing in quasiKey and retained traces", () => {
+    const base = Date.parse("2026-08-03T12:15:30.123Z");
+
+    // 1. Homogeneous class (3 conforming traces) fails lDiversity=2 -> suppressed
+    const homoObjs: OcelDoc["objects"] = [];
+    const homoEvs: OcelDoc["events"] = [];
+    for (let i = 0; i < 3; i++) {
+      const d = buildChainedSession({
+        id: `homo_${i}`,
+        baseMs: base + i * 5000,
+        providerId: "p1",
+        modelId: "m1",
+        overseerId: "a".repeat(64),
+        failed: false
+      });
+      homoObjs.push(...d.objects);
+      homoEvs.push(...d.events);
+    }
+    const homoRes = anonymizeOcel2KAnon(
+      { objectTypes: [], eventTypes: [], objects: homoObjs, events: homoEvs },
+      2,
+      "salt-ldiv-homo",
+      { lDiversity: 2 }
+    );
+    expect(homoRes.retainedTraces).toBe(0);
+    expect(homoRes.suppressedTraces).toBe(3);
+    expect(homoRes.minLDiversity).toBe(0);
+
+    // 2. Diverse class (2 conforming + 1 status=error on same variant) satisfies k=2, lDiversity=2
+    const divObjs: OcelDoc["objects"] = [];
+    const divEvs: OcelDoc["events"] = [];
+    for (let i = 0; i < 3; i++) {
+      const d = buildChainedSession({
+        id: `div_${i}`,
+        baseMs: base + i * 5000,
+        providerId: "p1",
+        modelId: "m1",
+        overseerId: "a".repeat(64),
+        failed: false
+      });
+      if (i === 2) {
+        (d.events[1]!.attributes as Array<{ name: string; value: string }>).push({
+          name: "status",
+          value: "error"
+        });
+      }
+      divObjs.push(...d.objects);
+      divEvs.push(...d.events);
+    }
+    const divRes = anonymizeOcel2KAnon(
+      { objectTypes: [], eventTypes: [], objects: divObjs, events: divEvs },
+      2,
+      "salt-ldiv-div",
+      { lDiversity: 2, timestampBucket: "hour" }
+    );
+    expect(divRes.retainedTraces).toBe(3);
+    expect(divRes.minLDiversity).toBeGreaterThanOrEqual(2);
+    // Uniform timestamp bucketing applied to ALL retained traces (even non-generalized!)
+    expect(divRes.generalizedTraces).toBe(0);
+    for (const ev of divRes.doc.events) {
+      expect(ev.time).toBe("2026-08-03T12:00:00.000Z");
+    }
+    expect(verifyChain(divRes.doc as OcelDoc, "sha256")).toBeNull();
+
+    // 3. timestampBucket in quasiKey: 2 traces in hour 12 + 1 trace in hour 14 with k=2 -> hour 14 trace suppressed
+    const splitHourObjs: OcelDoc["objects"] = [];
+    const splitHourEvs: OcelDoc["events"] = [];
+    const hourOffsets = [0, 10_000, 2 * 3600_000];
+    for (let i = 0; i < 3; i++) {
+      const d = buildChainedSession({
+        id: `hr_${i}`,
+        baseMs: base + hourOffsets[i]!,
+        providerId: "p1",
+        modelId: "m1",
+        overseerId: "a".repeat(64)
+      });
+      splitHourObjs.push(...d.objects);
+      splitHourEvs.push(...d.events);
+    }
+    const hrRes = anonymizeOcel2KAnon(
+      { objectTypes: [], eventTypes: [], objects: splitHourObjs, events: splitHourEvs },
+      2,
+      "salt-hour-bucket",
+      { timestampBucket: "hour" }
+    );
+    expect(hrRes.retainedTraces).toBe(2);
+    expect(hrRes.suppressedTraces).toBe(1);
+    expect(hrRes.doc.events.every((e) => e.time === "2026-08-03T12:00:00.000Z")).toBe(true);
+  });
 });

@@ -514,4 +514,58 @@ describe("F13 Kingman Variance-Law Scheduler (Chicago)", () => {
     expect(createHash("sha256").update(sameDiskOcelRaw).digest("hex")).toBe(sameDiskReplay.ocelSha256);
     expect(lastSame.ocelSha256).toBe(sameDiskReplay.ocelSha256);
   });
+
+  test("ERRC 08-Kingman: multi-server G/G/c Sakasegawa/Allen-Cunneen wait estimator and scheduler wip-server binding", () => {
+    const rho = 0.75;
+    const ca2 = 1.4;
+    const cs2 = 2.6;
+    const meanServiceMs = 1000;
+
+    // servers = 1 reduces identically to G/G/1 Kingman
+    const gg1Default = computeKingmanQueueEstimate(rho, ca2, cs2, meanServiceMs);
+    const gg1Explicit = computeKingmanQueueEstimate(rho, ca2, cs2, meanServiceMs, 1.5, 1);
+    expect(gg1Explicit.utilizationFactor).toBeCloseTo(rho / (1 - rho), 10);
+    expect(gg1Explicit.expectedQueueWaitMs).toBeCloseTo(gg1Default.expectedQueueWaitMs, 10);
+
+    // servers = 4 uses Sakasegawa/Allen-Cunneen G/G/c formula
+    const c = 4;
+    const ggc = computeKingmanQueueEstimate(rho, ca2, cs2, meanServiceMs, 1.5, c);
+    const expectedUtilFactor = Math.pow(rho, Math.sqrt(2 * (c + 1)) - 1) / (c * (1 - rho));
+    const expectedWaitMs = expectedUtilFactor * ((ca2 + cs2) / 2) * meanServiceMs;
+    expect(ggc.utilizationFactor).toBeCloseTo(expectedUtilFactor, 10);
+    expect(ggc.expectedQueueWaitMs).toBeCloseTo(expectedWaitMs, 10);
+    expect(ggc.expectedQueueWaitMs).toBeLessThan(gg1Explicit.expectedQueueWaitMs);
+
+    // KingmanScheduler.currentEstimate() passes Math.max(1, this.wip) as servers
+    const sched = new KingmanScheduler({ minWip: 1, maxWip: 16, useWallClockFallback: false });
+    for (let i = 0; i < 6; i++) {
+      sched.onSuccess(400, { ttftMs: 50, interArrivalMs: 100 });
+    }
+    const snap = sched.getSnapshot();
+    expect(snap.wip).toBeGreaterThan(1);
+    const expectedFromWip = computeKingmanQueueEstimate(
+      snap.rho,
+      snap.ca2,
+      snap.cs2,
+      snap.meanServiceMs,
+      1.5,
+      snap.wip
+    );
+    expect(snap.estimate.expectedQueueWaitMs).toBeCloseTo(expectedFromWip.expectedQueueWaitMs, 10);
+  });
+
+  test("ERRC 08-Kingman: kingmanCeiling triggers on combined variabilityFactor > 1.25 even when cs2 === 0 (bursty arrivals)", () => {
+    const sched = new KingmanScheduler({ minWip: 1, maxWip: 64, useWallClockFallback: false });
+    // Constant service time (cs2 === 0), highly bursty inter-arrival times (ca2 >> 2.5 => variabilityFactor > 1.25)
+    for (let i = 0; i < 40; i++) {
+      const interArrivalMs = i % 10 === 0 ? 10_000 : 10;
+      sched.onSuccess(100, { ttftMs: 40, interArrivalMs });
+    }
+    const snap = sched.getSnapshot();
+    expect(snap.cs2).toBe(0);
+    expect(snap.ca2).toBeGreaterThan(2.5);
+    expect(snap.estimate.variabilityFactor).toBeGreaterThan(1.25);
+    // WIP must be capped well below maxWip (64) by kingmanCeiling
+    expect(snap.wip).toBeLessThan(40);
+  });
 });

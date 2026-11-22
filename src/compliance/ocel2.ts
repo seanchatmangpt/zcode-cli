@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import {
   EVENT_TYPES,
   OBJECT_TYPES,
@@ -19,6 +20,23 @@ import {
 } from "./redactor.ts";
 
 export type Ocel2AttributeType = "string" | "integer" | "float" | "boolean" | "time";
+
+export const VALID_OCEL2_ATTRIBUTE_TYPES: ReadonlySet<string> = new Set<Ocel2AttributeType>([
+  "string",
+  "integer",
+  "float",
+  "boolean",
+  "time"
+]);
+
+function inferOcel2AttributeType(value: string | number | boolean): Ocel2AttributeType {
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "integer" : "float";
+  }
+  if (isValidIsoTimestamp(value)) return "time";
+  return "string";
+}
 
 export interface Ocel2AttributeSchema {
   name: string;
@@ -150,20 +168,20 @@ const DEFAULT_OBJECT_ATTR_SCHEMAS: Readonly<Record<string, Ocel2AttributeSchema[
   model_request: [
     { name: "provider_id", type: "string" },
     { name: "model_id", type: "string" },
-    { name: "ttft_ms", type: "string" },
-    { name: "service_ms", type: "string" }
+    { name: "ttft_ms", type: "float" },
+    { name: "service_ms", type: "float" }
   ],
   provider: [{ name: "provider_id", type: "string" }],
   permission: [
     { name: "decision", type: "string" },
-    { name: "decision_latency_ms", type: "string" },
+    { name: "decision_latency_ms", type: "float" },
     { name: "overseer_id", type: "string" }
   ],
   subagent: [
     { name: "agent_id", type: "string" },
     { name: "compliance_profile", type: "string" },
     { name: "policy_ceiling", type: "string" },
-    { name: "allow_yolo", type: "string" },
+    { name: "allow_yolo", type: "boolean" },
     { name: "overseer_id", type: "string" }
   ],
   receipt: [{ name: "standing", type: "string" }],
@@ -201,14 +219,14 @@ const DEFAULT_OBJECT_ATTR_SCHEMAS: Readonly<Record<string, Ocel2AttributeSchema[
     { name: "seal_sha256", type: "string" }
   ],
   workspace_snapshot: [{ name: "head_sha", type: "string" }],
-  risk_assessment: [{ name: "residual_risk_score", type: "string" }],
+  risk_assessment: [{ name: "residual_risk_score", type: "float" }],
   incident: [
     { name: "severity", type: "string" },
-    { name: "deadline", type: "string" }
+    { name: "deadline", type: "time" }
   ],
   incident_packet: [
     { name: "severity", type: "string" },
-    { name: "deadline", type: "string" }
+    { name: "deadline", type: "time" }
   ],
   Workflow: [{ name: "standing", type: "string" }],
   Artifact: [{ name: "standing", type: "string" }]
@@ -240,26 +258,26 @@ const DEFAULT_EVENT_ATTR_SCHEMAS: Readonly<Record<string, Ocel2AttributeSchema[]
   workspace_rolled_back: [{ name: "reason", type: "string" }],
   retry_budget_exhausted: [
     { name: "error_signature", type: "string" },
-    { name: "attempts", type: "string" }
+    { name: "attempts", type: "integer" }
   ],
   drift_detected: [
     { name: "drift_kind", type: "string" },
-    { name: "p_value", type: "string" }
+    { name: "p_value", type: "float" }
   ],
   incident_classified: [
     { name: "severity", type: "string" },
-    { name: "deadline", type: "string" }
+    { name: "deadline", type: "time" }
   ],
   incident_reported: [
     { name: "severity", type: "string" },
-    { name: "deadline", type: "string" }
+    { name: "deadline", type: "time" }
   ],
   compliance_assessed: [{ name: "verdict", type: "string" }],
   model_request_completed: [
     { name: "provider_id", type: "string" },
     { name: "model_id", type: "string" },
-    { name: "ttft_ms", type: "string" },
-    { name: "service_ms", type: "string" },
+    { name: "ttft_ms", type: "float" },
+    { name: "service_ms", type: "float" },
     { name: "status", type: "string" }
   ],
   transition_fired: [
@@ -268,7 +286,7 @@ const DEFAULT_EVENT_ATTR_SCHEMAS: Readonly<Record<string, Ocel2AttributeSchema[]
   ],
   transition_completed: [
     { name: "transition", type: "string" },
-    { name: "service_ms", type: "string" }
+    { name: "service_ms", type: "float" }
   ],
   transition_refused: [
     { name: "transition", type: "string" },
@@ -276,8 +294,8 @@ const DEFAULT_EVENT_ATTR_SCHEMAS: Readonly<Record<string, Ocel2AttributeSchema[]
   ],
   wip_backoff: [
     { name: "transition", type: "string" },
-    { name: "old_wip", type: "string" },
-    { name: "new_wip", type: "string" },
+    { name: "old_wip", type: "integer" },
+    { name: "new_wip", type: "integer" },
     { name: "reason", type: "string" }
   ]
 };
@@ -578,6 +596,7 @@ export class Ocel2ComplianceBuilder {
   private readonly events: Ocel2Event[] = [];
   private lastHash = "";
   private objectsModifiedAfterLastEvent = false;
+  private lastObjSha256: string | undefined = undefined;
 
   constructor(options: Ocel2BuilderOptions = {}) {
     this.redactOptions = deriveRedactOptions(options.config, options.redactOptions);
@@ -751,7 +770,7 @@ export class Ocel2ComplianceBuilder {
 
     const typeDef = this.objectTypes.get(obj.type);
     if (typeDef && !typeDef.attributes.some((a) => a.name === name)) {
-      typeDef.attributes.push({ name, type: "string" });
+      typeDef.attributes.push({ name, type: inferOcel2AttributeType(value) });
     }
     return this;
   }
@@ -900,7 +919,7 @@ export class Ocel2ComplianceBuilder {
       return { objectId: safeTarget, qualifier: safeQualifier };
     });
 
-    const rawDomainPairs: Array<[string, string]> = [];
+    const rawDomainPairs: Array<[string, string, Ocel2AttributeType]> = [];
     let phase = input.phase ?? "";
     let pendingRef = input.pendingRef ?? "";
     if (input.attributes) {
@@ -915,7 +934,7 @@ export class Ocel2ComplianceBuilder {
             continue;
           }
           if (PI_ATTR_NAMES.has(attr.name)) continue;
-          rawDomainPairs.push([attr.name, String(attr.value)]);
+          rawDomainPairs.push([attr.name, String(attr.value), inferOcel2AttributeType(attr.value)]);
         }
       } else {
         for (const [k, v] of Object.entries(input.attributes)) {
@@ -928,7 +947,7 @@ export class Ocel2ComplianceBuilder {
             continue;
           }
           if (PI_ATTR_NAMES.has(k)) continue;
-          rawDomainPairs.push([k, String(v)]);
+          rawDomainPairs.push([k, String(v), inferOcel2AttributeType(v)]);
         }
       }
     }
@@ -938,20 +957,14 @@ export class Ocel2ComplianceBuilder {
       value: redactKeyValuePair(k, v, this.redactOptions)
     }));
 
-    const eventTypeDef = this.eventTypes.get(input.type);
-    if (eventTypeDef) {
-      for (const a of domainAttrs) {
-        if (!eventTypeDef.attributes.some((s) => s.name === a.name)) {
-          eventTypeDef.attributes.push({ name: a.name, type: "string" });
-        }
-      }
-    }
-
     const base = { id: safeId, type: input.type, time: isoTime, relationships };
     const parent = this.lastHash;
     const hash = hashHex("sha256", parent + "\n" + canon(base, phase, pendingRef));
     const attrSha256 = computePiAttrSha256(domainAttrs);
-    const objSha256 = computeObjectsSha256([...this.objects.values()]);
+    const objSha256 =
+      this.objectsModifiedAfterLastEvent || this.lastObjSha256 === undefined
+        ? (this.lastObjSha256 = computeObjectsSha256([...this.objects.values()]))
+        : this.lastObjSha256;
     this.lastHash = hash;
     this.objectsModifiedAfterLastEvent = false;
 
@@ -964,6 +977,20 @@ export class Ocel2ComplianceBuilder {
     ];
     if (phase) piAttrs.push({ name: "pi_phase", value: phase });
     if (pendingRef) piAttrs.push({ name: "pi_pending_ref", value: pendingRef });
+
+    const eventTypeDef = this.eventTypes.get(input.type);
+    if (eventTypeDef) {
+      for (const a of piAttrs) {
+        if (!eventTypeDef.attributes.some((s) => s.name === a.name)) {
+          eventTypeDef.attributes.push({ name: a.name, type: "string" });
+        }
+      }
+      for (const [k, , inferredType] of rawDomainPairs) {
+        if (!eventTypeDef.attributes.some((s) => s.name === k)) {
+          eventTypeDef.attributes.push({ name: k, type: inferredType });
+        }
+      }
+    }
 
     const event: Ocel2Event = {
       ...base,
@@ -980,6 +1007,7 @@ export class Ocel2ComplianceBuilder {
   build(): Ocel2Document {
     if (this.objectsModifiedAfterLastEvent && this.events.length > 0) {
       const latestObjSha = computeObjectsSha256([...this.objects.values()]);
+      this.lastObjSha256 = latestObjSha;
       const lastEv = this.events[this.events.length - 1]!;
       const objAttr = lastEv.attributes.find((a) => a.name === "pi_obj_sha256");
       if (objAttr) {
@@ -1053,13 +1081,19 @@ export type LegacyOcelInput =
 
 function normalizeSchemaAttributes(raw: unknown[]): Ocel2AttributeSchema[] {
   const out: Ocel2AttributeSchema[] = [];
+  const seen = new Set<string>();
   for (const item of raw) {
     if (item && typeof item === "object" && "name" in item) {
       const rec = item as { name: unknown; type?: unknown };
-      if (typeof rec.name === "string" && rec.name.length > 0) {
+      if (typeof rec.name === "string" && rec.name.length > 0 && !seen.has(rec.name)) {
+        seen.add(rec.name);
+        const typeStr =
+          typeof rec.type === "string" && VALID_OCEL2_ATTRIBUTE_TYPES.has(rec.type)
+            ? rec.type
+            : "string";
         out.push({
           name: rec.name,
-          type: typeof rec.type === "string" && rec.type.length > 0 ? rec.type : "string"
+          type: typeStr
         });
       }
     }
@@ -1547,6 +1581,31 @@ export function upgradeLegacyOcelToOcel2(
     };
   });
 
+  // Ensure attribute-schema closure for all objects and events in the upgraded document
+  for (const obj of objectsMap.values()) {
+    const otSchema = objectTypeMap.get(obj.type);
+    if (otSchema) {
+      for (const a of obj.attributes) {
+        if (!otSchema.attributes.some((s) => s.name === a.name)) {
+          otSchema.attributes.push({ name: a.name, type: inferOcel2AttributeType(a.value) });
+        }
+      }
+    }
+  }
+  for (const ev of events) {
+    const etSchema = eventTypeMap.get(ev.type);
+    if (etSchema) {
+      for (const a of ev.attributes) {
+        if (!etSchema.attributes.some((s) => s.name === a.name)) {
+          etSchema.attributes.push({
+            name: a.name,
+            type: PI_ATTR_NAMES.has(a.name) ? "string" : inferOcel2AttributeType(a.value)
+          });
+        }
+      }
+    }
+  }
+
   return {
     objectTypes: cloneTypeSchemas([...objectTypeMap.values()]),
     eventTypes: cloneTypeSchemas([...eventTypeMap.values()]),
@@ -1586,33 +1645,71 @@ export function validateOcel2(
   }
   if (errors.length > 0) return { ok: false, errors, warnings };
 
-  const objectTypeNames = new Set<string>();
+  const objectTypeSchemas = new Map<string, Map<string, Ocel2AttributeType>>();
   for (const ot of doc.objectTypes) {
     if (!ot || typeof ot.name !== "string" || ot.name.trim().length === 0) {
       errors.push("objectTypes contains an entry without a valid non-empty name.");
       continue;
     }
-    if (objectTypeNames.has(ot.name)) {
+    if (objectTypeSchemas.has(ot.name)) {
       errors.push(`Duplicate objectType '${ot.name}'.`);
     }
-    objectTypeNames.add(ot.name);
+    const attrSchemaMap = new Map<string, Ocel2AttributeType>();
+    objectTypeSchemas.set(ot.name, attrSchemaMap);
     if (!Array.isArray(ot.attributes)) {
       errors.push(`objectType '${ot.name}' is missing attributes array.`);
+    } else {
+      for (const attr of ot.attributes) {
+        if (!attr || typeof attr.name !== "string" || attr.name.trim().length === 0) {
+          errors.push(`objectType '${ot.name}' has an attribute schema with an invalid name.`);
+          continue;
+        }
+        if (attrSchemaMap.has(attr.name)) {
+          errors.push(`objectType '${ot.name}' has duplicate attribute '${attr.name}'.`);
+          continue;
+        }
+        if (typeof attr.type !== "string" || !VALID_OCEL2_ATTRIBUTE_TYPES.has(attr.type)) {
+          errors.push(
+            `objectType '${ot.name}' attribute '${attr.name}' has invalid OCEL 2.0 type '${String(attr.type)}'.`
+          );
+          continue;
+        }
+        attrSchemaMap.set(attr.name, attr.type as Ocel2AttributeType);
+      }
     }
   }
 
-  const eventTypeNames = new Set<string>();
+  const eventTypeSchemas = new Map<string, Map<string, Ocel2AttributeType>>();
   for (const et of doc.eventTypes) {
     if (!et || typeof et.name !== "string" || et.name.trim().length === 0) {
       errors.push("eventTypes contains an entry without a valid non-empty name.");
       continue;
     }
-    if (eventTypeNames.has(et.name)) {
+    if (eventTypeSchemas.has(et.name)) {
       errors.push(`Duplicate eventType '${et.name}'.`);
     }
-    eventTypeNames.add(et.name);
+    const attrSchemaMap = new Map<string, Ocel2AttributeType>();
+    eventTypeSchemas.set(et.name, attrSchemaMap);
     if (!Array.isArray(et.attributes)) {
       errors.push(`eventType '${et.name}' is missing attributes array.`);
+    } else {
+      for (const attr of et.attributes) {
+        if (!attr || typeof attr.name !== "string" || attr.name.trim().length === 0) {
+          errors.push(`eventType '${et.name}' has an attribute schema with an invalid name.`);
+          continue;
+        }
+        if (attrSchemaMap.has(attr.name)) {
+          errors.push(`eventType '${et.name}' has duplicate attribute '${attr.name}'.`);
+          continue;
+        }
+        if (typeof attr.type !== "string" || !VALID_OCEL2_ATTRIBUTE_TYPES.has(attr.type)) {
+          errors.push(
+            `eventType '${et.name}' attribute '${attr.name}' has invalid OCEL 2.0 type '${String(attr.type)}'.`
+          );
+          continue;
+        }
+        attrSchemaMap.set(attr.name, attr.type as Ocel2AttributeType);
+      }
     }
   }
 
@@ -1626,7 +1723,8 @@ export function validateOcel2(
       errors.push(`Duplicate object id '${obj.id}'.`);
     }
     objectMap.set(obj.id, obj);
-    if (!objectTypeNames.has(obj.type)) {
+    const objAttrSchema = objectTypeSchemas.get(obj.type);
+    if (!objAttrSchema) {
       errors.push(`Object '${obj.id}' has undeclared type '${obj.type}'.`);
     }
     if (!Array.isArray(obj.attributes)) {
@@ -1637,6 +1735,11 @@ export function validateOcel2(
         if (!attr || typeof attr.name !== "string" || attr.name.length === 0) {
           errors.push(`Object '${obj.id}' has an attribute with an invalid name.`);
           continue;
+        }
+        if (objAttrSchema && !objAttrSchema.has(attr.name)) {
+          errors.push(
+            `Object '${obj.id}' (type '${obj.type}') has undeclared attribute '${attr.name}'.`
+          );
         }
         if (typeof attr.value !== "string") {
           errors.push(`Object '${obj.id}' attribute '${attr.name}' value must be a string.`);
@@ -1697,7 +1800,8 @@ export function validateOcel2(
       errors.push(`Duplicate event id '${ev.id}'.`);
     }
     eventIds.add(ev.id);
-    if (!eventTypeNames.has(ev.type)) {
+    const evAttrSchema = eventTypeSchemas.get(ev.type);
+    if (!evAttrSchema) {
       errors.push(`Event '${ev.id}' has undeclared type '${ev.type}'.`);
     }
     if (!isValidIsoTimestamp(ev.time)) {
@@ -1711,6 +1815,11 @@ export function validateOcel2(
         if (!attr || typeof attr.name !== "string" || attr.name.length === 0) {
           errors.push(`Event '${ev.id}' has an attribute with an invalid name.`);
         } else {
+          if (evAttrSchema && !evAttrSchema.has(attr.name)) {
+            errors.push(
+              `Event '${ev.id}' (type '${ev.type}') has undeclared attribute '${attr.name}'.`
+            );
+          }
           if (PI_ATTR_NAMES.has(attr.name)) {
             if (seenPiAttrs.has(attr.name)) {
               errors.push(`Event '${ev.id}' has duplicate reserved attribute '${attr.name}'.`);
@@ -1953,6 +2062,590 @@ export function serializeOcel2Xml(doc: Ocel2Document): string {
 
   lines.push("</log>");
   return lines.join("\n") + "\n";
+}
+
+function unescapeXml(value: string): string {
+  return value.replace(
+    /&(amp|lt|gt|quot|apos|#(\d+)|#x([0-9a-fA-F]+));/g,
+    (match, entity: string, dec?: string, hex?: string) => {
+      if (entity === "amp") return "&";
+      if (entity === "lt") return "<";
+      if (entity === "gt") return ">";
+      if (entity === "quot") return '"';
+      if (entity === "apos") return "'";
+      if (dec !== undefined) return String.fromCodePoint(Number.parseInt(dec, 10));
+      if (hex !== undefined) return String.fromCodePoint(Number.parseInt(hex, 16));
+      return match;
+    }
+  );
+}
+
+interface XmlElementNode {
+  tag: string;
+  attrs: Record<string, string>;
+  children: XmlElementNode[];
+  text: string;
+}
+
+function parseXmlAttributes(attrSource: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const attrRe = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  let m: RegExpExecArray | null;
+  while ((m = attrRe.exec(attrSource)) !== null) {
+    const name = m[1]!;
+    const rawVal = m[2] !== undefined ? m[2] : (m[3] ?? "");
+    attrs[name] = unescapeXml(rawVal);
+  }
+  return attrs;
+}
+
+function parseXmlTree(xml: string): XmlElementNode {
+  const cleaned = xml
+    .replace(/^\uFEFF/, "")
+    .replace(/<\?[\s\S]*?\?>/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .trim();
+
+  const tokenRe = /<(\/)?([A-Za-z_][\w:.-]*)((?:\s+[A-Za-z_][\w:.-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/)?>|([^<]+)/g;
+  const stack: XmlElementNode[] = [];
+  let root: XmlElementNode | null = null;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = tokenRe.exec(cleaned)) !== null) {
+    if (m.index !== lastIndex) {
+      throw new ComplianceRefusalError(
+        "INVALID_COMPLIANCE_CONFIG",
+        `Malformed OCEL 2.0 XML near offset ${lastIndex}.`,
+        "mu_on_O"
+      );
+    }
+    lastIndex = tokenRe.lastIndex;
+
+    const [, closing, tag, attrSource, selfClosing, text] = m;
+    if (text !== undefined) {
+      if (stack.length > 0) {
+        stack[stack.length - 1]!.text += unescapeXml(text);
+      } else if (text.trim().length > 0) {
+        throw new ComplianceRefusalError(
+          "INVALID_COMPLIANCE_CONFIG",
+          "Unexpected text outside root <log> element in OCEL 2.0 XML.",
+          "mu_on_O"
+        );
+      }
+      continue;
+    }
+
+    if (closing) {
+      const top = stack.pop();
+      if (!top || top.tag !== tag) {
+        throw new ComplianceRefusalError(
+          "INVALID_COMPLIANCE_CONFIG",
+          `Mismatched closing tag </${tag}> in OCEL 2.0 XML.`,
+          "mu_on_O"
+        );
+      }
+      continue;
+    }
+
+    const node: XmlElementNode = {
+      tag: tag!,
+      attrs: parseXmlAttributes(attrSource ?? ""),
+      children: [],
+      text: ""
+    };
+
+    if (stack.length > 0) {
+      stack[stack.length - 1]!.children.push(node);
+    } else if (root === null) {
+      root = node;
+    } else {
+      throw new ComplianceRefusalError(
+        "INVALID_COMPLIANCE_CONFIG",
+        "Multiple root elements found in OCEL 2.0 XML.",
+        "mu_on_O"
+      );
+    }
+
+    if (!selfClosing) {
+      stack.push(node);
+    }
+  }
+
+  if (lastIndex !== cleaned.length || stack.length > 0 || !root) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      "Incomplete or malformed OCEL 2.0 XML document.",
+      "mu_on_O"
+    );
+  }
+
+  return root;
+}
+
+export function parseOcel2Xml(xml: string): Ocel2Document {
+  if (typeof xml !== "string" || xml.trim().length === 0) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      "OCEL 2.0 XML input must be a non-empty string.",
+      "mu_on_O"
+    );
+  }
+
+  const root = parseXmlTree(xml);
+  if (root.tag !== "log") {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `Expected root <log> element in OCEL 2.0 XML, got <${root.tag}>.`,
+      "mu_on_O"
+    );
+  }
+
+  const objectTypes: Ocel2TypeSchema[] = [];
+  const eventTypes: Ocel2TypeSchema[] = [];
+  const objects: Ocel2Object[] = [];
+  const events: Ocel2Event[] = [];
+
+  for (const section of root.children) {
+    if (section.tag === "object-types") {
+      for (const otNode of section.children) {
+        if (otNode.tag !== "object-type") continue;
+        const attrs: Ocel2AttributeSchema[] = [];
+        for (const child of otNode.children) {
+          if (child.tag === "attributes") {
+            for (const aNode of child.children) {
+              if (aNode.tag === "attribute") {
+                attrs.push({
+                  name: aNode.attrs.name ?? "",
+                  type: aNode.attrs.type ?? "string"
+                });
+              }
+            }
+          }
+        }
+        objectTypes.push({ name: otNode.attrs.name ?? "", attributes: attrs });
+      }
+    } else if (section.tag === "event-types") {
+      for (const etNode of section.children) {
+        if (etNode.tag !== "event-type") continue;
+        const attrs: Ocel2AttributeSchema[] = [];
+        for (const child of etNode.children) {
+          if (child.tag === "attributes") {
+            for (const aNode of child.children) {
+              if (aNode.tag === "attribute") {
+                attrs.push({
+                  name: aNode.attrs.name ?? "",
+                  type: aNode.attrs.type ?? "string"
+                });
+              }
+            }
+          }
+        }
+        eventTypes.push({ name: etNode.attrs.name ?? "", attributes: attrs });
+      }
+    } else if (section.tag === "objects") {
+      for (const objNode of section.children) {
+        if (objNode.tag !== "object") continue;
+        const attrs: Ocel2ObjectAttribute[] = [];
+        const rels: Ocel2Relationship[] = [];
+        for (const child of objNode.children) {
+          if (child.tag === "attributes") {
+            for (const aNode of child.children) {
+              if (aNode.tag === "attribute") {
+                attrs.push({
+                  name: aNode.attrs.name ?? "",
+                  time: aNode.attrs.time ?? "",
+                  value: aNode.text
+                });
+              }
+            }
+          } else if (child.tag === "objects") {
+            for (const rNode of child.children) {
+              if (rNode.tag === "relationship") {
+                rels.push({
+                  objectId: rNode.attrs["object-id"] ?? "",
+                  qualifier: rNode.attrs.qualifier ?? ""
+                });
+              }
+            }
+          }
+        }
+        objects.push({
+          id: objNode.attrs.id ?? "",
+          type: objNode.attrs.type ?? "",
+          attributes: attrs,
+          relationships: rels
+        });
+      }
+    } else if (section.tag === "events") {
+      for (const evNode of section.children) {
+        if (evNode.tag !== "event") continue;
+        const attrs: Ocel2EventAttribute[] = [];
+        const rels: Ocel2Relationship[] = [];
+        for (const child of evNode.children) {
+          if (child.tag === "attributes") {
+            for (const aNode of child.children) {
+              if (aNode.tag === "attribute") {
+                attrs.push({
+                  name: aNode.attrs.name ?? "",
+                  value: aNode.text
+                });
+              }
+            }
+          } else if (child.tag === "objects") {
+            for (const rNode of child.children) {
+              if (rNode.tag === "relationship") {
+                rels.push({
+                  objectId: rNode.attrs["object-id"] ?? "",
+                  qualifier: rNode.attrs.qualifier ?? ""
+                });
+              }
+            }
+          }
+        }
+        events.push({
+          id: evNode.attrs.id ?? "",
+          type: evNode.attrs.type ?? "",
+          time: evNode.attrs.time ?? "",
+          attributes: attrs,
+          relationships: rels
+        });
+      }
+    }
+  }
+
+  return { objectTypes, eventTypes, objects, events };
+}
+
+function quoteSqlIdent(ident: string): string {
+  return `"${ident.replaceAll('"', '""')}"`;
+}
+
+function makeSqliteTypeMapName(typeName: string, used: Set<string>): string {
+  const base = typeName.replace(/[^A-Za-z0-9_]/g, "_").replace(/^_+|_+$/g, "") || "type";
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate.toLowerCase())) {
+    candidate = `${base}_${suffix++}`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function ocel2TypeToSqliteDecl(type: string): string {
+  switch (type) {
+    case "integer":
+      return "INTEGER";
+    case "float":
+      return "REAL";
+    case "boolean":
+      return "BOOLEAN";
+    case "time":
+      return "TIMESTAMP";
+    default:
+      return "TEXT";
+  }
+}
+
+function sqliteDeclToOcel2Type(decl: string): Ocel2AttributeType {
+  const upper = decl.trim().toUpperCase();
+  if (upper === "INTEGER" || upper === "INT") return "integer";
+  if (upper === "REAL" || upper === "FLOAT" || upper === "DOUBLE") return "float";
+  if (upper === "BOOLEAN" || upper === "BOOL") return "boolean";
+  if (upper === "TIMESTAMP" || upper === "DATETIME" || upper === "TIME") return "time";
+  return "string";
+}
+
+export function exportOcel2Sqlite(doc: Ocel2Document, dbPath: string): void {
+  const check = validateOcel2(doc);
+  if (!check.ok) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `Cannot export invalid OCEL 2.0 document to SQLite: ${check.errors.join("; ")}`,
+      "mu_on_O"
+    );
+  }
+
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_map_type (
+        ocel_type TEXT PRIMARY KEY,
+        ocel_type_map TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS object_map_type (
+        ocel_type TEXT PRIMARY KEY,
+        ocel_type_map TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS event (
+        ocel_id TEXT PRIMARY KEY,
+        ocel_type TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS object (
+        ocel_id TEXT PRIMARY KEY,
+        ocel_type TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS event_object (
+        ocel_event_id TEXT NOT NULL,
+        ocel_object_id TEXT NOT NULL,
+        ocel_qualifier TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS object_object (
+        ocel_source_id TEXT NOT NULL,
+        ocel_target_id TEXT NOT NULL,
+        ocel_qualifier TEXT NOT NULL
+      );
+    `);
+
+    const usedEventMaps = new Set<string>();
+    const eventTypeMap = new Map<string, { mapName: string; schema: Ocel2TypeSchema }>();
+    const insertEventMapStmt = db.prepare(
+      "INSERT INTO event_map_type (ocel_type, ocel_type_map) VALUES (?, ?)"
+    );
+    for (const et of doc.eventTypes) {
+      const mapName = makeSqliteTypeMapName(et.name, usedEventMaps);
+      eventTypeMap.set(et.name, { mapName, schema: et });
+      insertEventMapStmt.run(et.name, mapName);
+      const attrCols = et.attributes
+        .map((a) => `${quoteSqlIdent(a.name)} ${ocel2TypeToSqliteDecl(String(a.type))}`)
+        .join(", ");
+      const tableIdent = quoteSqlIdent(`event_${mapName}`);
+      db.exec(
+        `CREATE TABLE ${tableIdent} (ocel_id TEXT PRIMARY KEY, ocel_time TEXT NOT NULL${attrCols ? `, ${attrCols}` : ""})`
+      );
+    }
+
+    const usedObjectMaps = new Set<string>();
+    const objectTypeMap = new Map<string, { mapName: string; schema: Ocel2TypeSchema }>();
+    const insertObjectMapStmt = db.prepare(
+      "INSERT INTO object_map_type (ocel_type, ocel_type_map) VALUES (?, ?)"
+    );
+    for (const ot of doc.objectTypes) {
+      const mapName = makeSqliteTypeMapName(ot.name, usedObjectMaps);
+      objectTypeMap.set(ot.name, { mapName, schema: ot });
+      insertObjectMapStmt.run(ot.name, mapName);
+      const attrCols = ot.attributes
+        .map((a) => `${quoteSqlIdent(a.name)} ${ocel2TypeToSqliteDecl(String(a.type))}`)
+        .join(", ");
+      const tableIdent = quoteSqlIdent(`object_${mapName}`);
+      db.exec(
+        `CREATE TABLE ${tableIdent} (ocel_id TEXT NOT NULL, ocel_time TEXT NOT NULL, ocel_changed_field TEXT${attrCols ? `, ${attrCols}` : ""})`
+      );
+    }
+
+    const insertObjStmt = db.prepare("INSERT INTO object (ocel_id, ocel_type) VALUES (?, ?)");
+    const insertO2OStmt = db.prepare(
+      "INSERT INTO object_object (ocel_source_id, ocel_target_id, ocel_qualifier) VALUES (?, ?, ?)"
+    );
+    for (const obj of doc.objects) {
+      insertObjStmt.run(obj.id, obj.type);
+      for (const rel of obj.relationships) {
+        insertO2OStmt.run(obj.id, rel.objectId, rel.qualifier);
+      }
+      const entry = objectTypeMap.get(obj.type);
+      if (entry && obj.attributes.length > 0) {
+        const tableIdent = quoteSqlIdent(`object_${entry.mapName}`);
+        for (const attr of obj.attributes) {
+          const colIdent = quoteSqlIdent(attr.name);
+          db.prepare(
+            `INSERT INTO ${tableIdent} (ocel_id, ocel_time, ocel_changed_field, ${colIdent}) VALUES (?, ?, ?, ?)`
+          ).run(obj.id, attr.time, attr.name, attr.value);
+        }
+      }
+    }
+
+    const insertEvStmt = db.prepare("INSERT INTO event (ocel_id, ocel_type) VALUES (?, ?)");
+    const insertE2OStmt = db.prepare(
+      "INSERT INTO event_object (ocel_event_id, ocel_object_id, ocel_qualifier) VALUES (?, ?, ?)"
+    );
+    for (const ev of doc.events) {
+      insertEvStmt.run(ev.id, ev.type);
+      for (const rel of ev.relationships) {
+        insertE2OStmt.run(ev.id, rel.objectId, rel.qualifier);
+      }
+      const entry = eventTypeMap.get(ev.type);
+      if (entry) {
+        const tableIdent = quoteSqlIdent(`event_${entry.mapName}`);
+        const cols = ["ocel_id", "ocel_time", ...ev.attributes.map((a) => quoteSqlIdent(a.name))];
+        const placeholders = cols.map(() => "?").join(", ");
+        const values = [ev.id, ev.time, ...ev.attributes.map((a) => a.value)];
+        db.prepare(`INSERT INTO ${tableIdent} (${cols.join(", ")}) VALUES (${placeholders})`).run(
+          ...values
+        );
+      }
+    }
+
+    db.exec("COMMIT");
+  } catch (err) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // ignore rollback error if not in transaction
+    }
+    throw err;
+  } finally {
+    db.close();
+  }
+}
+
+export function importOcel2Sqlite(dbPath: string): Ocel2Document {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const objectTypeRows = db
+      .prepare("SELECT ocel_type, ocel_type_map FROM object_map_type ORDER BY rowid")
+      .all() as Array<{ ocel_type: string; ocel_type_map: string }>;
+    const eventTypeRows = db
+      .prepare("SELECT ocel_type, ocel_type_map FROM event_map_type ORDER BY rowid")
+      .all() as Array<{ ocel_type: string; ocel_type_map: string }>;
+
+    const objectTypes: Ocel2TypeSchema[] = [];
+    const objectTypeMap = new Map<string, string>();
+    for (const row of objectTypeRows) {
+      objectTypeMap.set(row.ocel_type, row.ocel_type_map);
+      const cols = db
+        .prepare(`PRAGMA table_info(${quoteSqlIdent(`object_${row.ocel_type_map}`)})`)
+        .all() as Array<{ name: string; type: string }>;
+      const attributes: Ocel2AttributeSchema[] = cols
+        .filter(
+          (c) =>
+            c.name !== "ocel_id" &&
+            c.name !== "ocel_time" &&
+            c.name !== "ocel_changed_field"
+        )
+        .map((c) => ({ name: c.name, type: sqliteDeclToOcel2Type(c.type) }));
+      objectTypes.push({ name: row.ocel_type, attributes });
+    }
+
+    const eventTypes: Ocel2TypeSchema[] = [];
+    const eventTypeMap = new Map<string, string>();
+    for (const row of eventTypeRows) {
+      eventTypeMap.set(row.ocel_type, row.ocel_type_map);
+      const cols = db
+        .prepare(`PRAGMA table_info(${quoteSqlIdent(`event_${row.ocel_type_map}`)})`)
+        .all() as Array<{ name: string; type: string }>;
+      const attributes: Ocel2AttributeSchema[] = cols
+        .filter((c) => c.name !== "ocel_id" && c.name !== "ocel_time")
+        .map((c) => ({ name: c.name, type: sqliteDeclToOcel2Type(c.type) }));
+      eventTypes.push({ name: row.ocel_type, attributes });
+    }
+
+    const o2oRows = db
+      .prepare(
+        "SELECT ocel_source_id, ocel_target_id, ocel_qualifier FROM object_object ORDER BY rowid"
+      )
+      .all() as Array<{
+      ocel_source_id: string;
+      ocel_target_id: string;
+      ocel_qualifier: string;
+    }>;
+    const o2oBySource = new Map<string, Ocel2Relationship[]>();
+    for (const r of o2oRows) {
+      const list = o2oBySource.get(r.ocel_source_id) ?? [];
+      list.push({ objectId: r.ocel_target_id, qualifier: r.ocel_qualifier });
+      o2oBySource.set(r.ocel_source_id, list);
+    }
+
+    const objectAttrsById = new Map<string, Ocel2ObjectAttribute[]>();
+    for (const ot of objectTypes) {
+      const mapName = objectTypeMap.get(ot.name);
+      if (!mapName) continue;
+      const rows = db
+        .prepare(`SELECT * FROM ${quoteSqlIdent(`object_${mapName}`)} ORDER BY rowid`)
+        .all() as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        const objId = String(row.ocel_id ?? "");
+        const time = String(row.ocel_time ?? "");
+        const changedField =
+          typeof row.ocel_changed_field === "string" && row.ocel_changed_field.length > 0
+            ? row.ocel_changed_field
+            : undefined;
+        const list = objectAttrsById.get(objId) ?? [];
+        if (changedField !== undefined) {
+          const val = row[changedField];
+          if (val !== null && val !== undefined) {
+            list.push({ name: changedField, time, value: String(val) });
+          }
+        } else {
+          for (const a of ot.attributes) {
+            const val = row[a.name];
+            if (val !== null && val !== undefined) {
+              list.push({ name: a.name, time, value: String(val) });
+            }
+          }
+        }
+        objectAttrsById.set(objId, list);
+      }
+    }
+
+    const objRows = db
+      .prepare("SELECT ocel_id, ocel_type FROM object ORDER BY rowid")
+      .all() as Array<{ ocel_id: string; ocel_type: string }>;
+    const objects: Ocel2Object[] = objRows.map((row) => ({
+      id: row.ocel_id,
+      type: row.ocel_type,
+      attributes: objectAttrsById.get(row.ocel_id) ?? [],
+      relationships: o2oBySource.get(row.ocel_id) ?? []
+    }));
+
+    const e2oRows = db
+      .prepare(
+        "SELECT ocel_event_id, ocel_object_id, ocel_qualifier FROM event_object ORDER BY rowid"
+      )
+      .all() as Array<{
+      ocel_event_id: string;
+      ocel_object_id: string;
+      ocel_qualifier: string;
+    }>;
+    const e2oByEvent = new Map<string, Ocel2Relationship[]>();
+    for (const r of e2oRows) {
+      const list = e2oByEvent.get(r.ocel_event_id) ?? [];
+      list.push({ objectId: r.ocel_object_id, qualifier: r.ocel_qualifier });
+      e2oByEvent.set(r.ocel_event_id, list);
+    }
+
+    const eventDetailById = new Map<
+      string,
+      { time: string; attributes: Ocel2EventAttribute[] }
+    >();
+    for (const et of eventTypes) {
+      const mapName = eventTypeMap.get(et.name);
+      if (!mapName) continue;
+      const rows = db
+        .prepare(`SELECT * FROM ${quoteSqlIdent(`event_${mapName}`)} ORDER BY rowid`)
+        .all() as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        const evId = String(row.ocel_id ?? "");
+        const time = String(row.ocel_time ?? "");
+        const attrs: Ocel2EventAttribute[] = [];
+        for (const a of et.attributes) {
+          const val = row[a.name];
+          if (val !== null && val !== undefined) {
+            attrs.push({ name: a.name, value: String(val) });
+          }
+        }
+        eventDetailById.set(evId, { time, attributes: attrs });
+      }
+    }
+
+    const evRows = db
+      .prepare("SELECT ocel_id, ocel_type FROM event ORDER BY rowid")
+      .all() as Array<{ ocel_id: string; ocel_type: string }>;
+    const events: Ocel2Event[] = evRows.map((row) => {
+      const detail = eventDetailById.get(row.ocel_id);
+      return {
+        id: row.ocel_id,
+        type: row.ocel_type,
+        time: detail?.time ?? "",
+        attributes: detail?.attributes ?? [],
+        relationships: e2oByEvent.get(row.ocel_id) ?? []
+      };
+    });
+
+    return { objectTypes, eventTypes, objects, events };
+  } finally {
+    db.close();
+  }
 }
 
 export function complianceTapEnabled(

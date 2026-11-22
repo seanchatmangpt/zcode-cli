@@ -34,9 +34,9 @@ bun run test:all
 `bun run test` intentionally aliases the unit group for normal development.
 The built-in `bun test` command still discovers every `*.test.ts` recursively,
 so it behaves like the complete suite and requires a synchronized runtime.
-Run `bun run sync:local` first when testing against an installed macOS App. In
-a Delta worktree, use `TMPDIR=/tmp bun run test:runtime` to keep Unix socket
-paths below the platform limit.
+Run `bun run sync:local` first when testing against an installed macOS App. When
+running from a deeply nested directory, use `TMPDIR=/tmp bun run test:runtime`
+to keep Unix socket paths below the platform limit.
 
 ## Commands
 
@@ -108,6 +108,16 @@ Runtime fixtures should use `createScenarioRuntime()` rather than implementing
 sequential execution, delays observe the turn abort signal, and writes cannot
 escape the scenario workspace. Runtime steps are also written to
 `runtime.jsonl`; automatic failures include that journal in their diagnostics.
+
+When testing permission flows, note that `PermissionPreview` in
+`packages/zcode-tui/src/permission-view.ts` activates EU AI Act Art. 14 human
+oversight controls whenever `ZCODE_COMPLIANCE_PROFILE` (other than `standard`),
+`ZCODE_MIN_REVIEW_MS`, or `ZCODE_OVERSEER_ID` is set in the environment:
+- The `min_review_ms` dwell guard blocks premature approval (fail-closed on
+  invalid values; defaults to `DEFAULT_HIGH_RISK_MIN_REVIEW_MS` under
+  `high-risk-annex-iii` and `high-risk-annex-i`).
+- `AutomationBiasMonitor` tracks rapid-approval streaks per session
+  (`getSessionAutomationBiasMonitor` / `resetSessionAutomationBiasMonitor`).
 
 ## Isolation and Git
 

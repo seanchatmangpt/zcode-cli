@@ -255,7 +255,7 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
     writeFileSync(join(home, ".zcode", "workspace", "key.txt"), `${TEST_PEM}\n`, "utf8");
     writeFileSync(
       join(home, ".zcode", "workspace", "secrets.toml"),
-      "refresh_token = \"rt_toml_1\"\napi_key = 'sk_single_quote'\npassword = ''\n",
+      "refresh_token = \"rt_toml_1\"\napi_key = 'sk_single_quote'\npassword = ''\npasswd = sk_bare_unquoted\nclient_secret=envstyle_bare\n",
       "utf8"
     );
 
@@ -301,7 +301,22 @@ describe("F04 unified redactor & capability-snapshot alignment (zero-mock Chicag
     expect(restoredKey.trim()).toBe("REDACTED");
 
     const restoredToml = readFileSync(join(extractDir, home.slice(1), ".zcode", "workspace", "secrets.toml"), "utf8");
-    expect(restoredToml.trim()).toBe("refresh_token = \"REDACTED\"\napi_key = 'REDACTED'\npassword = ''");
+    expect(restoredToml).toContain('refresh_token = "REDACTED"');
+    expect(restoredToml).toContain("api_key = 'REDACTED'");
+    expect(restoredToml).toContain("password = ''");
+    expect(restoredToml).toContain("passwd = REDACTED");
+    expect(restoredToml).toContain("client_secret=REDACTED");
+    expect(restoredToml).not.toContain("sk_bare_unquoted");
+    expect(restoredToml).not.toContain("envstyle_bare");
+    expect(redactComplianceText("api_key = sk_bare_unquoted\n", { redactPii: false })).toContain(
+      "api_key = REDACTED"
+    );
+    expect(containsUnredactedSecretsOrPii("passwd = sk_bare_unquoted")).toBe(true);
+    expect(containsUnredactedSecretsOrPii("passwd = REDACTED")).toBe(false);
+    // RAISE-1: pwd key synced with ocel-tap / redactor SECRET_KEY_RE.
+    expect(redactComplianceText('pwd = "hunter2"\n', { redactPii: false })).toContain('pwd = "REDACTED"');
+    expect(containsUnredactedSecretsOrPii('pwd = "hunter2"', { redactPii: false })).toBe(true);
+    expect(containsUnredactedSecretsOrPii('pwd = "REDACTED"', { redactPii: false })).toBe(false);
 
     const untrackedSnap = JSON.parse(readFileSync(join(snapDir, "repo", "untracked", "untracked-secrets.json"), "utf8"));
     expect(untrackedSnap.apiKey).toBe("REDACTED");

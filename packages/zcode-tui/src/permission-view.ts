@@ -1,9 +1,19 @@
+import { randomUUID } from "node:crypto";
+
 import {
   Box,
   Text,
   type Component
 } from "@earendil-works/pi-tui";
 
+import type { Ocel2Event, Ocel2Relationship } from "../../../src/compliance/ocel2.ts";
+import {
+  AutomationBiasMonitor,
+  DEFAULT_AB_STREAK_THRESHOLD,
+  isApprovalDecision,
+  recordOversightIntervention,
+  type PermissionLatencyEvaluation
+} from "../../../src/compliance/oversight.ts";
 import {
   fileDiffsForPermission,
   FileDiffView
@@ -18,6 +28,20 @@ const maxInputCharacters = 6_000;
 
 export type BlastRadiusLevel = "low" | "medium" | "high" | "critical";
 
+const BLAST_RADIUS_RANK: Readonly<Record<BlastRadiusLevel, number>> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3
+};
+
+const OVERSIGHT_INTERVENTION_ACTIONS = new Set([
+  "emergency_stop",
+  "abort_turn",
+  "deny_tool",
+  "quarantine_subagent"
+]);
+
 export interface PermissionOversightOptions {
   minReviewMs?: number;
   elapsedReviewMs?: number;
@@ -27,8 +51,15 @@ export interface PermissionOversightOptions {
   blastRadiusDetail?: string;
   abRiskFlag?: boolean;
   consecutiveFastApprovals?: number;
+  abStreakThreshold?: number;
   complianceProfile?: string;
   overseerId?: string;
+  sessionId?: string;
+  targetObjectId?: string;
+  turnId?: string;
+  overseerObjectId?: string;
+  automationBiasMonitor?: AutomationBiasMonitor;
+  onOcelEvent?: (event: Ocel2Event) => void;
 }
 
 export interface PermissionDwellDecisionResult {
@@ -39,18 +70,54 @@ export interface PermissionDwellDecisionResult {
   elapsedMs: number;
   minReviewMs: number;
   reason?: string;
+  latencyEvaluation?: PermissionLatencyEvaluation;
+  ocelEvents?: Ocel2Event[];
 }
 
 const DEFAULT_HIGH_RISK_MIN_REVIEW_MS = 1000;
 
-function isApprovalDecision(decision: string): boolean {
-  const normalized = decision.trim().toLowerCase();
-  return (
-    normalized === "allow" ||
-    normalized === "allow_always" ||
-    normalized === "modify" ||
-    normalized === "approve"
-  );
+const sessionMonitors = new Map<string, AutomationBiasMonitor>();
+
+export function getSessionAutomationBiasMonitor(
+  sessionId: string,
+  minReviewMs: number = DEFAULT_HIGH_RISK_MIN_REVIEW_MS,
+  consecutiveThreshold: number = DEFAULT_AB_STREAK_THRESHOLD
+): AutomationBiasMonitor {
+  const existing = sessionMonitors.get(sessionId);
+  if (existing) return existing;
+  const created = new AutomationBiasMonitor(minReviewMs, consecutiveThreshold);
+  sessionMonitors.set(sessionId, created);
+  return created;
+}
+
+export function resetSessionAutomationBiasMonitor(sessionId?: string): void {
+  if (sessionId === undefined) {
+    sessionMonitors.clear();
+  } else {
+    sessionMonitors.delete(sessionId);
+  }
+}
+
+interface ReviewDwellComputation {
+  elapsedMs: number;
+  remainingMs: number;
+  invalidElapsed: boolean;
+}
+
+function computeReviewDwell(
+  oversight: PermissionOversightOptions | undefined,
+  minReviewMs: number,
+  elapsedMsOverride?: number
+): ReviewDwellComputation {
+  const nowFn = oversight?.nowMs ?? Date.now;
+  const rawElapsed =
+    elapsedMsOverride ??
+    oversight?.elapsedReviewMs ??
+    (oversight?.presentedAtMs !== undefined ? nowFn() - oversight.presentedAtMs : 0);
+  const invalidElapsed = !Number.isFinite(rawElapsed) || rawElapsed < 0;
+  const elapsedMs = invalidElapsed ? 0 : rawElapsed;
+  const remainingMs = Math.max(0, minReviewMs - elapsedMs);
+  return { elapsedMs, remainingMs, invalidElapsed };
 }
 
 export function resolvePermissionOversightFromEnv(
@@ -146,14 +213,11 @@ export function evaluatePermissionDwellGuard(
     };
   }
 
-  const nowFn = oversight?.nowMs ?? Date.now;
-  const rawElapsed =
-    elapsedMsOverride ??
-    oversight?.elapsedReviewMs ??
-    (oversight?.presentedAtMs !== undefined ? nowFn() - oversight.presentedAtMs : 0);
-  const invalidElapsed = !Number.isFinite(rawElapsed) || rawElapsed < 0;
-  const elapsedMs = invalidElapsed ? 0 : rawElapsed;
-  const remainingMs = Math.max(0, rawMinReviewMs - elapsedMs);
+  const { elapsedMs, remainingMs, invalidElapsed } = computeReviewDwell(
+    oversight,
+    rawMinReviewMs,
+    elapsedMsOverride
+  );
 
   if (invalidElapsed || remainingMs > 0) {
     return {
@@ -246,6 +310,7 @@ function limited(value: string): string {
 
 export class PermissionPreview implements Component {
   private blockedApprovalCount: number;
+  private readonly abMonitor?: AutomationBiasMonitor;
 
   constructor(
     private readonly theme: ZCodeTheme,
@@ -255,6 +320,22 @@ export class PermissionPreview implements Component {
     private readonly oversight?: PermissionOversightOptions
   ) {
     this.blockedApprovalCount = oversight?.consecutiveFastApprovals ?? 0;
+    if (oversight) {
+      if (oversight.automationBiasMonitor) {
+        this.abMonitor = oversight.automationBiasMonitor;
+      } else if (oversight.sessionId) {
+        this.abMonitor = getSessionAutomationBiasMonitor(
+          oversight.sessionId,
+          oversight.minReviewMs ?? DEFAULT_HIGH_RISK_MIN_REVIEW_MS,
+          oversight.abStreakThreshold ?? DEFAULT_AB_STREAK_THRESHOLD
+        );
+      } else {
+        this.abMonitor = new AutomationBiasMonitor(
+          oversight.minReviewMs ?? DEFAULT_HIGH_RISK_MIN_REVIEW_MS,
+          oversight.abStreakThreshold ?? DEFAULT_AB_STREAK_THRESHOLD
+        );
+      }
+    }
   }
 
   evaluateDecision(decision: string, elapsedMs?: number): PermissionDwellDecisionResult {
@@ -262,7 +343,89 @@ export class PermissionPreview implements Component {
     if (result.held) {
       this.blockedApprovalCount += 1;
     }
-    return result;
+
+    if (!this.oversight) {
+      return result;
+    }
+
+    const nowFn = this.oversight.nowMs ?? Date.now;
+    const timestampMs = nowFn();
+    const effectiveRisk = this.effectiveRiskLevel();
+    const latencyEvaluation = this.abMonitor?.recordDecision({
+      decisionLatencyMs: result.elapsedMs,
+      decision,
+      riskLevel: effectiveRisk,
+      timestampMs
+    });
+
+    const abRiskFlag = result.abRiskFlag || Boolean(latencyEvaluation?.abRiskFlag);
+    const ocelEvents: Ocel2Event[] = [];
+    const isoTime = new Date(timestampMs).toISOString();
+    const normalizedDecision = decision.trim().toLowerCase();
+
+    const relationships: Ocel2Relationship[] = [];
+    if (this.oversight.sessionId?.trim()) {
+      relationships.push({ objectId: this.oversight.sessionId.trim(), qualifier: "in_session" });
+    }
+    if (this.oversight.targetObjectId?.trim()) {
+      relationships.push({ objectId: this.oversight.targetObjectId.trim(), qualifier: "governs" });
+    }
+    if (this.oversight.turnId?.trim()) {
+      relationships.push({ objectId: this.oversight.turnId.trim(), qualifier: "in_turn" });
+    }
+    if (this.oversight.overseerObjectId?.trim()) {
+      relationships.push({ objectId: this.oversight.overseerObjectId.trim(), qualifier: "approved_by" });
+    }
+
+    const permissionEvent: Ocel2Event = {
+      id: `perm_decided_${randomUUID()}`,
+      type: "permission_decided",
+      time: isoTime,
+      attributes: [
+        { name: "tool_name", value: this.toolName },
+        { name: "decision", value: normalizedDecision },
+        { name: "allowed", value: String(result.allowed) },
+        { name: "held", value: String(result.held) },
+        { name: "ab_risk_flag", value: String(abRiskFlag) },
+        { name: "elapsed_ms", value: String(result.elapsedMs) },
+        { name: "min_review_ms", value: String(result.minReviewMs) },
+        { name: "risk_level", value: effectiveRisk },
+        {
+          name: "consecutive_fast_approvals",
+          value: String(latencyEvaluation?.consecutiveFastApprovals ?? this.blockedApprovalCount)
+        },
+        {
+          name: "streak_triggered",
+          value: String(Boolean(latencyEvaluation?.streakTriggered))
+        }
+      ],
+      relationships
+    };
+    ocelEvents.push(permissionEvent);
+    this.oversight.onOcelEvent?.(permissionEvent);
+
+    if (OVERSIGHT_INTERVENTION_ACTIONS.has(normalizedDecision)) {
+      const intervention = recordOversightIntervention({
+        overseerId: this.oversight.overseerId?.trim() || "overseer",
+        reason: `TUI oversight intervention: ${normalizedDecision} on ${this.toolName}`,
+        sessionId: this.oversight.sessionId?.trim() || "tui_session",
+        targetObjectId: this.oversight.targetObjectId?.trim() || this.toolName,
+        targetObjectType: "tool_call",
+        action: normalizedDecision as "emergency_stop" | "abort_turn" | "deny_tool" | "quarantine_subagent",
+        turnId: this.oversight.turnId,
+        overseerObjectId: this.oversight.overseerObjectId,
+        timestamp: isoTime,
+        onEvent: this.oversight.onOcelEvent
+      });
+      ocelEvents.push(intervention.event);
+    }
+
+    return {
+      ...result,
+      abRiskFlag,
+      ...(latencyEvaluation ? { latencyEvaluation } : {}),
+      ocelEvents
+    };
   }
 
   invalidate(): void {}
@@ -318,8 +481,8 @@ export class PermissionPreview implements Component {
           : this.theme.muted(blastText);
     host.addChild(new Text(blastStyled, 0, 0));
 
-    let remainingMs = 0;
     let invalidMinReview = false;
+    let invalidElapsed = false;
     const rawMinReviewMs = oversight.minReviewMs;
     if (rawMinReviewMs !== undefined) {
       if (!Number.isFinite(rawMinReviewMs) || rawMinReviewMs < 0) {
@@ -328,32 +491,31 @@ export class PermissionPreview implements Component {
           new Text(this.theme.warning("Review dwell: invalid min_review_ms (dwell guard active)"), 0, 0)
         );
       } else if (rawMinReviewMs > 0) {
-        const nowFn = oversight.nowMs ?? Date.now;
-        const rawElapsed =
-          oversight.elapsedReviewMs ??
-          (oversight.presentedAtMs !== undefined ? nowFn() - oversight.presentedAtMs : 0);
-        const elapsedMs = Number.isFinite(rawElapsed) && rawElapsed >= 0 ? rawElapsed : 0;
-        remainingMs = Math.max(0, rawMinReviewMs - elapsedMs);
-        const dwellStatus = remainingMs > 0 ? `${remainingMs}ms remaining` : "ready";
-        const dwellText = `Review dwell: ${elapsedMs}ms / min_review_ms ${rawMinReviewMs}ms (${dwellStatus})`;
+        const dwell = computeReviewDwell(oversight, rawMinReviewMs);
+        invalidElapsed = dwell.invalidElapsed;
+        const dwellStatus = dwell.remainingMs > 0 ? `${dwell.remainingMs}ms remaining` : "ready";
+        const dwellText = `Review dwell: ${dwell.elapsedMs}ms / min_review_ms ${rawMinReviewMs}ms (${dwellStatus})`;
         host.addChild(
-          new Text(remainingMs > 0 ? this.theme.warning(dwellText) : this.theme.muted(dwellText), 0, 0)
+          new Text(dwell.remainingMs > 0 ? this.theme.warning(dwellText) : this.theme.muted(dwellText), 0, 0)
         );
       }
     }
 
+    const threshold = oversight.abStreakThreshold ?? DEFAULT_AB_STREAK_THRESHOLD;
     const effectiveFastApprovals = Math.max(
       oversight.consecutiveFastApprovals ?? 0,
-      this.blockedApprovalCount
+      this.blockedApprovalCount,
+      this.abMonitor?.consecutiveFastApprovals ?? 0
     );
     const showAbFlag =
       oversight.abRiskFlag === true ||
       invalidMinReview ||
-      (rawMinReviewMs !== undefined && Number.isFinite(rawMinReviewMs) && rawMinReviewMs > 0 && remainingMs > 0) ||
-      effectiveFastApprovals >= 3;
+      invalidElapsed ||
+      this.blockedApprovalCount > 0 ||
+      effectiveFastApprovals >= threshold;
     if (showAbFlag) {
       const abStyle =
-        effectiveFastApprovals >= 3 ? this.theme.error : this.theme.warning;
+        effectiveFastApprovals >= threshold ? this.theme.error : this.theme.warning;
       host.addChild(
         new Text(
           abStyle("⚠ AB_RISK_FLAG · Automation-bias dwell guard active — verify action before approving"),
@@ -377,14 +539,33 @@ export class PermissionPreview implements Component {
     }
   }
 
+  private effectiveRiskLevel(): BlastRadiusLevel {
+    const inferred = inferBlastRadius(this.toolName, this.input, this.riskLevel);
+    const blastLevel = this.oversight?.blastRadius ?? inferred.level;
+    const normalizedRisk = this.riskLevel?.trim().toLowerCase();
+    if (
+      normalizedRisk === "low" ||
+      normalizedRisk === "medium" ||
+      normalizedRisk === "high" ||
+      normalizedRisk === "critical"
+    ) {
+      return BLAST_RADIUS_RANK[normalizedRisk] >= BLAST_RADIUS_RANK[blastLevel]
+        ? normalizedRisk
+        : blastLevel;
+    }
+    return blastLevel;
+  }
+
   private riskStyle(): (text: string) => string {
-    if (this.riskLevel === "critical" || this.riskLevel === "high") return this.theme.error;
-    if (this.riskLevel === "medium") return this.theme.warning;
+    const level = this.effectiveRiskLevel();
+    if (level === "critical" || level === "high") return this.theme.error;
+    if (level === "medium") return this.theme.warning;
     return this.theme.muted;
   }
 
   private riskBackground(): ((text: string) => string) | undefined {
-    if (this.riskLevel === "critical" || this.riskLevel === "high") return this.theme.toolErrorBackground;
+    const level = this.effectiveRiskLevel();
+    if (level === "critical" || level === "high") return this.theme.toolErrorBackground;
     return this.theme.toolPendingBackground;
   }
 }

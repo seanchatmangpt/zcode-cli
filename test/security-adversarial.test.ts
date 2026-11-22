@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runComplianceCommand } from "../src/compliance-cli.ts";
 import { parseComplianceConfigToml } from "../src/compliance/config.ts";
 import { formatGitProvenanceTrailer, writeProvenanceSidecar } from "../src/compliance/disclosure.ts";
 import { Ocel2ComplianceBuilder, validateOcel2 } from "../src/compliance/ocel2.ts";
@@ -47,8 +48,19 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
       expect(sha256File(abs)).toBe(item.sha256);
     }
 
-    const forged = "0".repeat(64);
-    expect(forged).not.toBe(manifest.datasets[0]!.sha256);
+    // Real tampered-copy manifest verification: mutate 1 byte of a copied pinned dataset and verify digest mismatch
+    const tamperDir = makeTempDir("zcode-m4-manifest-tamper-");
+    try {
+      const targetItem = manifest.datasets[0]!;
+      const originalBytes = readFileSync(resolve(REPO_ROOT, targetItem.path));
+      const tamperedBytes = Buffer.from(originalBytes);
+      tamperedBytes[0] = (tamperedBytes[0]! ^ 0x01) & 0xff;
+      const tamperedPath = join(tamperDir, "tampered-dataset.bin");
+      writeFileSync(tamperedPath, tamperedBytes);
+      expect(sha256File(tamperedPath)).not.toBe(targetItem.sha256);
+    } finally {
+      rmSync(tamperDir, { recursive: true, force: true });
+    }
   });
 
   test("refuses TOML prototype pollution (__proto__), CRLF git-trailer injection, and indirect prompt-injection secrets", () => {
@@ -355,4 +367,225 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
       rmSync(root, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("runComplianceCommand: ocel verify rejects 1-byte attribute tampering", async () => {
+    const dir = makeTempDir("zcode-m4-cli-verify-");
+    const origCwd = process.cwd();
+    const origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    let stdoutBuf = "";
+    let stderrBuf = "";
+    try {
+      const b = new Ocel2ComplianceBuilder();
+      const t0 = "2026-08-05T12:00:00.000Z";
+      b.upsertObject("sess_cli_1", "session", { compliance_profile: "high-risk-annex-iii" }, t0);
+      b.recordEvent({
+        id: "ev_cli_1",
+        type: "session_created",
+        time: t0,
+        attributes: { compliance_profile: "high-risk-annex-iii" },
+        relationships: [{ objectId: "sess_cli_1", qualifier: "in_session" }]
+      });
+      const cleanDoc = b.build();
+      const cleanPath = join(dir, "clean.ocel.json");
+      writeFileSync(cleanPath, JSON.stringify(cleanDoc, null, 2), "utf8");
+
+      const tamperedDoc = structuredClone(cleanDoc);
+      tamperedDoc.events[0]!.attributes.find((a) => a.name === "compliance_profile")!.value = "standard";
+      const tamperedPath = join(dir, "tampered.ocel.json");
+      writeFileSync(tamperedPath, JSON.stringify(tamperedDoc, null, 2), "utf8");
+
+      process.chdir(dir);
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        stdoutBuf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+        return true;
+      }) as typeof process.stdout.write;
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        stderrBuf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+        return true;
+      }) as typeof process.stderr.write;
+
+      const okCode = await runComplianceCommand(["ocel", "verify", "--in", cleanPath]);
+      expect(okCode).toBe(0);
+
+      stdoutBuf = "";
+      stderrBuf = "";
+      const badCode = await runComplianceCommand(["ocel", "verify", "--in", tamperedPath]);
+      expect(badCode).toBe(1);
+      const parsed = JSON.parse(stdoutBuf) as { valid: boolean; errors: string[] };
+      expect(parsed.valid).toBe(false);
+      expect(parsed.errors.length).toBeGreaterThan(0);
+      expect(stderrBuf.length).toBeGreaterThan(0);
+    } finally {
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
+      process.chdir(origCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("runComplianceCommand: ocel verify rejects symlink-escaped and deleted modified_spans in .zcode-provenance/", async () => {
+    const dir = makeTempDir("zcode-m4-cli-prov-");
+    const outside = makeTempDir("zcode-m4-cli-outside-");
+    const origCwd = process.cwd();
+    const origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    let stdoutBuf = "";
+    let stderrBuf = "";
+    try {
+      const b = new Ocel2ComplianceBuilder();
+      const t0 = "2026-08-05T12:00:00.000Z";
+      b.upsertObject("sess_prov_1", "session", { compliance_profile: "standard" }, t0);
+      b.recordEvent({
+        id: "ev_prov_1",
+        type: "session_created",
+        time: t0,
+        attributes: { compliance_profile: "standard" },
+        relationships: [{ objectId: "sess_prov_1", qualifier: "in_session" }]
+      });
+      const doc = b.build();
+      const logPath = join(dir, "session.ocel.json");
+      writeFileSync(logPath, JSON.stringify(doc, null, 2), "utf8");
+
+      const provDir = join(dir, ".zcode-provenance");
+      mkdirSync(provDir, { recursive: true });
+
+      const secretFile = join(outside, "secret.txt");
+      writeFileSync(secretFile, "outside-secret\n", "utf8");
+      const escapeLink = join(dir, "escape-link.txt");
+      symlinkSync(secretFile, escapeLink);
+      const secretSha = sha256File(secretFile);
+
+      const writeSealedSidecar = (fileName: string, spans: Array<{ path: string; sha256: string }>) => {
+        const unsealed = {
+          schema_version: "1.0",
+          article: "Art. 50(2)",
+          session_id: "sess_prov_1",
+          compliance_profile: "standard",
+          provider: "zai",
+          model: "glm-5.3",
+          ocel_head_hash: "a".repeat(64),
+          generated_at: t0,
+          modified_spans: spans,
+          span_count: spans.length
+        };
+        const seal = createHash("sha256").update(JSON.stringify(unsealed), "utf8").digest("hex");
+        writeFileSync(
+          join(provDir, fileName),
+          JSON.stringify({ ...unsealed, seal_sha256: seal }, null, 2),
+          "utf8"
+        );
+      };
+
+      process.chdir(dir);
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        stdoutBuf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+        return true;
+      }) as typeof process.stdout.write;
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        stderrBuf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+        return true;
+      }) as typeof process.stderr.write;
+
+      // Case 1: symlink escape in modified_spans
+      writeSealedSidecar("sess_prov_1.json", [{ path: "escape-link.txt", sha256: secretSha }]);
+      const symCode = await runComplianceCommand(["ocel", "verify", "--in", logPath]);
+      expect(symCode).toBe(1);
+      expect(stderrBuf).toContain("PROVENANCE_SEAL_FAILED");
+      expect(stderrBuf).toContain("escapes workspace");
+
+      // Case 2: deleted/missing sealed span on disk
+      stdoutBuf = "";
+      stderrBuf = "";
+      writeSealedSidecar("sess_prov_1.json", [{ path: "deleted-file.ts", sha256: "b".repeat(64) }]);
+      const delCode = await runComplianceCommand(["ocel", "verify", "--in", logPath]);
+      expect(delCode).toBe(1);
+      expect(stderrBuf).toContain("PROVENANCE_SEAL_FAILED");
+      expect(stderrBuf).toContain("missing on disk");
+    } finally {
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
+      process.chdir(origCwd);
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("runComplianceCommand: ocel export --rpm-safe refuses missing or all-zero ZCODE_RPM_SALT", async () => {
+    const dir = makeTempDir("zcode-m4-cli-salt-");
+    const origCwd = process.cwd();
+    const origSalt = process.env.ZCODE_RPM_SALT;
+    const origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    let stderrBuf = "";
+    try {
+      const b = new Ocel2ComplianceBuilder();
+      const t0 = "2026-08-05T12:00:00.000Z";
+      for (let i = 1; i <= 2; i++) {
+        b.upsertObject(`sess_s_${i}`, "session", { compliance_profile: "standard" }, t0);
+        b.recordEvent({
+          id: `ev_s_${i}`,
+          type: "session_created",
+          time: t0,
+          attributes: { compliance_profile: "standard" },
+          relationships: [{ objectId: `sess_s_${i}`, qualifier: "in_session" }]
+        });
+      }
+      const inPath = join(dir, "in.ocel.json");
+      const outPath = join(dir, "out.ocel.json");
+      writeFileSync(inPath, JSON.stringify(b.build(), null, 2), "utf8");
+
+      process.chdir(dir);
+      process.stdout.write = (() => true) as typeof process.stdout.write;
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        stderrBuf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+        return true;
+      }) as typeof process.stderr.write;
+
+      // Missing ZCODE_RPM_SALT must fail closed with REDACTION_FAILURE
+      delete process.env.ZCODE_RPM_SALT;
+      const missingCode = await runComplianceCommand([
+        "ocel",
+        "export",
+        "--in",
+        inPath,
+        "--out",
+        outPath,
+        "--rpm-safe",
+        "--k",
+        "2"
+      ]);
+      expect(missingCode).toBe(2);
+      expect(stderrBuf).toContain("REDACTION_FAILURE");
+      expect(existsSync(outPath)).toBe(false);
+
+      // All-zero ZCODE_RPM_SALT must also fail closed
+      stderrBuf = "";
+      process.env.ZCODE_RPM_SALT = "0000000000000000";
+      const zeroCode = await runComplianceCommand([
+        "ocel",
+        "export",
+        "--in",
+        inPath,
+        "--out",
+        outPath,
+        "--rpm-safe",
+        "--k",
+        "2"
+      ]);
+      expect(zeroCode).toBe(2);
+      expect(stderrBuf).toContain("REDACTION_FAILURE");
+      expect(existsSync(outPath)).toBe(false);
+    } finally {
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
+      if (origSalt === undefined) {
+        delete process.env.ZCODE_RPM_SALT;
+      } else {
+        process.env.ZCODE_RPM_SALT = origSalt;
+      }
+      process.chdir(origCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

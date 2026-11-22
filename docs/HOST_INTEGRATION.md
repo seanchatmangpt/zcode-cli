@@ -77,6 +77,22 @@ The following variables are supported host integration points:
 | `ZCODE_MODEL_RETRY_MAX_RETRIES` | Override the model retry limit. |
 | `ZCODE_TUI_RUNTIME_LOG` | Choose the bounded diagnostic log for TUI runtime stderr. |
 | `ZCODE_FABRIC_MAX_CONCURRENT` | Cap gall-work fabric concurrency (default 4). |
+| `ZCODE_OCEL` | Set to `1` to enable IEEE OCEL 2.0 event logging. |
+| `ZCODE_OCEL_DIR` | Override the OCEL output directory (default `~/.zcode/ocel`). |
+| `ZCODE_ALLOW_YOLO` | Override autonomous execution (`0`/`false`/`no` or `1`/`true`/`yes`); invalid values fail closed (`OVERSIGHT_POLICY_REFUSED`). High-risk EU AI Act profiles force `false`. |
+| `ZCODE_MIN_REVIEW_MS` | Minimum human-oversight review dwell time in milliseconds (Art. 14); negative or non-numeric values fail closed (`OVERSIGHT_POLICY_REFUSED`). |
+| `ZCODE_POLICY_CEILING` | Propagate an upper-bound policy ceiling to child/subagent processes. |
+| `ZCODE_OVERSEER_ID` | Bind a human overseer identifier to regulated sessions and subagents. |
+| `ZCODE_SUBAGENT`, `ZCODE_PARENT_SESSION_ID`, `ZCODE_SUBAGENT_ID` | Identify a spawned subagent (`ZCODE_SUBAGENT=1`) so parent oversight constraints (`allow_yolo`, `min_review_ms`, profile rank, `overseer_id`) propagate monotonically without weakening. |
+| `ZCODE_SUPPRESS_DISCLOSURE` | Suppress Art. 50 disclosure banner when `1`; refused (`DISCLOSURE_REQUIRED`) under regulated profiles (`art50-only`, `high-risk-annex-iii`, `high-risk-annex-i`). |
+| `XAAS_WORKER` | Set to `1` when invoked as an XaaS worker to bind lease identity and enforce oversight propagation. |
+
+Regulated-profile fail-closed behavior: under high-risk profiles
+(`high-risk-annex-iii`, `high-risk-annex-i`), the launcher requires active
+OCEL/compliance logging (otherwise exits with `LOGGING_UNAVAILABLE`), forbids
+`ZCODE_SUPPRESS_DISCLOSURE=1` (`DISCLOSURE_REQUIRED`), seals Art. 50(2)
+Markdown provenance headers and `.zcode-provenance/` sidecars, and records
+180-day event-time retention purges in `retention-purge-ledger.ndjson`.
 
 Provider capacity handling: gall-work fabric calls classify HTTP 429 and
 business error 1302 as capacity errors and retry with bounded exponential
@@ -168,4 +184,16 @@ requires the worker's local opt-in `ZCODE_RELAY_ALLOW_DO=1` (otherwise
 `<tmpdir>/xaas-fabric/<sha256(worktree, epoch)>.relay-ack.json` with schema
 `zcode.relay-ack-state/2`, fail-closed on corruption; a refused ack makes
 `dispatchRelayCommand` report the outcome `unacknowledged`, never `executed`.
+
+## Compliance and closed-loop non-interactive commands
+
+The following public subcommands are contract-version-1 compatible and execute
+directly in the launcher without loading `vendor/zcode.cjs`:
+
+- `zcode compliance ...` — EU AI Act (Articles 9–15, 17, 26, 27, 43, 47, 50,
+  72, 73) compliance assessment, OCEL 2.0 export/validation, retention purge
+  ledger verification, and provenance inspection (`src/compliance-cli.ts`).
+- `zcode foundry [--repo <path>]... [--all] [--candidates <jsonl>] [--verify-cmd "<cmd>"] [--live | --dry-run]` —
+  closed-loop `R_t -> O*_{t+1}` finishing pipeline emitting Chatman-5 DFCM
+  receipts (`src/foundry-cli.ts`).
 

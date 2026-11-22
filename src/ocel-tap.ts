@@ -895,20 +895,26 @@ export class OcelRecorder {
     const sessionId = sanitizeSessionFileId(this.sessionId ?? `unknown-${Date.now()}`);
     const sealedAt = new Date().toISOString();
     const safeIdentity = scrubLeaseIdentity(this.identity);
-    const doc = closeLeaseIdentityGraph(
+    const sealedDoc = closeLeaseIdentityGraph(
       closeEventTypeAttributes(this.tap.toOcel()),
       safeIdentity,
       this.subjectSha,
       sealedAt
     );
     const head = this.tap.seal();
-    const ocelText = JSON.stringify(doc);
-    // Fail-closed seal gate (align capability-snapshot assert_no_secrets): never
-    // claim alive / persist an "alive" seal when unredacted secrets or PII remain.
-    const redactionOk = !containsUnredactedSecretsOrPii(ocelText, this.redactionOptions)
-      && !this.redactor.containsUnredacted(ocelText);
-    const ocelFileSha256 = sha256(ocelText);
-    const objectsSha256 = sha256(JSON.stringify(doc.objects));
+    // Fail-closed seal gate (CAPABILITY_SNAPSHOT assert_no_secrets parity): if
+    // unredacted secrets/PII survive, refuse the secret husk and land a schema
+    // stub with standing=blocked + redaction_refused.
+    const sealedText = JSON.stringify(sealedDoc);
+    const redactionOk =
+      !containsUnredactedSecretsOrPii(sealedText, this.redactionOptions)
+      && !this.redactor.containsUnredacted(sealedText);
+    const prepared = redactionOk
+      ? { diskDoc: sealedDoc, ocelText: sealedText, redactionOk: true as const }
+      : prepareOcelDiskWrite(sealedDoc, this.redactionOptions);
+    const finalDoc = prepared.diskDoc;
+    const finalText = prepared.ocelText;
+    const ocelFileSha256 = sha256(finalText);
     mkdirSync(this.dir, { recursive: true });
     const ocelPath = join(this.dir, `${sessionId}.jsonocel`);
     const receiptPath = join(this.dir, `${sessionId}.receipt.json`);
@@ -917,9 +923,16 @@ export class OcelRecorder {
     // from the receipt ALOOP seal (`receipt_chain_intact`); never conflate
     // the two (skeptic: chain_intact was a false witness for pi_hash).
     const ocelIntact =
-      redactionOk && verifyChain(doc as OcelDoc, this.tap.spec.hash) === null && doc.events.length > 0;
+      redactionOk
+      && verifyChain(sealedDoc as OcelDoc, this.tap.spec.hash) === null
+      && sealedDoc.events.length > 0;
     const standing = ocelIntact ? "alive" : "blocked";
-    const chainSubject = receiptChainSubject(sessionId, head, ocelFileSha256, objectsSha256);
+    const chainSubject = receiptChainSubject(
+      sessionId,
+      head,
+      ocelFileSha256,
+      sha256(JSON.stringify(finalDoc.objects))
+    );
     const chain: Chain = [];
     appendPending(chain, `${sessionId}-e1`, chainSubject, "record-ocel");
     appendOutcome(chain, `${sessionId}-e2`, standing, chainSubject, "record-ocel");
@@ -931,54 +944,60 @@ export class OcelRecorder {
         ocel_file_sha256: ocelFileSha256,
         chain
       },
-      ocelText,
-      doc as OcelDoc
+      finalText,
+      finalDoc
     );
     const receiptIdentity = redactLeaseIdentityFields({
       ...(this.identity.subjectCwd
-        ? { subject_sha: subjectHead(this.identity.subjectCwd) ?? "REDACTED" }
+        ? { subject_sha: subjectHead(this.identity.subjectCwd) ?? "" }
         : {}),
       ...(safeIdentity.workOrderIri ? { work_order_iri: safeIdentity.workOrderIri } : {}),
       ...(safeIdentity.epochId ? { epoch_id: safeIdentity.epochId } : {}),
       ...(safeIdentity.baseSha ? { base_sha: safeIdentity.baseSha } : {})
     });
+    // Drop empty subject_sha if scrub refused it.
+    if (receiptIdentity.subject_sha === "") delete receiptIdentity.subject_sha;
     const receipt: OcelTapReceipt = {
       session: sessionId,
       source: this.source,
       ocel_file: `${sessionId}.jsonocel`,
       ocel_file_sha256: ocelFileSha256,
-      event_count: doc.events.length,
+      event_count: finalDoc.events.length,
       head_hash: head,
       // Exact subject and lease identity (ZCODE-26922-06): bound only when
-      // the run carries them — scrubbed through redactLeaseIdentityFields so
-      // post-redact re-injection cannot land secrets next to the OCEL log.
+      // the run carries them — scrubbed through redact-or-refuse so post-redact
+      // re-injection cannot land secrets next to the OCEL log.
       ...(receiptIdentity.subject_sha ? { subject_sha: receiptIdentity.subject_sha } : {}),
       ...(receiptIdentity.work_order_iri ? { work_order_iri: receiptIdentity.work_order_iri } : {}),
       ...(receiptIdentity.epoch_id ? { epoch_id: receiptIdentity.epoch_id } : {}),
       ...(receiptIdentity.base_sha ? { base_sha: receiptIdentity.base_sha } : {}),
-      // Replay binding is redacted before disk write — XAAS_REPLAY_BINDING
-      // must not land secrets or PII next to the "redacted" OCEL log.
-      ...(this.identity.replayBinding
-        ? { replay_binding: this.redactor.redactData(this.identity.replayBinding) as Record<string, unknown> }
-        : {}),
+      ...(safeIdentity.replayBinding ? { replay_binding: safeIdentity.replayBinding } : {}),
       chain_intact: ocelIntact,
       receipt_chain_intact: receiptIntact,
+      ...(!redactionOk ? { redaction_refused: true } : {}),
       unpaired: unpaired(chain),
       chain
     };
     const receiptText = JSON.stringify(receipt, null, 2);
     if (
-      !redactionOk
+      containsUnredactedSecretsOrPii(finalText, this.redactionOptions)
+      || this.redactor.containsUnredacted(finalText)
       || containsUnredactedSecretsOrPii(receiptText, this.redactionOptions)
       || this.redactor.containsUnredacted(receiptText)
     ) {
-      // Align capability-snapshot assert: refuse to leave an alive husk; seal
-      // already standing=blocked above. Do not write unredacted OCEL/receipt.
+      // Absolute refuse: do not leave any secretful husk on disk.
       throw new Error("REFUSED:UNREDACTED_SECRETS_OR_PII");
     }
-    atomicWrite(ocelPath, ocelText);
+    atomicWrite(ocelPath, finalText);
     atomicWrite(receiptPath, receiptText);
-    return { sessionId, ocelPath, receiptPath, events: doc.events.length, head };
+    return {
+      sessionId,
+      ocelPath,
+      receiptPath,
+      events: finalDoc.events.length,
+      head,
+      ...(redactionOk ? {} : { redactionRefused: true })
+    };
   }
 }
 

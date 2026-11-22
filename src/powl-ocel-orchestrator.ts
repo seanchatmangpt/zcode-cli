@@ -134,8 +134,54 @@ function effectiveFileScope(a: PowlActivity): string[] {
   return [];
 }
 
+interface SubtreeWriteScope {
+  hasMutating: boolean;
+  hasEmptyMutating: boolean;
+  scopes: string[];
+}
+
+function collectSubtreeWriteScope(node: PowlNode): SubtreeWriteScope {
+  if (node.kind === "activity") {
+    if (effectiveActivityKind(node) !== "mutating") {
+      return { hasMutating: false, hasEmptyMutating: false, scopes: [] };
+    }
+    const s = effectiveFileScope(node);
+    return {
+      hasMutating: true,
+      hasEmptyMutating: s.length === 0,
+      scopes: [...s]
+    };
+  }
+  if (node.kind === "tau") {
+    return { hasMutating: false, hasEmptyMutating: false, scopes: [] };
+  }
+  const children: PowlNode[] =
+    node.kind === "xor"
+      ? node.branches
+      : node.kind === "loop"
+        ? [node.doBranch, node.redoBranch]
+        : node.children;
+  let hasMutating = false;
+  let hasEmptyMutating = false;
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  for (const child of children) {
+    const sub = collectSubtreeWriteScope(child);
+    if (sub.hasMutating) hasMutating = true;
+    if (sub.hasEmptyMutating) hasEmptyMutating = true;
+    for (const f of sub.scopes) {
+      if (!seen.has(f)) {
+        seen.add(f);
+        scopes.push(f);
+      }
+    }
+  }
+  return { hasMutating, hasEmptyMutating, scopes };
+}
+
 /**
- * WIP>1 safety: unordered mutating activities must have disjoint write scopes (ARD §3.1.3).
+ * WIP>1 safety: unordered mutating activities (including inside compound xor/loop/partial_order
+ * descendants) must have disjoint write scopes (ARD §3.1.3).
  * Returns violations; callers fail-closed with WRITE_SCOPE_CONFLICT.
  */
 export function validateDisjointWriteScopes(
@@ -144,29 +190,32 @@ export function validateDisjointWriteScopes(
 ): WriteScopeViolation[] {
   const childIds = po.children.map((c) => c.id);
   const prec = transitiveClosure(childIds, po.order);
-  const activities = po.children.filter((c): c is PowlActivity => c.kind === "activity");
+  const childScopes = po.children.map((c) => ({ node: c, scope: collectSubtreeWriteScope(c) }));
   const violations: WriteScopeViolation[] = [];
 
-  for (let i = 0; i < activities.length; i++) {
-    for (let j = i + 1; j < activities.length; j++) {
-      const u = activities[i]!;
-      const v = activities[j]!;
-      if (effectiveActivityKind(u) !== "mutating" || effectiveActivityKind(v) !== "mutating") continue;
+  for (let i = 0; i < childScopes.length; i++) {
+    for (let j = i + 1; j < childScopes.length; j++) {
+      const u = childScopes[i]!;
+      const v = childScopes[j]!;
+      if (!u.scope.hasMutating || !v.scope.hasMutating) continue;
       const ordered =
-        prec.has(`${u.id}->${v.id}`) || prec.has(`${v.id}->${u.id}`);
+        prec.has(`${u.node.id}->${v.node.id}`) || prec.has(`${v.node.id}->${u.node.id}`);
       if (ordered) continue;
-      const su = effectiveFileScope(u);
-      const sv = effectiveFileScope(v);
-      if (su.length === 0 || sv.length === 0) {
+      if (
+        u.scope.hasEmptyMutating ||
+        v.scope.hasEmptyMutating ||
+        u.scope.scopes.length === 0 ||
+        v.scope.scopes.length === 0
+      ) {
         violations.push({
-          a: u.id,
-          b: v.id,
+          a: u.node.id,
+          b: v.node.id,
           overlap: ["∅-scope (mutating activities require fileScope/targetFile when unordered)"]
         });
         continue;
       }
-      const overlap = resolveOverlap(su, sv);
-      if (overlap.length > 0) violations.push({ a: u.id, b: v.id, overlap });
+      const overlap = resolveOverlap(u.scope.scopes, v.scope.scopes);
+      if (overlap.length > 0) violations.push({ a: u.node.id, b: v.node.id, overlap });
     }
   }
   return violations;
@@ -243,6 +292,8 @@ export interface Transition {
   label: string;
   silent: boolean;
   activityId?: string;
+  /** For loop exit τ transitions: the owning PowlLoop node id. */
+  loopExitFor?: string;
   objectType: string;
   targetFile?: string;
   activityKind?: ActivityKind;
@@ -342,7 +393,13 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
       compile(node.doBranch, loopEntry, loopChoice);
       compile(node.redoBranch, loopChoice, loopEntry);
       addTransition(
-        { id: newTransitionId("exit", node.id), label: "τ_exit", silent: true, objectType: "Workflow" },
+        {
+          id: newTransitionId("exit", node.id),
+          label: "τ_exit",
+          silent: true,
+          loopExitFor: node.id,
+          objectType: "Workflow"
+        },
         [loopChoice],
         [endP]
       );
@@ -362,10 +419,31 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
         compile(c, childStart.get(c.id)!, childEnd.get(c.id)!);
       }
 
-      // Add order places between u_end -> v_start for every (u ≺ v)
+      // Deduplicate node.order and compute its transitive reduction (Hasse diagram)
+      // before allocating ord_* places.
+      const childIds = node.children.map((c) => c.id);
+      const uniqueEdges: Array<readonly [string, string]> = [];
+      const seenEdges = new Set<string>();
+      for (const [u, v] of node.order) {
+        const key = `${u}->${v}`;
+        if (!seenEdges.has(key)) {
+          seenEdges.add(key);
+          uniqueEdges.push([u, v]);
+        }
+      }
+      const closure = transitiveClosure(childIds, uniqueEdges);
+      const reducedOrder = uniqueEdges.filter(([u, v]) => {
+        for (const w of childIds) {
+          if (w !== u && w !== v && closure.has(`${u}->${w}`) && closure.has(`${w}->${v}`)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
       const orderPlaces = new Map<string, string[]>();
       for (const c of node.children) orderPlaces.set(c.id, []);
-      for (const [u, v] of node.order) {
+      for (const [u, v] of reducedOrder) {
         outEdges.get(u)!.push(v);
         inEdges.get(v)!.push(u);
       }
@@ -434,23 +512,245 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
   return { places, transitions, pre, post, sourcePlace, sinkPlace };
 }
 
-/**
- * Defensive WF-net soundness checker (van der Aalst): option to complete,
- * proper completion, and no dead transitions via finite reachability BFS.
- * Explore dry-run Exp-1 / ARD §3.2.3.
- */
-export function verifyStructuralSoundness(net: WorkflowNet): {
+export interface StructuralSoundnessResult {
   optionToComplete: boolean;
   properCompletion: boolean;
   noDeadTransitions: boolean;
-} {
-  const placeIds = net.places.map((p) => p.id);
+  /** Set to false when van der Aalst WF-Net structural preconditions fail (•i = ∅, o• = ∅, i-to-o connectedness). */
+  wfNetValid?: boolean;
+  /** Set to true when reachability BFS hit MAX_STATES before exhausting the state space. */
+  truncated?: boolean;
+  /** Set to "UNKNOWN" when truncated before completing reachability exploration. */
+  standing?: "SOUND" | "UNSOUND" | "UNKNOWN";
+}
+
+function checkWfNetStructuralPreconditions(net: WorkflowNet): boolean {
+  const placeSet = new Set(net.places.map((p) => p.id));
+  if (!placeSet.has(net.sourcePlace) || !placeSet.has(net.sinkPlace)) return false;
+  if (net.sourcePlace === net.sinkPlace) return false;
+
+  const fwd = new Map<string, string[]>();
+  const rev = new Map<string, string[]>();
+  const addEdge = (from: string, to: string) => {
+    if (!fwd.has(from)) fwd.set(from, []);
+    fwd.get(from)!.push(to);
+    if (!rev.has(to)) rev.set(to, []);
+    rev.get(to)!.push(from);
+  };
+
+  for (const t of net.transitions) {
+    const tNode = `t:${t.id}`;
+    const inputs = net.pre.get(t.id) ?? [];
+    const outputs = net.post.get(t.id) ?? [];
+    for (const p of inputs) {
+      if (!placeSet.has(p)) return false;
+      // o• = ∅: sinkPlace must have no outgoing arcs
+      if (p === net.sinkPlace) return false;
+      addEdge(`p:${p}`, tNode);
+    }
+    for (const p of outputs) {
+      if (!placeSet.has(p)) return false;
+      // •i = ∅: sourcePlace must have no incoming arcs
+      if (p === net.sourcePlace) return false;
+      addEdge(tNode, `p:${p}`);
+    }
+  }
+
+  const bfs = (start: string, adj: Map<string, string[]>): Set<string> => {
+    const seen = new Set<string>([start]);
+    const q = [start];
+    let head = 0;
+    while (head < q.length) {
+      const cur = q[head++]!;
+      for (const nxt of adj.get(cur) ?? []) {
+        if (!seen.has(nxt)) {
+          seen.add(nxt);
+          q.push(nxt);
+        }
+      }
+    }
+    return seen;
+  };
+
+  const fromSource = bfs(`p:${net.sourcePlace}`, fwd);
+  const toSink = bfs(`p:${net.sinkPlace}`, rev);
+
+  for (const p of net.places) {
+    const key = `p:${p.id}`;
+    if (!fromSource.has(key) || !toSink.has(key)) return false;
+  }
+  for (const t of net.transitions) {
+    const key = `t:${t.id}`;
+    if (!fromSource.has(key) || !toSink.has(key)) return false;
+  }
+  return true;
+}
+
+/**
+ * Soundness-preserving Murata series/parallel reduction pre-pass (FPT, FPP, FSP, FST).
+ * Operates on a working copy so the caller's WorkflowNet is never mutated.
+ */
+function murataReduceWorkflowNet(net: WorkflowNet): WorkflowNet {
+  let places = net.places.map((p) => ({ ...p }));
+  let transitions = net.transitions.map((t) => ({ ...t }));
+  const pre = new Map<string, string[]>();
+  const post = new Map<string, string[]>();
+  for (const t of transitions) {
+    pre.set(t.id, [...(net.pre.get(t.id) ?? [])]);
+    post.set(t.id, [...(net.post.get(t.id) ?? [])]);
+  }
+
+  const sig = (xs: string[]): string => [...xs].sort().join("\0");
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+
+    // 1. Fusion of Parallel Transitions (FPT): identical pre and post multisets
+    const seenT = new Map<string, string>();
+    const keepT: Transition[] = [];
+    for (const t of transitions) {
+      const key = `${sig(pre.get(t.id) ?? [])}=>${sig(post.get(t.id) ?? [])}`;
+      if (seenT.has(key)) {
+        pre.delete(t.id);
+        post.delete(t.id);
+        changed = true;
+      } else {
+        seenT.set(key, t.id);
+        keepT.push(t);
+      }
+    }
+    transitions = keepT;
+    if (changed) continue;
+
+    // Build place incidence maps
+    const pIn = new Map<string, string[]>();
+    const pOut = new Map<string, string[]>();
+    for (const p of places) {
+      pIn.set(p.id, []);
+      pOut.set(p.id, []);
+    }
+    for (const t of transitions) {
+      for (const p of pre.get(t.id) ?? []) pOut.get(p)?.push(t.id);
+      for (const p of post.get(t.id) ?? []) pIn.get(p)?.push(t.id);
+    }
+
+    // 2. Fusion of Parallel Places (FPP): non-boundary places with identical preset & postset
+    const seenP = new Map<string, string>();
+    const removedP = new Set<string>();
+    for (const p of places) {
+      if (p.id === net.sourcePlace || p.id === net.sinkPlace) continue;
+      const key = `${sig(pIn.get(p.id) ?? [])}=>${sig(pOut.get(p.id) ?? [])}`;
+      if (seenP.has(key)) {
+        removedP.add(p.id);
+        changed = true;
+      } else {
+        seenP.set(key, p.id);
+      }
+    }
+    if (removedP.size > 0) {
+      places = places.filter((p) => !removedP.has(p.id));
+      for (const t of transitions) {
+        pre.set(t.id, (pre.get(t.id) ?? []).filter((p) => !removedP.has(p)));
+        post.set(t.id, (post.get(t.id) ?? []).filter((p) => !removedP.has(p)));
+      }
+      continue;
+    }
+
+    // 3. Fusion of Series Places (FSP): p1 -> t -> p2 where p1• = {t} and •p2 = {t}
+    for (const t of transitions) {
+      const ins = pre.get(t.id) ?? [];
+      const outs = post.get(t.id) ?? [];
+      if (ins.length !== 1 || outs.length !== 1) continue;
+      const p1 = ins[0]!;
+      const p2 = outs[0]!;
+      if (p1 === p2) continue;
+      if (p1 === net.sourcePlace && p2 === net.sinkPlace) continue;
+      if ((pOut.get(p1)?.length ?? 0) !== 1 || (pIn.get(p2)?.length ?? 0) !== 1) continue;
+
+      transitions = transitions.filter((x) => x.id !== t.id);
+      pre.delete(t.id);
+      post.delete(t.id);
+
+      if (p2 === net.sinkPlace) {
+        // Redirect all outputs to p1 -> p2, remove p1
+        places = places.filter((p) => p.id !== p1);
+        for (const other of transitions) {
+          post.set(other.id, (post.get(other.id) ?? []).map((p) => (p === p1 ? p2 : p)));
+        }
+      } else {
+        // Redirect all inputs from p2 -> p1, remove p2
+        places = places.filter((p) => p.id !== p2);
+        for (const other of transitions) {
+          pre.set(other.id, (pre.get(other.id) ?? []).map((p) => (p === p2 ? p1 : p)));
+        }
+      }
+      changed = true;
+      break;
+    }
+    if (changed) continue;
+
+    // 4. Fusion of Series Transitions (FST): t1 -> p -> t2 where t1• = {p} and •t2 = {p}
+    for (const p of places) {
+      if (p.id === net.sourcePlace || p.id === net.sinkPlace) continue;
+      const ins = pIn.get(p.id) ?? [];
+      const outs = pOut.get(p.id) ?? [];
+      if (ins.length !== 1 || outs.length !== 1) continue;
+      const t1 = ins[0]!;
+      const t2 = outs[0]!;
+      if (t1 === t2) continue;
+      if ((post.get(t1)?.length ?? 0) !== 1 || (pre.get(t2)?.length ?? 0) !== 1) continue;
+
+      post.set(t1, [...(post.get(t2) ?? [])]);
+      transitions = transitions.filter((x) => x.id !== t2);
+      pre.delete(t2);
+      post.delete(t2);
+      places = places.filter((x) => x.id !== p.id);
+      changed = true;
+      break;
+    }
+  }
+
+  return {
+    places,
+    transitions,
+    pre,
+    post,
+    sourcePlace: net.sourcePlace,
+    sinkPlace: net.sinkPlace
+  };
+}
+
+/**
+ * Defensive WF-net soundness checker (van der Aalst):
+ *   1. Structural WF-Net preconditions (•i = ∅, o• = ∅, every node on an i->o path).
+ *   2. Soundness-preserving Murata series/parallel reduction pre-pass.
+ *   3. Finite reachability BFS with O(1) head-index cursors and explicit truncation status.
+ * Explore dry-run Exp-1 / ARD §3.2.3.
+ */
+export function verifyStructuralSoundness(net: WorkflowNet): StructuralSoundnessResult {
+  if (!checkWfNetStructuralPreconditions(net)) {
+    return {
+      optionToComplete: false,
+      properCompletion: false,
+      noDeadTransitions: false,
+      wfNetValid: false
+    };
+  }
+
+  const reduced = murataReduceWorkflowNet(net);
+  const placeIds = reduced.places.map((p) => p.id);
   const placeIndex = new Map(placeIds.map((id, i) => [id, i] as const));
   const n = placeIds.length;
-  const sourceIdx = placeIndex.get(net.sourcePlace);
-  const sinkIdx = placeIndex.get(net.sinkPlace);
+  const sourceIdx = placeIndex.get(reduced.sourcePlace);
+  const sinkIdx = placeIndex.get(reduced.sinkPlace);
   if (sourceIdx === undefined || sinkIdx === undefined) {
-    return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+    return {
+      optionToComplete: false,
+      properCompletion: false,
+      noDeadTransitions: false,
+      wfNetValid: false
+    };
   }
 
   const encode = (marking: number[]): string => marking.join(",");
@@ -458,7 +758,7 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
   initial[sourceIdx] = 1;
 
   const enabled = (marking: number[], t: Transition): boolean => {
-    const inputs = net.pre.get(t.id) ?? [];
+    const inputs = reduced.pre.get(t.id) ?? [];
     return inputs.every((p) => {
       const i = placeIndex.get(p);
       return i !== undefined && marking[i]! >= 1;
@@ -467,10 +767,10 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
 
   const fire = (marking: number[], t: Transition): number[] => {
     const next = marking.slice();
-    for (const p of net.pre.get(t.id) ?? []) {
+    for (const p of reduced.pre.get(t.id) ?? []) {
       next[placeIndex.get(p)!]! -= 1;
     }
-    for (const p of net.post.get(t.id) ?? []) {
+    for (const p of reduced.post.get(t.id) ?? []) {
       next[placeIndex.get(p)!]! += 1;
     }
     return next;
@@ -478,16 +778,23 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
 
   const visited = new Map<string, number[]>();
   const queue: number[][] = [initial];
+  let qHead = 0;
   visited.set(encode(initial), initial);
   const fired = new Set<string>();
   const MAX_STATES = 50_000;
 
-  while (queue.length > 0) {
+  while (qHead < queue.length) {
     if (visited.size > MAX_STATES) {
-      return { optionToComplete: false, properCompletion: false, noDeadTransitions: false };
+      return {
+        optionToComplete: false,
+        properCompletion: false,
+        noDeadTransitions: false,
+        truncated: true,
+        standing: "UNKNOWN"
+      };
     }
-    const m = queue.shift()!;
-    for (const t of net.transitions) {
+    const m = queue[qHead++]!;
+    for (const t of reduced.transitions) {
       if (!enabled(m, t)) continue;
       fired.add(t.id);
       const next = fire(m, t);
@@ -508,7 +815,7 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
   // Reverse BFS from sink-only marking over the reachability graph edges.
   const reverseAdj = new Map<string, string[]>();
   for (const [key, m] of visited) {
-    for (const t of net.transitions) {
+    for (const t of reduced.transitions) {
       if (!enabled(m, t)) continue;
       const nextKey = encode(fire(m, t));
       if (!reverseAdj.has(nextKey)) reverseAdj.set(nextKey, []);
@@ -525,9 +832,10 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
   );
   if (visited.has(sinkOnlyKey)) {
     const rq = [sinkOnlyKey];
+    let rqHead = 0;
     canReachSink.add(sinkOnlyKey);
-    while (rq.length > 0) {
-      const cur = rq.shift()!;
+    while (rqHead < rq.length) {
+      const cur = rq[rqHead++]!;
       for (const pred of reverseAdj.get(cur) ?? []) {
         if (!canReachSink.has(pred)) {
           canReachSink.add(pred);
@@ -537,7 +845,7 @@ export function verifyStructuralSoundness(net: WorkflowNet): {
     }
   }
   const optionToComplete = visited.size > 0 && [...visited.keys()].every((k) => canReachSink.has(k));
-  const noDeadTransitions = net.transitions.every((t) => fired.has(t.id));
+  const noDeadTransitions = reduced.transitions.every((t) => fired.has(t.id));
 
   return { optionToComplete, properCompletion, noDeadTransitions };
 }
@@ -809,34 +1117,6 @@ export async function executePowlWithTokenReplay(
   };
   walkLoops(root);
 
-  /**
-   * Map τ_exit transition → PowlLoop id.
-   * A2: `tau_exit_<loopId>_<n>`; A1: `__powl_t_exit_<loopId>_<n>`.
-   * Strip-prefix alone can yield `<loopId>_<n>`, so match longest loop id.
-   */
-  const loopIdFromExit = (t: Transition): string | undefined => {
-    const schemas = [
-      { head: "tau_exit_", ok: (id: string) => id.startsWith("tau_exit_") },
-      { head: "__powl_t_exit_", ok: (id: string) => id.startsWith("__powl_t_exit_") }
-    ] as const;
-    const schema = schemas.find((s) => s.ok(t.id));
-    if (!schema) return undefined;
-    let best: string | undefined;
-    for (const lid of loopMaxIterations.keys()) {
-      const prefix = `${schema.head}${lid}`;
-      if (t.id === prefix || t.id.startsWith(`${prefix}_`)) {
-        const rest = t.id.slice(prefix.length);
-        if (rest === "" || /^_\d+$/.test(rest)) {
-          if (!best || lid.length > best.length) best = lid;
-        }
-      }
-    }
-    if (best) return best;
-    const body = t.id.slice(schema.head.length);
-    const m = body.match(/^(.*)_\d+$/);
-    return m?.[1] ?? body;
-  };
-
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const executedActivities: string[] = [];
   const inFlight = new Set<Promise<void>>();
@@ -861,7 +1141,7 @@ export async function executePowlWithTokenReplay(
       const enabledAll = net.transitions.filter((t) => isEnabled(t));
       for (const t of enabledAll) {
         if (!t.silent) continue;
-        const lid = loopIdFromExit(t);
+        const lid = t.loopExitFor;
         if (lid && redoArmedLoops.has(lid)) continue;
         const contested = enabledAll.some((o) => o.id !== t.id && sharesPre(t, o));
         if (contested) continue;
@@ -900,7 +1180,7 @@ export async function executePowlWithTokenReplay(
     let progress = false;
 
     for (const exit of net.transitions) {
-      const loopId = loopIdFromExit(exit);
+      const loopId = exit.loopExitFor;
       if (!loopId || !isEnabled(exit)) continue;
       if (redoArmedLoops.has(loopId)) continue;
 
@@ -926,20 +1206,20 @@ export async function executePowlWithTokenReplay(
     if (!net.transitions.some((t) => !t.silent && isEnabled(t))) {
       const enabledSilent = net.transitions.filter((t) => {
         if (!t.silent || !isEnabled(t)) return false;
-        const lid = loopIdFromExit(t);
+        const lid = t.loopExitFor;
         if (lid && redoArmedLoops.has(lid)) return false;
         return true;
       });
       if (enabledSilent.length > 0) {
         const armedRedo = enabledSilent.find((t) =>
           [...redoArmedLoops].some((lid) => {
-            const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+            const exit = net.transitions.find((x) => x.loopExitFor === lid);
             return exit ? sharesPre(t, exit) : false;
           })
         );
         const pick = armedRedo ?? enabledSilent[0]!;
         for (const lid of [...redoArmedLoops]) {
-          const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+          const exit = net.transitions.find((x) => x.loopExitFor === lid);
           if (exit && sharesPre(pick, exit)) redoArmedLoops.delete(lid);
         }
         fireSilent(pick);
@@ -960,7 +1240,7 @@ export async function executePowlWithTokenReplay(
     const enabledVisible = net.transitions.filter((t) => {
       if (t.silent || !isEnabled(t)) return false;
       const blockingExit = net.transitions.find((x) => {
-        const lid = loopIdFromExit(x);
+        const lid = x.loopExitFor;
         return Boolean(lid && isEnabled(x) && sharesPre(t, x) && !redoArmedLoops.has(lid));
       });
       return !blockingExit;
@@ -1019,7 +1299,7 @@ export async function executePowlWithTokenReplay(
 
       // Visible redo consumed the loop-choice token.
       for (const lid of [...redoArmedLoops]) {
-        const exit = net.transitions.find((x) => loopIdFromExit(x) === lid);
+        const exit = net.transitions.find((x) => x.loopExitFor === lid);
         if (exit && sharesPre(t, exit)) redoArmedLoops.delete(lid);
       }
 

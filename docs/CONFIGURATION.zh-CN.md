@@ -13,6 +13,8 @@ CLI 跟随当前 ZCode runtime 的 provider registry schema。通用运行设置
 | `~/.zcode/v2/setting.json` | 桌面端已有的语言和记忆偏好，CLI 只读不修改 |
 | `~/.zcode/v2/provider_config.json` | Provider、模型元数据覆盖和默认模型 |
 | `~/.zcode/v2/credentials.json` | 原生 runtime 持久化的凭证 |
+| `zcode-cli.toml` | 项目级 EU AI Act 合规配置（`[compliance]`、`[deployer]`、`[pmm]`），可用 `ZCODE_CONFIG_PATH` 覆盖 |
+| `~/.zcode/compliance/` | 合规工件、证明 sidecar 与留存清除台账目录，可用 `ZCODE_COMPLIANCE_DIR` 覆盖 |
 
 Windows 使用 `%USERPROFILE%` 代替 `~`。Provider 文件默认与桌面端共用，修改 provider
 或已保存的默认模型会影响两个客户端；`/model` 只切换当前 CLI 会话。
@@ -379,8 +381,8 @@ zcode
 ## 注册本地或开发中的 MCP 服务器或插件
 
 本仓库的其他文档都没有说明如何把本地或开发中的 MCP 服务器（或插件）接入 ZCode。
-本节记录两条受支持的路径，均在本会话中针对 ZCode 3.11.2-25 通过逆向捆绑 runtime
-（`vendor/zcode.cjs`）并在 TUI 中实际验证过。
+本节记录两条受支持的路径，最初针对 ZCode 3.11.2-25 通过逆向捆绑 runtime
+（`vendor/zcode.cjs`）并在 TUI 中实际验证。
 
 ### 直接注册 MCP 服务器
 
@@ -542,3 +544,61 @@ spawn 站点读取该变量。优先级：显式 `ZCODE_SUBAGENT_MAX_TURNS` 环�
 `subagents.maxTurns` > 上游默认值 4。仅正整数生效；顶层 `--max-turns`
 上限不适用于子代理（子代理的回合上限在 spawn 时设置）。更改需重新启动
 进程生效——运行中的会话沿用自己的环境变量。
+
+## EU AI Act 合规与 OCEL 2.0 留存配置（`zcode-cli.toml`）
+
+EU AI Act（2026-08-01 生效）合规套件由项目根目录的 `zcode-cli.toml`（或环境变量
+`ZCODE_CONFIG_PATH` 指定路径）驱动，实现见 `src/compliance/config.ts` 与 `src/compliance-cli.ts`，
+规范本体见 `ontology/eu-ai-act.ttl`、`ontology/eu-ai-act.shapes.ttl` 与
+`ontology/airo_risk_description.ttl`。
+
+### 配置文件结构
+
+```toml
+[compliance]
+profile = "high-risk-annex-iii"   # standard | art50-only | high-risk-annex-iii | high-risk-annex-i
+redact_pii = true
+min_review_ms = 1500              # Art. 14 权限预览最低审阅驻留时间（毫秒）
+git_provenance_trailer = true     # Art. 50(2) provenance 元数据与 .zcode-provenance/ sidecar 封签
+allow_yolo = false                # 受监管/高风险档位下强制禁止 YOLO 模式
+max_retries_per_signature = 3
+redact_env = ["API_KEY", "TOKEN"]
+
+[deployer]
+overseer_id = "overseer-01"       # Art. 14/26 必填，可用 ZCODE_OVERSEER_ID 覆盖
+log_retention_days = 180          # Art. 12 最低 180 天事件时间留存
+monitoring_enabled = true         # Art. 72 上市后监控（PMM）
+worker_notice_acknowledged = true # Art. 26(7) 工作场所告知确认
+
+[pmm]
+drift_alpha = 0.05
+min_window = 30
+k_anonymity = 5
+```
+
+### 环境变量覆盖与运行约束
+
+| 环境变量 | 用途与约束 |
+| --- | --- |
+| `ZCODE_CONFIG_PATH` | 覆盖默认的 `./zcode-cli.toml` 路径 |
+| `ZCODE_COMPLIANCE_DIR` | 覆盖默认的 `~/.zcode/compliance` 合规目录（非空路径） |
+| `ZCODE_COMPLIANCE_PROFILE` | 覆盖 `[compliance].profile`（`standard` \| `art50-only` \| `high-risk-annex-iii` \| `high-risk-annex-i`） |
+| `ZCODE_COMPLIANCE_LOG` | 显式开关 Art. 12 合规日志（`1` \| `0`）；高风险档位下禁止与 `ZCODE_OCEL=0` 同时关闭 |
+| `ZCODE_OCEL` / `ZCODE_OCEL_DIR` | 启用 IEEE OCEL 2.0 事件采集（`ZCODE_OCEL=1`）并指定输出目录（默认 `~/.zcode/ocel`） |
+| `ZCODE_REDACT_PII` | 覆盖 PII 脱敏开关（`1` \| `0` \| `true` \| `false`） |
+| `ZCODE_OVERSEER_ID` | 覆盖 `[deployer].overseer_id`（高风险档位必填） |
+| `ZCODE_MIN_REVIEW_MS` | 覆盖 Art. 14 TUI `PermissionPreview` 审阅驻留下限并向下传递给子代理 |
+| `ZCODE_ALLOW_YOLO` | 在高风险或受监管父上下文中设为真值将触发 fail-closed 拒绝（`OVERSIGHT_POLICY_REFUSED`） |
+| `ZCODE_RPM_SALT` | `--rpm-safe` 假名化所需的非空、非零加密盐 |
+
+### Fail-closed 拒绝码、留存台账与闭环收据
+
+- **Fail-closed 拒绝码**：配置或策略违规时按 `ComplianceRefusalCode` 终止并返回确定退出码——
+  退出码 `1`：`OVERSIGHT_POLICY_REFUSED`、`DISCLOSURE_REQUIRED`、`PROVENANCE_SEAL_FAILED`、
+  `RETRY_BUDGET_EXHAUSTED`、`INVALID_COMPLIANCE_PROFILE`；
+  退出码 `2`：`LOGGING_UNAVAILABLE`、`REDACTION_FAILURE`、`INVALID_COMPLIANCE_CONFIG`。
+- **Art. 12 留存与清除台账**：OCEL 2.0 日志按事件时间执行至少 180 天留存策略，过期清除记录写入
+  SHA-256 哈希链台账 `retention-purge-ledger.ndjson`。
+- **Art. 50(2) 与 `zcode foundry`**：受监管档位下运行时为 Markdown 输出写入 provenance 头部并生成
+  `.zcode-provenance/` sidecar 封签；`zcode foundry` 闭环执行（`R_t -> O*_{t+1}`）产出
+  Chatman-5 DFCM 收据。

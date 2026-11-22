@@ -64,16 +64,28 @@ Running coding agents with fixed thread pools (`--concurrency 20`) or flat task 
 
 | Mechanism | Formal Basis | Operational Effect on Z.AI Utilization |
 |---|---|---|
-| **POWL v2 AST** (`src/powl-ocel-orchestrator.ts`) | Kourani & van der Aalst (2023) | Recursive `Activity`, `Tau`, `Xor`, `Loop(do, redo)`, and strict `PartialOrder(V, ≺)` — validated for irreflexivity, asymmetry, and acyclicity. |
-| **Workflow-Net Compiler** (`compilePowlToWorkflowNet`) | Van der Aalst Soundness Theorem | Compiles any POWL tree into a sound Petri Net `(P, T, pre, post, sourcePlace, sinkPlace)` guaranteed free of deadlocks and livelocks. |
-| **Token-Based Replay** (`executePowlWithTokenReplay`) | Schedule completion heuristic $f = \frac{1}{2}(1 - \frac{m}{c}) + \frac{1}{2}(1 - \frac{r}{p})$ (Explore; **not** behavioral conformance — see SPEC §0.3 / §4) | Transitions fire strictly when input places hold tokens (`M(p) ≥ 1`). Logic refusals halt fail-closed (`f < 1.0`); transient transport timeouts return tokens to input places (`m = 0`), preserving soundness. Optimal $A^*$ alignment is an Exploit upgrade. |
-| **Autonomic AIMD Equilibrium** (`AimdWipController`) | AIMD feedback (seeks a usable WIP; does not “enforce” Little's Law) | Starts at `WIP = 1`, probes upward (`+1`) on clean completions, and backs off (`×0.5`) on **transport** signals (connect timeout, `429`, TTFT spike). Service-time duration alone must not drive MD. **Zero hardcoded concurrency knobs.** |
-| **IEEE OCEL 2.0 Telemetry** | Berti, Koren, van der Aalst et al. (2024) | Records `E2O` (`workflow`, `produces`, `verifies`, `blocks`), `O2O` (`part_of`), timestamped `standing` transitions (`RUNNING -> ALIVE | REFUSED`), and per-transition `serviceMs`; optional external validator via `ocel.validator_cmd` (absence must not block Explore). |
-| **Never-Empty Follow-Up Synthesis** (`runAutonomicLoop`) | Closed-Loop Recursion ($R_t \to \text{POWL}_{t+1}$) | When a cycle completes, `deriveFollowUpPowl()` immediately synthesizes the next cycle (remediation if refused, profiling/optimization if bottlenecked, or anti-vacuity mutation + drift audit if `ALIVE`). |
+| **POWL v2 AST & WF-Net Compiler** (`src/powl-ocel-orchestrator.ts`) | Kourani & van der Aalst (2023); Van der Aalst Soundness Theorem; Murata (1989) | Recursive `Activity`, `Tau`, `Xor`, `Loop(do, redo)`, and strict `PartialOrder(V, ≺)` with recursive write-scope validation, Hasse transitive reduction, and Murata WF-net reductions — compiled into sound Petri Nets `(P, T, pre, post, sourcePlace, sinkPlace)` free of deadlocks and livelocks. |
+| **Token Replay & Optimal $A^*$ Alignment** (`src/powl-ocel-orchestrator.ts`, `src/compliance/conformance.ts`) | Token-based replay + Optimal $A^*$ alignment with marking-equation LP heuristic & $\tau^*$-closure Align-ETC precision | Transitions fire strictly when input places hold tokens (`M(p) ≥ 1`); logic refusals halt fail-closed while transient transport timeouts return tokens (`m = 0`). Behavioral conformance and precision are computed via optimal $A^*$ alignment and Align-ETC. |
+| **OCPN & OC-DFG Discovery** (`src/compliance/ocpn.ts`, `src/compliance/ocel-discover.ts`) | Inductive Miner OCPN; van der Aalst & Berti OC-DFG | Discovers Object-Centric Petri Nets with variable-arc & synchronization replay semantics and bounded marking-graph soundness; OC-DFG separates convergence/divergence/synchronization with UO `objectCount` and noise filtering. |
+| **Autonomic AIMD & Kingman Scheduling** (`AimdWipController`, `src/compliance/kingman-scheduler.ts`) | AIMD feedback + Multi-server $G/G/c$ Kingman (Sakasegawa/Allen-Cunneen) queueing approximation | Starts at `WIP = 1`, probes upward (`+1`) on clean completions, backs off (`×0.5`) on transport signals (`429`, connect timeout, TTFT spike), and models multi-server queueing delay without hardcoded concurrency knobs. |
+| **Bounded Transactional Nets** (`src/compliance/transactional-net.ts`) | Transactional WF-nets + Saga LIFO compensation | Enforces bounded execution with silent-cycle detection and deterministic Saga LIFO rollback on failure. |
+| **IEEE OCEL 2.0 Telemetry & Retention** (`src/compliance/ocel2.ts`, `src/compliance/ocel-sqlite.ts`) | IEEE OCEL 2.0 (Berti, Koren, van der Aalst et al., 2024) | Strict attribute validation, XML/SQLite round-trip, `E2O`/`O2O` relations, timestamped `standing` transitions, and event-time 180-day retention with a SHA-256 purge ledger (`retention-purge-ledger.ndjson`). |
+| **Closed-Loop Foundry & Follow-Up Synthesis** (`runAutonomicLoop`, `src/foundry-cli.ts`) | Closed-Loop Recursion ($R_t \to O^*_{t+1}$) + Chatman-5 DFCM receipts | `zcode foundry` and `deriveFollowUpPowl()` close the loop from receipts to next-cycle work orders (remediation, bottleneck optimization, or anti-vacuity mutation + drift audit). |
 
 ---
 
-## 3. Claude Code Agent Parity
+## 3. EU AI Act (8/1/26) Compliance & Oversight
+
+`zcode-cli` ships a built-in EU AI Act compliance suite (`src/compliance/`, `src/compliance-cli.ts`) grounded in formal RDF/SHACL ontologies (`ontology/eu-ai-act.ttl`, `ontology/eu-ai-act.shapes.ttl`, `ontology/airo_risk_description.ttl`) covering **Articles 9, 10, 11, 12, 13, 14, 15, 17, 26, 27, 43, 47, 50, 72, and 73**:
+
+- **Art. 14 Human Oversight (`src/compliance/oversight.ts`):** TUI `PermissionPreview` oversight with a `min_review_ms` dwell guard and `AutomationBiasMonitor` to detect rubber-stamping.
+- **Art. 50(2) Provenance & Disclosure (`src/compliance/disclosure.ts`):** Runtime Markdown provenance headers and `.zcode-provenance/` sidecar sealing for generated artifacts.
+- **Art. 12 Record-Keeping & Retention (`src/compliance/ocel2.ts`, `src/compliance/ocel-sqlite.ts`):** Strict IEEE OCEL 2.0 logs with XML/SQLite round-trip and event-time 180-day retention backed by `retention-purge-ledger.ndjson`.
+- **Conformity, Risk & Post-Market Monitoring:** Annex IV dossier compilation (`annex-iv-report.ts`), QMS/FRIA/EU Declaration of Conformity (`qms-conformity.ts`), risk ledger (`risk-ledger.ts`), concept-drift detection (`concept-drift.ts`), and PMM/incident reporting (`pmm-incident.ts`).
+
+---
+
+## 4. Claude Code Agent Parity
 
 `zcode-cli` provides drop-in CLI parity for headless coding-agent workflows (`src/claude-parity.ts`, `src/max-turns.ts`, `src/launcher.ts`):
 
@@ -88,7 +100,7 @@ Running coding agents with fixed thread pools (`--concurrency 20`) or flat task 
 
 ---
 
-## 4. Quick Start & Verification
+## 5. Quick Start & Verification
 
 ### Install & Build
 
@@ -127,10 +139,13 @@ bun test test/powl-ocel-chicago.test.ts
 
 ---
 
-## 5. Architecture & Repository Layout
+## 6. Architecture & Repository Layout
 
 - `bin/zcode.ts` → `bin/zcode.js` — Node.js (`>= 22.19.0`) launcher with inherited stdio (no second PTY)
-- `src/powl-ocel-orchestrator.ts` — POWL v2 AST, Workflow-Net compiler, Token-Based Replay, AIMD equilibrium controller, OCEL 2.0 emitter, and `runAutonomicLoop`
+- `src/powl-ocel-orchestrator.ts` — POWL v2 AST (write-scope validation, Hasse reduction, Murata WF-net reductions), Token-Based Replay, AIMD equilibrium controller, OCEL 2.0 emitter, and `runAutonomicLoop`
+- `src/compliance/` & `src/compliance-cli.ts` — EU AI Act (8/1/26) suite (Arts. 9–15, 17, 26–27, 43, 47, 50, 72–73), optimal $A^*$ alignment + Align-ETC, Inductive Miner OCPN, OC-DFG discovery, strict OCEL 2.0 XML/SQLite + 180-day purge ledger, $G/G/c$ Kingman scheduler, bounded transactional nets, Art. 14 oversight, and Art. 50(2) provenance sealing
+- `src/foundry-cli.ts` — closed-loop `zcode foundry` (`R_t -> O*_{t+1}`) and Chatman-5 DFCM receipts
+- `ontology/` — canonical RDF/SHACL ontologies (`zcode-loop.ttl`, `eu-ai-act.ttl`, `eu-ai-act.shapes.ttl`, `airo_risk_description.ttl`)
 - `src/claude-parity.ts` — Claude Code CLI flag normalization
 - `src/launcher.ts`, `src/max-turns.ts`, `src/ocel-tap.ts`, `src/gall-work.ts` — runtime bootstrap, turn caps, OCEL tap, and lease lifecycle
 - `packages/zcode-tui/` — `@zcode/tui` built on `@earendil-works/pi-tui`

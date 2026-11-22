@@ -13,6 +13,7 @@ import {
   createSjiraIoAdapter,
   emitSjiraLedgerAndReceipt,
   emitSjiraLedgerEntry,
+  ingestFrontierCmd,
   requireGgenBin,
   resolveSjiraPaths,
   sha256Json,
@@ -46,6 +47,8 @@ export interface SjiraIoAdapterOptions {
   minGgenAncestor?: string;
   /** Ban interactive TTY / --yes / dialoguer prompts (checked via argv inspection on spawned cmds). */
   forbidTtyPrompts?: boolean;
+  /** Extra arguments passed to `ggen sjira frontier` in frontier_cmd mode. */
+  frontierArgs?: string[];
   cycleId?: string;
 }
 
@@ -89,6 +92,9 @@ export class SjiraWorkOrderSource implements WorkOrderSourceAdapter {
           if (!anc.ok) {
             return { ok: false, exitCode: 2, detail: anc.detail };
           }
+          if (anc.exitCode !== 0) {
+            return { ok: anc.ok, exitCode: anc.exitCode, detail: anc.detail };
+          }
         }
       }
       return { ok: true, exitCode: 0, detail: "sjira-io preflight ok" };
@@ -117,11 +123,19 @@ export class SjiraWorkOrderSource implements WorkOrderSourceAdapter {
       { cwd: this.paths.cwd }
     );
     const mode = this.paths.candidatesPath ? "candidates_file" : "frontier_cmd";
-    if (mode === "frontier_cmd" && this.opts.forbidTtyPrompts) {
-      // Ensure we never pass interactive flags; frontier argv is fixed.
-      assertNoInteractiveFrontierArgs(["sjira", "frontier"]);
+    let ingest: ReturnType<typeof adapter.ingestSjiraFrontier>;
+    if (mode === "frontier_cmd") {
+      const frontierArgs = this.opts.frontierArgs ?? [];
+      const actualArgv = ["sjira", "frontier", ...frontierArgs];
+      if (this.opts.forbidTtyPrompts) {
+        assertNoInteractiveFrontierArgs(actualArgv);
+      }
+      const ggenBin = requireGgenBin(this.paths.ggenBin);
+      const candidates = ingestFrontierCmd(ggenBin, this.paths.cwd, frontierArgs);
+      ingest = { candidates, source: "frontier_cmd", ggenBin };
+    } else {
+      ingest = adapter.ingestSjiraFrontier(mode);
     }
-    const ingest = adapter.ingestSjiraFrontier(mode);
     this.candidates = ingest.candidates;
     this.ingestMeta = {
       source: ingest.source,

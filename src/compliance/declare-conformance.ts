@@ -39,10 +39,20 @@ export type DeclareTemplate =
   | "Absence"
   | "Response"
   | "Precedence"
+  | "AlternatePrecedence"
   | "ChainResponse"
+  | "ChainPrecedence"
   | "NotCoExistence";
 
 export type DeclareStatus = "SATISFIED_WITNESSED" | "SATISFIED_VACUOUS" | "VIOLATED";
+
+export interface DeclareDataCondition {
+  attribute: string;
+  equals?: string;
+  notEquals?: string;
+  in?: readonly string[];
+  exists?: boolean;
+}
 
 export interface DeclareRule {
   id: string;
@@ -57,6 +67,16 @@ export interface DeclareRule {
   article?: string;
   description?: string;
   antiVacuityRequired?: boolean;
+  /** MP-Declare data guard on the activation event (or its linked objects). */
+  activationCondition?: DeclareDataCondition;
+  /** MP-Declare data guard on the target/prerequisite event (or its linked objects). */
+  targetCondition?: DeclareDataCondition;
+  /** MP-Declare correlation key (attribute name or OCEL object type / qualifier, e.g. "tool_call"). */
+  correlationKey?: string;
+  /** Optional minimum elapsed time in milliseconds between the earlier and later event (inclusive). */
+  minTimeDeltaMs?: number;
+  /** Optional maximum elapsed time in milliseconds between the earlier and later event (inclusive). */
+  maxTimeDeltaMs?: number;
 }
 
 export interface DeclareRulesDocument {
@@ -69,6 +89,7 @@ export interface DeclareEvaluationResult {
   template: DeclareTemplate;
   objectType: string;
   mandatory: boolean;
+  antiVacuityRequired: boolean;
   status: DeclareStatus;
   witness_event_ids: string[];
   counterexample_event_ids: string[];
@@ -85,7 +106,8 @@ export interface DeclareEvaluationResult {
 export interface DeclareConformanceReport {
   schema: "zcode.declare-report/1";
   results: DeclareEvaluationResult[];
-  declareResults: DeclareEvaluationResult[];
+  /** @deprecated Use `results`. Non-enumerable compatibility alias for existing consumers. */
+  readonly declareResults: DeclareEvaluationResult[];
   allMandatorySatisfied: boolean;
   witnessedCount: number;
   vacuousCount: number;
@@ -138,13 +160,14 @@ export const DEFAULT_EU_AI_ACT_DECLARE_RULES: DeclareRule[] = [
   },
   {
     id: "DEC-PREC-ART14",
-    template: "Precedence",
+    template: "AlternatePrecedence",
     activation: "tool_updated",
     target: "permission_resolved",
+    correlationKey: "tool_call",
     objectType: "turn",
     mandatory: true,
     article: "Art. 14",
-    description: "Human/policy permission resolution must precede tool execution within a turn.",
+    description: "Human/policy permission resolution must alternate-precede each tool execution within a turn (correlated by tool_call when present).",
     antiVacuityRequired: true
   },
   {
@@ -203,36 +226,71 @@ const HIGH_RISK_TOOL_NAMES = new Set([
 
 const HIGH_RISK_PROFILES = new Set(["high-risk-annex-iii", "high-risk-annex-i"]);
 
-function normalizeAttrs(
+interface EvalMemo {
+  eventAttrMaps: WeakMap<Ocel2EventLike, Map<string, string>>;
+  objectAttrMaps: WeakMap<Ocel2ObjectLike, Map<string, string>>;
+  eventSecretCache: WeakMap<Ocel2EventLike, boolean>;
+  eventTimeMs: WeakMap<Ocel2EventLike, number>;
+}
+
+function createEvalMemo(): EvalMemo {
+  return {
+    eventAttrMaps: new WeakMap(),
+    objectAttrMaps: new WeakMap(),
+    eventSecretCache: new WeakMap(),
+    eventTimeMs: new WeakMap()
+  };
+}
+
+function normalizeAttrMap(
   attrs: readonly Ocel2AttributeLike[] | readonly unknown[] | Record<string, unknown> | undefined
-): Array<{ name: string; value: string }> {
-  if (!attrs) return [];
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!attrs) return map;
   if (Array.isArray(attrs)) {
-    const out: Array<{ name: string; value: string }> = [];
     for (const item of attrs) {
       if (item && typeof item === "object" && "name" in item) {
         const entry = item as Ocel2AttributeLike;
-        out.push({ name: String(entry.name), value: entry.value === undefined || entry.value === null ? "" : String(entry.value) });
+        map.set(String(entry.name), entry.value === undefined || entry.value === null ? "" : String(entry.value));
       }
     }
-    return out;
+    return map;
   }
-  return Object.entries(attrs).map(([name, value]) => ({
-    name,
-    value: value === undefined || value === null ? "" : String(value)
-  }));
+  for (const [name, value] of Object.entries(attrs)) {
+    map.set(name, value === undefined || value === null ? "" : String(value));
+  }
+  return map;
 }
 
-function getAttr(
-  attrs: readonly Ocel2AttributeLike[] | readonly unknown[] | Record<string, unknown> | undefined,
-  name: string
-): string | undefined {
-  const list = normalizeAttrs(attrs);
-  let last: string | undefined;
-  for (const a of list) {
-    if (a.name === name) last = a.value;
+function getEventAttrMap(event: Ocel2EventLike, memo?: EvalMemo): Map<string, string> {
+  if (!memo) return normalizeAttrMap(event.attributes);
+  let map = memo.eventAttrMaps.get(event);
+  if (!map) {
+    map = normalizeAttrMap(event.attributes);
+    memo.eventAttrMaps.set(event, map);
   }
-  return last;
+  return map;
+}
+
+function getObjectAttrMap(obj: Ocel2ObjectLike, memo?: EvalMemo): Map<string, string> {
+  if (!memo) return normalizeAttrMap(obj.attributes);
+  let map = memo.objectAttrMaps.get(obj);
+  if (!map) {
+    map = normalizeAttrMap(obj.attributes);
+    memo.objectAttrMaps.set(obj, map);
+  }
+  return map;
+}
+
+function getEventTimeMs(event: Ocel2EventLike, memo?: EvalMemo): number {
+  if (memo) {
+    const cached = memo.eventTimeMs.get(event);
+    if (cached !== undefined) return cached;
+  }
+  const parsed = Date.parse(event.time);
+  const ms = Number.isFinite(parsed) ? parsed : 0;
+  memo?.eventTimeMs.set(event, ms);
+  return ms;
 }
 
 function isHighRiskProfileValue(val: string | undefined): boolean {
@@ -242,39 +300,113 @@ function isHighRiskProfileValue(val: string | undefined): boolean {
 const RAW_API_KEY_VALUE_RE =
   /\b(?:sk-(?:proj-|ant-api\d+-)?[A-Za-z0-9_-]{16,}|gh[pou]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{22,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/;
 
-function eventHasUnredactedSecret(event: Ocel2EventLike): boolean {
-  const attrs = normalizeAttrs(event.attributes).filter(
-    (a) => !a.name.startsWith("pi_") && a.name !== "prompt_sha256" && a.name !== "sha256"
-  );
-  if (attrs.length === 0) return false;
-  for (const a of attrs) {
-    if (RAW_API_KEY_VALUE_RE.test(a.value)) return true;
+function eventHasUnredactedSecret(event: Ocel2EventLike, memo?: EvalMemo): boolean {
+  if (memo) {
+    const cached = memo.eventSecretCache.get(event);
+    if (cached !== undefined) return cached;
   }
+  const attrMap = getEventAttrMap(event, memo);
   const obj: Record<string, string> = {};
-  for (const a of attrs) obj[a.name] = a.value;
-  return containsUnredactedSecretsOrPii(JSON.stringify(obj), { redactPii: false });
+  let hasAny = false;
+  for (const [name, value] of attrMap) {
+    if (name.startsWith("pi_") || name === "prompt_sha256" || name === "sha256") continue;
+    hasAny = true;
+    if (RAW_API_KEY_VALUE_RE.test(value)) {
+      memo?.eventSecretCache.set(event, true);
+      return true;
+    }
+    obj[name] = value;
+  }
+  const result = hasAny ? containsUnredactedSecretsOrPii(JSON.stringify(obj), { redactPii: false }) : false;
+  memo?.eventSecretCache.set(event, result);
+  return result;
+}
+
+function matchesDataCondition(
+  event: Ocel2EventLike,
+  cond: DeclareDataCondition | undefined,
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo?: EvalMemo
+): boolean {
+  if (!cond) return true;
+  const evAttrs = getEventAttrMap(event, memo);
+  let val = evAttrs.get(cond.attribute);
+  if (val === undefined) {
+    for (const rel of event.relationships ?? []) {
+      const obj = objectById.get(rel.objectId);
+      if (!obj) continue;
+      const objVal = getObjectAttrMap(obj, memo).get(cond.attribute);
+      if (objVal !== undefined) {
+        val = objVal;
+        break;
+      }
+    }
+  }
+  if (cond.exists !== undefined) {
+    const present = val !== undefined && val !== "";
+    if (present !== cond.exists) return false;
+  }
+  if (cond.equals !== undefined && val !== cond.equals) return false;
+  if (cond.notEquals !== undefined && val === cond.notEquals) return false;
+  if (cond.in !== undefined && (val === undefined || !cond.in.includes(val))) return false;
+  return true;
+}
+
+function extractCorrelationValue(
+  event: Ocel2EventLike,
+  correlationKey: string,
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo?: EvalMemo
+): string {
+  const evAttrs = getEventAttrMap(event, memo);
+  const attrVal = evAttrs.get(correlationKey);
+  if (attrVal !== undefined && attrVal !== "") return attrVal;
+  for (const rel of event.relationships ?? []) {
+    const obj = objectById.get(rel.objectId);
+    const inferredType = obj?.type ?? QUALIFIER_TO_OBJECT_TYPE[rel.qualifier];
+    if (inferredType === correlationKey || rel.qualifier === correlationKey) {
+      return rel.objectId;
+    }
+  }
+  return "";
+}
+
+function withinTimeWindow(
+  earlier: Ocel2EventLike,
+  later: Ocel2EventLike,
+  rule: DeclareRule,
+  memo?: EvalMemo
+): boolean {
+  if (rule.minTimeDeltaMs === undefined && rule.maxTimeDeltaMs === undefined) return true;
+  const delta = getEventTimeMs(later, memo) - getEventTimeMs(earlier, memo);
+  if (rule.minTimeDeltaMs !== undefined && delta < rule.minTimeDeltaMs) return false;
+  if (rule.maxTimeDeltaMs !== undefined && delta > rule.maxTimeDeltaMs) return false;
+  return true;
 }
 
 function matchesSubPattern(
   event: Ocel2EventLike,
   sub: string,
-  objectById: ReadonlyMap<string, Ocel2ObjectLike>
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo?: EvalMemo
 ): boolean {
   const pat = sub.trim();
   if (!pat) return false;
   if (event.type === pat) return true;
 
   if (pat === "unredacted_secret" || pat === "unredacted_secret_detected") {
-    return eventHasUnredactedSecret(event);
+    return eventHasUnredactedSecret(event, memo);
   }
 
   if (pat === "high_risk_profile_active" || pat === "high_risk_profile") {
-    const evProfile = getAttr(event.attributes, "compliance_profile") ?? getAttr(event.attributes, "profile");
+    const evAttrs = getEventAttrMap(event, memo);
+    const evProfile = evAttrs.get("compliance_profile") ?? evAttrs.get("profile");
     if (isHighRiskProfileValue(evProfile)) return true;
     for (const rel of event.relationships ?? []) {
       const obj = objectById.get(rel.objectId);
       if (!obj) continue;
-      const objProfile = getAttr(obj.attributes, "compliance_profile") ?? getAttr(obj.attributes, "profile");
+      const objAttrs = getObjectAttrMap(obj, memo);
+      const objProfile = objAttrs.get("compliance_profile") ?? objAttrs.get("profile");
       if (isHighRiskProfileValue(objProfile) && (obj.type === "session" || event.type === "session_created")) {
         return true;
       }
@@ -283,9 +415,10 @@ function matchesSubPattern(
   }
 
   if (pat === "mode_yolo_enabled" || pat === "yolo_bypass_enabled" || pat === "mode_yolo") {
-    const mode = getAttr(event.attributes, "mode");
-    const permMode = getAttr(event.attributes, "permission_mode");
-    const allowYolo = getAttr(event.attributes, "allow_yolo");
+    const evAttrs = getEventAttrMap(event, memo);
+    const mode = evAttrs.get("mode");
+    const permMode = evAttrs.get("permission_mode");
+    const allowYolo = evAttrs.get("allow_yolo");
     return (
       mode === "yolo" ||
       permMode === "bypassPermissions" ||
@@ -296,16 +429,18 @@ function matchesSubPattern(
 
   if (pat === "tool_updated_high_risk") {
     if (event.type !== "tool_updated") return false;
-    const risk = getAttr(event.attributes, "risk_level");
+    const evAttrs = getEventAttrMap(event, memo);
+    const risk = evAttrs.get("risk_level");
     if (risk === "high" || risk === "critical") return true;
-    const toolName = getAttr(event.attributes, "tool_name");
+    const toolName = evAttrs.get("tool_name");
     if (toolName && HIGH_RISK_TOOL_NAMES.has(toolName)) return true;
     for (const rel of event.relationships ?? []) {
       const obj = objectById.get(rel.objectId);
       if (!obj || obj.type !== "tool_call") continue;
-      const objRisk = getAttr(obj.attributes, "risk_level");
+      const objAttrs = getObjectAttrMap(obj, memo);
+      const objRisk = objAttrs.get("risk_level");
       if (objRisk === "high" || objRisk === "critical") return true;
-      const objTool = getAttr(obj.attributes, "tool_name");
+      const objTool = objAttrs.get("tool_name");
       if (objTool && HIGH_RISK_TOOL_NAMES.has(objTool)) return true;
     }
     return false;
@@ -317,10 +452,11 @@ function matchesSubPattern(
 export function matchesDeclarePredicate(
   event: Ocel2EventLike,
   pattern: string | undefined,
-  objectById: ReadonlyMap<string, Ocel2ObjectLike>
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo?: EvalMemo
 ): boolean {
   if (!pattern || !pattern.trim()) return false;
-  return pattern.split("|").some((part) => matchesSubPattern(event, part, objectById));
+  return pattern.split("|").some((part) => matchesSubPattern(event, part, objectById, memo));
 }
 
 interface TraceOutcome {
@@ -333,9 +469,17 @@ interface TraceOutcome {
 function evaluateTraceForRule(
   trace: readonly Ocel2EventLike[],
   rule: DeclareRule,
-  objectById: ReadonlyMap<string, Ocel2ObjectLike>
+  objectById: ReadonlyMap<string, Ocel2ObjectLike>,
+  memo: EvalMemo
 ): TraceOutcome {
-  const match = (ev: Ocel2EventLike, pat: string | undefined) => matchesDeclarePredicate(ev, pat, objectById);
+  const matchAct = (ev: Ocel2EventLike, pat: string | undefined) =>
+    matchesDeclarePredicate(ev, pat, objectById, memo) &&
+    matchesDataCondition(ev, rule.activationCondition, objectById, memo);
+  const matchTgt = (ev: Ocel2EventLike, pat: string | undefined) =>
+    matchesDeclarePredicate(ev, pat, objectById, memo) &&
+    matchesDataCondition(ev, rule.targetCondition, objectById, memo);
+  const corrKey = (ev: Ocel2EventLike) =>
+    rule.correlationKey ? extractCorrelationValue(ev, rule.correlationKey, objectById, memo) : "";
 
   switch (rule.template) {
     case "Init": {
@@ -344,7 +488,7 @@ function evaluateTraceForRule(
         return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
       }
       const first = trace[0]!;
-      if (match(first, act)) {
+      if (matchAct(first, act)) {
         return { status: "SATISFIED_WITNESSED", witnessIds: [first.id], counterexampleIds: [], activations: 1 };
       }
       return { status: "VIOLATED", witnessIds: [], counterexampleIds: [first.id], activations: 1 };
@@ -353,7 +497,7 @@ function evaluateTraceForRule(
     case "Existence": {
       const act = rule.activity ?? rule.activation;
       const minCount = rule.minCount ?? 1;
-      const matches = trace.filter((e) => match(e, act));
+      const matches = trace.filter((e) => matchAct(e, act));
       if (trace.length === 0 && minCount > 0) {
         return { status: "VIOLATED", witnessIds: [], counterexampleIds: [], activations: 1 };
       }
@@ -384,7 +528,7 @@ function evaluateTraceForRule(
       if (trace.length === 0) {
         return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
       }
-      const matches = trace.filter((e) => match(e, act));
+      const matches = trace.filter((e) => matchAct(e, act));
       if (matches.length > maxCount) {
         return {
           status: "VIOLATED",
@@ -408,25 +552,57 @@ function evaluateTraceForRule(
       const counterexampleIds: string[] = [];
       let activations = 0;
 
-      for (let i = 0; i < trace.length; i++) {
+      // Single O(T) backward pass tracking nearest following target (per correlation key when set)
+      const nearestTargetByKey = new Map<string, Ocel2EventLike>();
+      const targetListByKey = rule.minTimeDeltaMs !== undefined ? new Map<string, Ocel2EventLike[]>() : undefined;
+
+      for (let i = trace.length - 1; i >= 0; i--) {
         const ev = trace[i]!;
-        if (!match(ev, actPat)) continue;
-        activations += 1;
-        let foundTarget: Ocel2EventLike | undefined;
-        for (let j = i + 1; j < trace.length; j++) {
-          if (match(trace[j]!, tgtPat)) {
-            foundTarget = trace[j]!;
-            break;
+        const isAct = matchAct(ev, actPat);
+        if (isAct) {
+          activations += 1;
+          const key = corrKey(ev);
+          let foundTarget: Ocel2EventLike | undefined;
+          if (targetListByKey) {
+            const list = targetListByKey.get(key);
+            if (list) {
+              // list is in reverse chronological order; scan from end (earliest after ev)
+              for (let k = list.length - 1; k >= 0; k--) {
+                const cand = list[k]!;
+                if (withinTimeWindow(ev, cand, rule, memo)) {
+                  foundTarget = cand;
+                  break;
+                }
+              }
+            }
+          } else {
+            const cand = nearestTargetByKey.get(key);
+            if (cand && withinTimeWindow(ev, cand, rule, memo)) {
+              foundTarget = cand;
+            }
+          }
+          if (foundTarget) {
+            witnessIds.push(ev.id, foundTarget.id);
+          } else {
+            counterexampleIds.push(ev.id);
           }
         }
-        if (foundTarget) {
-          witnessIds.push(ev.id, foundTarget.id);
-        } else {
-          counterexampleIds.push(ev.id);
+        if (matchTgt(ev, tgtPat)) {
+          const key = corrKey(ev);
+          nearestTargetByKey.set(key, ev);
+          if (targetListByKey) {
+            let list = targetListByKey.get(key);
+            if (!list) {
+              list = [];
+              targetListByKey.set(key, list);
+            }
+            list.push(ev);
+          }
         }
       }
 
       if (counterexampleIds.length > 0) {
+        counterexampleIds.reverse();
         return { status: "VIOLATED", witnessIds, counterexampleIds, activations };
       }
       if (activations === 0) {
@@ -442,19 +618,57 @@ function evaluateTraceForRule(
       const witnessIds: string[] = [];
       const counterexampleIds: string[] = [];
       let activations = 0;
-      let latestPre: Ocel2EventLike | undefined;
+      const latestPreByKey = new Map<string, Ocel2EventLike>();
 
       for (const ev of trace) {
-        if (match(ev, prePat)) {
-          latestPre = ev;
+        if (matchTgt(ev, prePat)) {
+          latestPreByKey.set(corrKey(ev), ev);
         }
-        if (match(ev, actPat)) {
+        if (matchAct(ev, actPat)) {
           activations += 1;
-          if (latestPre) {
-            witnessIds.push(latestPre.id, ev.id);
+          const pre = latestPreByKey.get(corrKey(ev));
+          if (pre && withinTimeWindow(pre, ev, rule, memo)) {
+            witnessIds.push(pre.id, ev.id);
           } else {
             counterexampleIds.push(ev.id);
           }
+        }
+      }
+
+      if (counterexampleIds.length > 0) {
+        return { status: "VIOLATED", witnessIds, counterexampleIds, activations };
+      }
+      if (activations === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      return { status: "SATISFIED_WITNESSED", witnessIds: [...new Set(witnessIds)], counterexampleIds: [], activations };
+    }
+
+    case "AlternatePrecedence": {
+      // Every activation must be preceded by a fresh prerequisite (no two activations without an intervening prerequisite)
+      const actPat = rule.activation ?? rule.activity;
+      const prePat = rule.target;
+      const witnessIds: string[] = [];
+      const counterexampleIds: string[] = [];
+      let activations = 0;
+      const availablePreByKey = new Map<string, Ocel2EventLike>();
+
+      for (const ev of trace) {
+        const isPre = matchTgt(ev, prePat);
+        const isAct = matchAct(ev, actPat);
+        if (isAct) {
+          activations += 1;
+          const key = corrKey(ev);
+          const pre = availablePreByKey.get(key);
+          if (pre && withinTimeWindow(pre, ev, rule, memo)) {
+            witnessIds.push(pre.id, ev.id);
+            availablePreByKey.delete(key);
+          } else {
+            counterexampleIds.push(ev.id);
+          }
+        }
+        if (isPre) {
+          availablePreByKey.set(corrKey(ev), ev);
         }
       }
 
@@ -476,10 +690,15 @@ function evaluateTraceForRule(
 
       for (let i = 0; i < trace.length; i++) {
         const ev = trace[i]!;
-        if (!match(ev, actPat)) continue;
+        if (!matchAct(ev, actPat)) continue;
         activations += 1;
         const next = trace[i + 1];
-        if (next && match(next, tgtPat)) {
+        if (
+          next &&
+          matchTgt(next, tgtPat) &&
+          corrKey(ev) === corrKey(next) &&
+          withinTimeWindow(ev, next, rule, memo)
+        ) {
           witnessIds.push(ev.id, next.id);
         } else {
           counterexampleIds.push(ev.id);
@@ -501,11 +720,51 @@ function evaluateTraceForRule(
       return { status: "SATISFIED_WITNESSED", witnessIds: [...new Set(witnessIds)], counterexampleIds: [], activations };
     }
 
+    case "ChainPrecedence": {
+      // Every activation must be immediately preceded by a matching prerequisite at trace[i - 1]
+      const actPat = rule.activation ?? rule.activity;
+      const prePat = rule.target;
+      const witnessIds: string[] = [];
+      const counterexampleIds: string[] = [];
+      let activations = 0;
+
+      for (let i = 0; i < trace.length; i++) {
+        const ev = trace[i]!;
+        if (!matchAct(ev, actPat)) continue;
+        activations += 1;
+        const prev = i > 0 ? trace[i - 1] : undefined;
+        if (
+          prev &&
+          matchTgt(prev, prePat) &&
+          corrKey(prev) === corrKey(ev) &&
+          withinTimeWindow(prev, ev, rule, memo)
+        ) {
+          witnessIds.push(prev.id, ev.id);
+        } else {
+          counterexampleIds.push(ev.id);
+          if (prev) counterexampleIds.push(prev.id);
+        }
+      }
+
+      if (counterexampleIds.length > 0) {
+        return {
+          status: "VIOLATED",
+          witnessIds,
+          counterexampleIds: [...new Set(counterexampleIds)],
+          activations
+        };
+      }
+      if (activations === 0) {
+        return { status: "SATISFIED_VACUOUS", witnessIds: [], counterexampleIds: [], activations: 0 };
+      }
+      return { status: "SATISFIED_WITNESSED", witnessIds: [...new Set(witnessIds)], counterexampleIds: [], activations };
+    }
+
     case "NotCoExistence": {
       const actPat = rule.activation ?? rule.activity;
       const tgtPat = rule.target;
-      const aEvents = trace.filter((e) => match(e, actPat));
-      const bEvents = trace.filter((e) => match(e, tgtPat));
+      const aEvents = trace.filter((e) => matchAct(e, actPat));
+      const bEvents = trace.filter((e) => matchTgt(e, tgtPat));
 
       if (aEvents.length > 0 && bEvents.length > 0) {
         return {
@@ -573,29 +832,32 @@ export function evaluateDeclareRules(
     ? rulesInput
     : (rulesInput as DeclareRulesDocument).rules ?? DEFAULT_EU_AI_ACT_DECLARE_RULES;
 
+  const memo = createEvalMemo();
   const objectById = new Map<string, Ocel2ObjectLike>();
   for (const obj of doc.objects ?? []) {
     objectById.set(obj.id, obj);
   }
 
   const sortedEvents = [...(doc.events ?? [])]
-    .map((ev, idx) => ({ ev, idx, ms: Date.parse(ev.time) }))
-    .sort((a, b) => {
-      const am = Number.isFinite(a.ms) ? a.ms : 0;
-      const bm = Number.isFinite(b.ms) ? b.ms : 0;
-      return am !== bm ? am - bm : a.idx - b.idx;
+    .map((ev, idx) => {
+      const ms = getEventTimeMs(ev, memo);
+      return { ev, idx, ms };
     })
+    .sort((a, b) => (a.ms !== b.ms ? a.ms - b.ms : a.idx - b.idx))
     .map((x) => x.ev);
 
+  const tracesByObjectType = new Map<string, Map<string, Ocel2EventLike[]>>();
   const results: DeclareEvaluationResult[] = [];
 
   for (const rule of rules) {
     const objectType = rule.objectType ?? "session";
     const mandatory = rule.mandatory ?? true;
-    const traces = buildTracesByObjectType(doc, objectType, objectById, sortedEvents);
+    const antiVacuityRequired = rule.antiVacuityRequired ?? false;
 
-    if (traces.size === 0 && objectType === "session" && sortedEvents.length > 0 && (doc.objects ?? []).length === 0) {
-      traces.set("__default_session__", sortedEvents);
+    let traces = tracesByObjectType.get(objectType);
+    if (!traces) {
+      traces = buildTracesByObjectType(doc, objectType, objectById, sortedEvents);
+      tracesByObjectType.set(objectType, traces);
     }
 
     if (traces.size === 0) {
@@ -604,6 +866,7 @@ export function evaluateDeclareRules(
         template: rule.template,
         objectType,
         mandatory,
+        antiVacuityRequired,
         status: "SATISFIED_VACUOUS",
         witness_event_ids: [],
         counterexample_event_ids: [],
@@ -612,7 +875,7 @@ export function evaluateDeclareRules(
         witnessedTraces: 0,
         vacuousTraces: 0,
         violatedTraces: 0,
-        antiVacuityPassed: !(rule.antiVacuityRequired ?? false),
+        antiVacuityPassed: false,
         article: rule.article,
         detail: `No traces observed for objectType "${objectType}" (vacuously satisfied).`
       });
@@ -627,7 +890,7 @@ export function evaluateDeclareRules(
     const counterSet = new Set<string>();
 
     for (const traceEvents of traces.values()) {
-      const res = evaluateTraceForRule(traceEvents, rule, objectById);
+      const res = evaluateTraceForRule(traceEvents, rule, objectById, memo);
       totalActivations += res.activations;
       for (const id of res.witnessIds) witnessSet.add(id);
       for (const id of res.counterexampleIds) counterSet.add(id);
@@ -650,6 +913,7 @@ export function evaluateDeclareRules(
       template: rule.template,
       objectType,
       mandatory,
+      antiVacuityRequired,
       status,
       witness_event_ids: status === "SATISFIED_VACUOUS" ? [] : [...witnessSet],
       counterexample_event_ids: [...counterSet],
@@ -672,15 +936,24 @@ export function evaluateDeclareRules(
   const witnessedCount = results.filter((r) => r.status === "SATISFIED_WITNESSED").length;
   const vacuousCount = results.filter((r) => r.status === "SATISFIED_VACUOUS").length;
   const violatedCount = results.filter((r) => r.status === "VIOLATED").length;
-  const allMandatorySatisfied = results.every((r) => !r.mandatory || r.status !== "VIOLATED");
+  const allMandatorySatisfied = results.every(
+    (r) => !r.mandatory || (r.status !== "VIOLATED" && (!r.antiVacuityRequired || r.antiVacuityPassed))
+  );
 
-  return {
-    schema: "zcode.declare-report/1",
+  const report = {
+    schema: "zcode.declare-report/1" as const,
     results,
-    declareResults: results,
     allMandatorySatisfied,
     witnessedCount,
     vacuousCount,
     violatedCount
   };
+  Object.defineProperty(report, "declareResults", {
+    get() {
+      return results;
+    },
+    enumerable: false,
+    configurable: true
+  });
+  return report as DeclareConformanceReport;
 }

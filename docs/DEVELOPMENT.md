@@ -5,8 +5,9 @@ For installation as an end user, see the [main README](../README.md).
 
 ## Prerequisites
 
-Developing or publishing from source requires Bun 1.3 or newer. `7z` is needed
-only when downloading and extracting a remote installer.
+Developing or publishing from source requires Bun 1.4.1 (`packageManager` in
+`package.json`) and Node.js >= 22.19.0 (`engines.node`). `7z` is needed only
+when downloading and extracting a remote installer.
 
 ## Quick start
 
@@ -30,8 +31,12 @@ Run all validation layers:
 ```bash
 bun run typecheck
 bun test
+bun run test:all
 bun run check
 bun run check:tui
+bun scripts/gen-ocel.ts --check
+bun run ocel:verify
+bun run receipts:validate
 ```
 
 `check:tui` runs real-PTY scenarios. The official runtime scenario completes
@@ -182,6 +187,42 @@ stdio, restores the interface, and refreshes the shared provider registry from
 For the direct API-key path, follow
 [Custom provider](./CONFIGURATION.md#custom-provider)
 instead.
+
+## Ontology projection, compliance & foundry
+
+- **Ontology-first projections**: `ontology/zcode-loop.ttl` projects into
+  `src/generated/` via `bun scripts/gen-ocel.ts`. Never hand-edit generated
+  files; `bun scripts/gen-ocel.ts --check` is the drift gate. Any hand-written
+  module beside generated code must be recorded in `HANDWRITTEN.md`.
+- **EU AI Act (8/1/26) compliance & process-mining suite**:
+  `src/compliance/` and `src/compliance-cli.ts` (`zcode compliance ...`)
+  backed by `ontology/eu-ai-act.ttl`, `ontology/eu-ai-act.shapes.ttl`, and
+  `ontology/airo_risk_description.ttl` cover Articles 9, 10, 11, 12, 13, 14,
+  15, 17, 26, 27, 43, 47, 50, 72, and 73, together with the van der Aalst et al.
+  process-mining and governance engines:
+  - POWL v2 recursive write-scope validation, Hasse transitive reduction, and
+    Murata WF-net reductions (`src/powl-ocel-orchestrator.ts`)
+  - Optimal A* alignment with marking-equation LP heuristic and
+    `tau*`-closure Align-ETC precision (`src/compliance/conformance.ts`)
+  - Inductive Miner OCPN discovery, variable-arc/synchronization replay, and
+    bounded marking-graph soundness (`src/compliance/ocpn.ts`)
+  - OC-DFG convergence/divergence/synchronization separation, UO `objectCount`,
+    and noise filtering (`src/compliance/ocel-discover.ts`)
+  - IEEE OCEL 2.0 strict attribute validation, XML/SQLite round-trip, and
+    event-time 180-day retention with SHA-256 purge ledger
+    `retention-purge-ledger.ndjson` (`src/compliance/ocel2.ts`,
+    `src/compliance/ocel-sqlite.ts`)
+  - Multi-server G/G/c Kingman (Sakasegawa/Allen-Cunneen) scheduler
+    (`src/compliance/kingman-scheduler.ts`)
+  - Bounded transactional nets with silent-cycle detection and Saga LIFO
+    compensation (`src/compliance/transactional-net.ts`)
+  - Art. 14 TUI `PermissionPreview` oversight with `min_review_ms` dwell guard
+    and `AutomationBiasMonitor` (`src/compliance/oversight.ts`)
+  - Art. 50(2) runtime Markdown provenance header and `.zcode-provenance/`
+    sidecar sealing (`src/compliance/disclosure.ts`)
+- **Closed-loop foundry**: `zcode foundry` (`src/foundry-cli.ts`,
+  `scripts/powl-foundry-loop.ts`) executes the `R_t -> O*_{t+1}` loop and emits
+  Chatman-5 DFCM receipts validated by `bun run receipts:validate`.
 
 ## Continuous integration
 

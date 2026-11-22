@@ -100,7 +100,7 @@ describe("F11 Optimal A* Trace Alignment & Escaping-Edges Precision (Chicago)", 
     expect(res.deviations).toEqual([]);
   });
 
-  test("parallel WF-net accepts both valid interleavings with alignmentCost=0, fitness=1, precision=1", () => {
+  test("parallel WF-net accepts both valid interleavings with alignmentCost=0, fitness=1, and Align-ETC precision=0.8 single / 1.0 pooled", () => {
     const net = buildParallelWfNet();
 
     const interleaveA = alignTraceAStar(net, [
@@ -111,7 +111,8 @@ describe("F11 Optimal A* Trace Alignment & Escaping-Edges Precision (Chicago)", 
     ]);
     expect(interleaveA.alignmentCost).toBe(0);
     expect(interleaveA.fitness).toBe(1);
-    expect(interleaveA.escapingEdgesPrecision).toBe(1);
+    // At {p_b1, p_b2} both art50_disclosure_emitted and turn_started are enabled; single trace visits 1 of 2 -> 4/5 = 0.8
+    expect(interleaveA.escapingEdgesPrecision).toBeCloseTo(0.8, 10);
 
     const interleaveB = alignTraceAStar(net, [
       "session_created",
@@ -121,7 +122,30 @@ describe("F11 Optimal A* Trace Alignment & Escaping-Edges Precision (Chicago)", 
     ]);
     expect(interleaveB.alignmentCost).toBe(0);
     expect(interleaveB.fitness).toBe(1);
-    expect(interleaveB.escapingEdgesPrecision).toBe(1);
+    expect(interleaveB.escapingEdgesPrecision).toBeCloseTo(0.8, 10);
+
+    // Pooling both interleavings covers both concurrent edges at the AND-split -> precision = 1
+    const pooledDoc: ConformanceOcelDocLike = {
+      objects: [
+        { id: "c1", type: "session", attributes: [] },
+        { id: "c2", type: "session", attributes: [] }
+      ],
+      events: [
+        { id: "e1", type: "session_created", time: "2026-08-02T10:00:00Z", relationships: [{ objectId: "c1", qualifier: "s" }] },
+        { id: "e2", type: "art50_disclosure_emitted", time: "2026-08-02T10:00:01Z", relationships: [{ objectId: "c1", qualifier: "s" }] },
+        { id: "e3", type: "turn_started", time: "2026-08-02T10:00:02Z", relationships: [{ objectId: "c1", qualifier: "s" }] },
+        { id: "e4", type: "turn_completed", time: "2026-08-02T10:00:03Z", relationships: [{ objectId: "c1", qualifier: "s" }] },
+        { id: "e5", type: "session_created", time: "2026-08-02T10:00:04Z", relationships: [{ objectId: "c2", qualifier: "s" }] },
+        { id: "e6", type: "turn_started", time: "2026-08-02T10:00:05Z", relationships: [{ objectId: "c2", qualifier: "s" }] },
+        { id: "e7", type: "art50_disclosure_emitted", time: "2026-08-02T10:00:06Z", relationships: [{ objectId: "c2", qualifier: "s" }] },
+        { id: "e8", type: "turn_completed", time: "2026-08-02T10:00:07Z", relationships: [{ objectId: "c2", qualifier: "s" }] }
+      ]
+    };
+    const pooled = computeAlignmentConformance(pooledDoc, net, "session");
+    expect(pooled.caseCount).toBe(2);
+    expect(pooled.alignmentCost).toBe(0);
+    expect(pooled.fitness).toBe(1);
+    expect(pooled.escapingEdgesPrecision).toBe(1);
   });
 
   test("anti-vacuity: missing step -> model_move, extra step -> log_move, swap -> both, empty -> fitness 0", () => {
@@ -347,5 +371,104 @@ describe("F11 Optimal A* Trace Alignment & Escaping-Edges Precision (Chicago)", 
     const normalized = normalizeWorkflowNet(complexValidPowl);
     expect(normalized.places.length).toBeGreaterThan(2);
     expect(alignTraceAStar(complexValidPowl, ["x2", "y"]).alignmentCost).toBe(0);
+  });
+
+  test("ERRC CREATE: marking-equation LP heuristic handles activity multiplicity and enforces cost admissibility guards", () => {
+    const net = buildLinearWfNet(["a", "b"]);
+    // Acyclic net allows 'a' only once; 5 occurrences of 'a' must incur 4 log moves + 1 model move for 'b' = cost 5
+    const res = alignTraceAStar(net, ["a", "a", "a", "a", "a"]);
+    expect(res.alignmentCost).toBe(5);
+    expect(res.syncMoves).toBe(1);
+    expect(res.logMoves).toBe(4);
+    expect(res.modelMoves).toBe(1);
+    expect(res.optimal).toBe(true);
+
+    // Cost-function admissibility guards
+    expect(() => alignTraceAStar(net, ["a", "b"], { logMoveCost: -1 })).toThrow(/non-negative/);
+    expect(() => alignTraceAStar(net, ["a", "b"], { modelMoveCost: -0.5 })).toThrow(/non-negative/);
+    expect(() => alignTraceAStar(net, ["a", "b"], { syncCost: 3, logMoveCost: 1, modelMoveCost: 1 })).toThrow(
+      /Inadmissible alignment cost function/
+    );
+  });
+
+  test("ERRC RAISE: tau*-closure Align-ETC captures silent-gated XOR branches and keeps precision orthogonal to fitness", () => {
+    // Silent-transition-gated XOR: p_src --(tau_1)--> p_a --(act_a)--> p_sink
+    //                              p_src --(tau_2)--> p_b --(act_b)--> p_sink
+    const silentXorNet: WorkflowNetJson = {
+      places: [
+        { id: "p_src", objectType: "Workflow" },
+        { id: "p_a", objectType: "Workflow" },
+        { id: "p_b", objectType: "Workflow" },
+        { id: "p_sink", objectType: "Workflow" }
+      ],
+      transitions: [
+        { id: "tau_1", label: "tau_1", silent: true },
+        { id: "tau_2", label: "tau_2", silent: true },
+        { id: "t_a", label: "act_a", silent: false, activityId: "act_a" },
+        { id: "t_b", label: "act_b", silent: false, activityId: "act_b" }
+      ],
+      pre: { tau_1: ["p_src"], tau_2: ["p_src"], t_a: ["p_a"], t_b: ["p_b"] },
+      post: { tau_1: ["p_a"], tau_2: ["p_b"], t_a: ["p_sink"], t_b: ["p_sink"] },
+      sourcePlace: "p_src",
+      sinkPlace: "p_sink"
+    };
+
+    const single = alignTraceAStar(silentXorNet, ["act_a"]);
+    expect(single.alignmentCost).toBe(0);
+    expect(single.fitness).toBe(1);
+    // True tau*-closure from p_src sees both act_a and act_b -> 1/2 = 0.5
+    expect(single.escapingEdgesPrecision).toBeCloseTo(0.5, 10);
+
+    // Orthogonality to fitness: linear net with a skipped step has fitness < 1 but precision === 1
+    const linearNet = buildLinearWfNet(["step_1", "step_2", "step_3"]);
+    const skipped = alignTraceAStar(linearNet, ["step_1", "step_3"]);
+    expect(skipped.modelMoves).toBe(1);
+    expect(skipped.fitness).toBeLessThan(1);
+    expect(skipped.escapingEdgesPrecision).toBe(1);
+  });
+
+  test("ERRC REDUCE: computeAlignmentConformance deduplicates trace variants while preserving per-case eventIds", () => {
+    const net = buildLinearWfNet(["a", "b"]);
+    const doc: ConformanceOcelDocLike = {
+      objects: [
+        { id: "case_1", type: "session", attributes: [] },
+        { id: "case_2", type: "session", attributes: [] }
+      ],
+      events: [
+        { id: "c1_e1", type: "a", time: "2026-08-02T10:00:00Z", relationships: [{ objectId: "case_1", qualifier: "s" }] },
+        { id: "c1_e2", type: "extra_write", time: "2026-08-02T10:00:01Z", relationships: [{ objectId: "case_1", qualifier: "s" }] },
+        { id: "c1_e3", type: "b", time: "2026-08-02T10:00:02Z", relationships: [{ objectId: "case_1", qualifier: "s" }] },
+        { id: "c2_e1", type: "a", time: "2026-08-02T10:00:03Z", relationships: [{ objectId: "case_2", qualifier: "s" }] },
+        { id: "c2_e2", type: "extra_write", time: "2026-08-02T10:00:04Z", relationships: [{ objectId: "case_2", qualifier: "s" }] },
+        { id: "c2_e3", type: "b", time: "2026-08-02T10:00:05Z", relationships: [{ objectId: "case_2", qualifier: "s" }] }
+      ]
+    };
+
+    const report = computeAlignmentConformance(doc, net, "session");
+    expect(report.caseCount).toBe(2);
+    expect(report.alignmentCost).toBe(2);
+    expect(report.cases[0]!.moves.map((m) => m.eventId)).toEqual(["c1_e1", "c1_e2", "c1_e3"]);
+    expect(report.cases[1]!.moves.map((m) => m.eventId)).toEqual(["c2_e1", "c2_e2", "c2_e3"]);
+    expect(report.cases[0]!.deviations[0]!.eventId).toBe("c1_e2");
+    expect(report.cases[1]!.deviations[0]!.eventId).toBe("c2_e2");
+  });
+
+  test("ERRC ELIMINATE: missing explicit objectType returns empty 0-case report instead of __full_log__ fallback", () => {
+    const net = buildLinearWfNet(["a", "b"]);
+    const doc: ConformanceOcelDocLike = {
+      objects: [{ id: "s1", type: "session", attributes: [] }],
+      events: [
+        { id: "e1", type: "a", time: "2026-08-02T10:00:00Z", relationships: [{ objectId: "s1", qualifier: "s" }] },
+        { id: "e2", type: "b", time: "2026-08-02T10:00:01Z", relationships: [{ objectId: "s1", qualifier: "s" }] }
+      ]
+    };
+
+    const report = computeAlignmentConformance(doc, net, "nonexistent_object_type");
+    expect(report.objectType).toBe("nonexistent_object_type");
+    expect(report.caseCount).toBe(0);
+    expect(report.cases).toEqual([]);
+    expect(report.moves).toEqual([]);
+    expect(report.deviations).toEqual([]);
+    expect(report.alignmentCost).toBe(0);
   });
 });

@@ -117,9 +117,26 @@ export interface DriftFinding {
   windowEnd: string;
   changePointTime: string | null;
   pValue: number;
+  adjustedPValue: number;
   statistic: number;
-  detector: "page_hinkley" | "adwin" | "ewma" | "two_sample_ks" | "mann_whitney_u";
+  detector: "page_hinkley" | "adwin" | "ewma" | "two_sample_ks" | "mann_whitney_u" | "jsd_multiset";
   severity: "low" | "medium" | "high";
+}
+
+export interface MultisetDriftOptions {
+  alpha?: number;
+  permutations?: number;
+  seed?: number;
+}
+
+export interface MultisetDriftResult {
+  statistic: number;
+  pValue: number;
+  significant: boolean;
+  nA: number;
+  nB: number;
+  alpha: number;
+  permutations: number;
 }
 
 export interface ConceptDriftReport {
@@ -254,6 +271,30 @@ export function pageHinkley(
   };
 }
 
+interface AdwinBucket {
+  count: number;
+  total: number;
+  variance: number; // sum of squared deviations from bucket mean
+  minVal: number;
+  maxVal: number;
+}
+
+function mergeAdwinBuckets(a: AdwinBucket, b: AdwinBucket): AdwinBucket {
+  const count = a.count + b.count;
+  const total = a.total + b.total;
+  const meanA = a.total / a.count;
+  const meanB = b.total / b.count;
+  const diff = meanA - meanB;
+  const variance = a.variance + b.variance + (diff * diff * a.count * b.count) / count;
+  return {
+    count,
+    total,
+    variance,
+    minVal: a.minVal < b.minVal ? a.minVal : b.minVal,
+    maxVal: a.maxVal > b.maxVal ? a.maxVal : b.maxVal
+  };
+}
+
 export function adwin(series: readonly number[], options: AdwinOptions = {}): AdwinResult {
   const clean = series.filter((x) => Number.isFinite(x));
   const delta = options.delta ?? 0.01;
@@ -270,53 +311,127 @@ export function adwin(series: readonly number[], options: AdwinOptions = {}): Ad
     };
   }
 
-  const window: number[] = [];
+  // Bifet & Gavalda (2007) ADWIN2 exponential-histogram bucket rows.
+  // rows[k] holds at most MAX_BUCKETS + 1 buckets of size 2^k, ordered oldest -> newest.
+  const MAX_BUCKETS = 5;
+  const rows: AdwinBucket[][] = [];
+  let width = 0;
+  let totalSum = 0;
   const changePoints: number[] = [];
   let shrinkCount = 0;
 
   for (let t = 0; t < clean.length; t++) {
-    window.push(clean[t]!);
-    if (window.length < 2 * minWindow) continue;
+    const x = clean[t]!;
+    if (rows.length === 0) rows.push([]);
+    rows[0]!.push({ count: 1, total: x, variance: 0, minVal: x, maxVal: x });
+    width += 1;
+    totalSum += x;
+
+    // Compress rows in O(log W) amortized time
+    for (let k = 0; k < rows.length; k++) {
+      const row = rows[k]!;
+      if (row.length > MAX_BUCKETS + 1) {
+        const b1 = row.shift()!;
+        const b2 = row.shift()!;
+        const merged = mergeAdwinBuckets(b1, b2);
+        if (k + 1 >= rows.length) rows.push([]);
+        rows[k + 1]!.push(merged);
+      } else {
+        break;
+      }
+    }
+
+    if (width < 2 * minWindow) continue;
 
     let cutFound = true;
-    while (cutFound && window.length >= 2 * minWindow) {
+    while (cutFound && width >= 2 * minWindow) {
       cutFound = false;
-      const n = window.length;
-      const prefSum = new Array<number>(n + 1).fill(0);
-      const prefSq = new Array<number>(n + 1).fill(0);
+
+      // Flatten O(log W) buckets oldest -> newest
+      const flat: Array<{ rowIdx: number; bucket: AdwinBucket }> = [];
       let minVal = Infinity;
       let maxVal = -Infinity;
-
-      for (let i = 0; i < n; i++) {
-        const v = window[i]!;
-        prefSum[i + 1] = prefSum[i]! + v;
-        prefSq[i + 1] = prefSq[i]! + v * v;
-        if (v < minVal) minVal = v;
-        if (v > maxVal) maxVal = v;
+      for (let k = rows.length - 1; k >= 0; k--) {
+        const row = rows[k]!;
+        for (let i = 0; i < row.length; i++) {
+          const b = row[i]!;
+          flat.push({ rowIdx: k, bucket: b });
+          if (b.minVal < minVal) minVal = b.minVal;
+          if (b.maxVal > maxVal) maxVal = b.maxVal;
+        }
       }
 
       const range = maxVal - minVal;
-      if (range <= 0) break;
+      if (range <= 0 || flat.length < 2) break;
 
-      const totalMean = prefSum[n]! / n;
-      void totalMean;
-      const deltaPrime = Math.min(0.5, Math.max(1e-12, delta / Math.max(1, Math.log(n))));
+      // Precompute suffix (newer subwindow W1) variance via Chan's parallel formula in O(log W)
+      const numB = flat.length;
+      const sufCount = new Array<number>(numB + 1).fill(0);
+      const sufSum = new Array<number>(numB + 1).fill(0);
+      const sufVar = new Array<number>(numB + 1).fill(0);
+      for (let i = numB - 1; i >= 0; i--) {
+        const b = flat[i]!.bucket;
+        const cNext = sufCount[i + 1]!;
+        if (cNext === 0) {
+          sufCount[i] = b.count;
+          sufSum[i] = b.total;
+          sufVar[i] = b.variance;
+        } else {
+          const cTot = b.count + cNext;
+          const mA = b.total / b.count;
+          const mB = sufSum[i + 1]! / cNext;
+          const d = mA - mB;
+          sufCount[i] = cTot;
+          sufSum[i] = b.total + sufSum[i + 1]!;
+          sufVar[i] = b.variance + sufVar[i + 1]! + (d * d * b.count * cNext) / cTot;
+        }
+      }
+
+      const deltaPrime = Math.min(0.5, Math.max(1e-12, delta / Math.max(1, Math.log(width))));
       const lnTerm = Math.log(2 / deltaPrime);
 
-      for (let n0 = minWindow; n0 <= n - minWindow; n0++) {
-        const n1 = n - n0;
-        const mean0 = prefSum[n0]! / n0;
-        const mean1 = (prefSum[n]! - prefSum[n0]!) / n1;
+      let n0 = 0;
+      let sum0 = 0;
+      let var0 = 0;
+
+      for (let i = 0; i < numB - 1; i++) {
+        const b = flat[i]!.bucket;
+        if (n0 === 0) {
+          n0 = b.count;
+          sum0 = b.total;
+          var0 = b.variance;
+        } else {
+          const cTot = n0 + b.count;
+          const mA = sum0 / n0;
+          const mB = b.total / b.count;
+          const d = mA - mB;
+          var0 = var0 + b.variance + (d * d * n0 * b.count) / cTot;
+          n0 = cTot;
+          sum0 += b.total;
+        }
+
+        const n1 = width - n0;
+        if (n0 < minWindow || n1 < minWindow) continue;
+
+        const mean0 = sum0 / n0;
+        const mean1 = sufSum[i + 1]! / n1;
         const diff = Math.abs(mean0 - mean1);
         if (diff === 0) continue;
 
-        const var0 = Math.max(0, prefSq[n0]! / n0 - mean0 * mean0);
-        const var1 = Math.max(0, (prefSq[n]! - prefSq[n0]!) / n1 - mean1 * mean1);
-        const pooledVar = Math.max(0, (n0 * var0 + n1 * var1) / n);
-        const m = (n0 * n1) / n;
+        const pooledVar = Math.max(0, (var0 + sufVar[i + 1]!) / width);
+        const m = (n0 * n1) / width;
         const epsCut = Math.sqrt((2 * pooledVar * lnTerm) / m) + (2 * range * lnTerm) / (3 * m);
         if (diff >= epsCut) {
-          window.splice(0, n0);
+          // Drop oldest buckets flat[0..i]
+          for (let j = 0; j <= i; j++) {
+            const rIdx = flat[j]!.rowIdx;
+            const dropped = rows[rIdx]!.shift()!;
+            width -= dropped.count;
+            totalSum -= dropped.total;
+          }
+          while (rows.length > 0 && rows[rows.length - 1]!.length === 0) {
+            rows.pop();
+          }
           shrinkCount += 1;
           if (changePoints[changePoints.length - 1] !== t) {
             changePoints.push(t);
@@ -332,8 +447,8 @@ export function adwin(series: readonly number[], options: AdwinOptions = {}): Ad
     driftDetected: changePoints.length > 0,
     changePoints,
     shrinkCount,
-    finalWindowMean: sampleMean(window),
-    finalWindowSize: window.length,
+    finalWindowMean: width > 0 ? totalSum / width : 0,
+    finalWindowSize: width,
     delta
   };
 }
@@ -580,6 +695,224 @@ export function mannWhitneyU(
     nA: n1,
     nB: n2,
     alpha
+  };
+}
+
+export function holmBonferroni(pValues: readonly number[]): number[] {
+  const m = pValues.length;
+  if (m === 0) return [];
+  const indexed = pValues.map((p, idx) => ({
+    idx,
+    p: Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1
+  }));
+  indexed.sort((a, b) => a.p - b.p);
+  const adjusted = new Array<number>(m);
+  let runningMax = 0;
+  for (let i = 0; i < m; i++) {
+    const val = Math.min(1, indexed[i]!.p * (m - i));
+    if (val > runningMax) runningMax = val;
+    adjusted[indexed[i]!.idx] = runningMax;
+  }
+  return adjusted;
+}
+
+export function benjaminiHochberg(pValues: readonly number[]): number[] {
+  const m = pValues.length;
+  if (m === 0) return [];
+  const indexed = pValues.map((p, idx) => ({
+    idx,
+    p: Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1
+  }));
+  indexed.sort((a, b) => a.p - b.p);
+  const adjusted = new Array<number>(m);
+  let runningMin = 1;
+  for (let i = m - 1; i >= 0; i--) {
+    const rank = i + 1;
+    const val = Math.min(1, (indexed[i]!.p * m) / rank);
+    if (val < runningMin) runningMin = val;
+    adjusted[indexed[i]!.idx] = runningMin;
+  }
+  return adjusted;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function jsdBetweenMultisets(
+  tracesA: readonly ReadonlyMap<string, number>[],
+  tracesB: readonly ReadonlyMap<string, number>[]
+): number {
+  const countsA = new Map<string, number>();
+  const countsB = new Map<string, number>();
+  let totalA = 0;
+  let totalB = 0;
+
+  for (const m of tracesA) {
+    if (m.size === 0) {
+      countsA.set("__empty__", (countsA.get("__empty__") ?? 0) + 1);
+      totalA += 1;
+      continue;
+    }
+    for (const [edge, cnt] of m.entries()) {
+      const key = `${edge}#${cnt}`;
+      countsA.set(key, (countsA.get(key) ?? 0) + 1);
+      totalA += 1;
+    }
+  }
+
+  for (const m of tracesB) {
+    if (m.size === 0) {
+      countsB.set("__empty__", (countsB.get("__empty__") ?? 0) + 1);
+      totalB += 1;
+      continue;
+    }
+    for (const [edge, cnt] of m.entries()) {
+      const key = `${edge}#${cnt}`;
+      countsB.set(key, (countsB.get(key) ?? 0) + 1);
+      totalB += 1;
+    }
+  }
+
+  if (totalA === 0 || totalB === 0) return 0;
+
+  const keys = new Set<string>([...countsA.keys(), ...countsB.keys()]);
+  let jsd = 0;
+  for (const k of keys) {
+    const p = (countsA.get(k) ?? 0) / totalA;
+    const q = (countsB.get(k) ?? 0) / totalB;
+    const mid = 0.5 * (p + q);
+    if (p > 0) jsd += 0.5 * p * Math.log2(p / mid);
+    if (q > 0) jsd += 0.5 * q * Math.log2(q / mid);
+  }
+  return Math.max(0, Math.min(1, jsd));
+}
+
+export function multisetControlFlowDrift(
+  tracesA: readonly ReadonlyMap<string, number>[],
+  tracesB: readonly ReadonlyMap<string, number>[],
+  options: MultisetDriftOptions = {}
+): MultisetDriftResult {
+  const alpha = options.alpha ?? 0.01;
+  const permutations = Math.max(19, options.permutations ?? 199);
+  const seed = options.seed ?? 0x51f15e;
+  const nA = tracesA.length;
+  const nB = tracesB.length;
+
+  if (nA === 0 || nB === 0) {
+    return { statistic: 0, pValue: 1, significant: false, nA, nB, alpha, permutations };
+  }
+
+  const obsJsd = jsdBetweenMultisets(tracesA, tracesB);
+  if (obsJsd <= 1e-12) {
+    return { statistic: 0, pValue: 1, significant: false, nA, nB, alpha, permutations };
+  }
+
+  const combined = [...tracesA, ...tracesB];
+  const n = combined.length;
+  const rng = mulberry32(seed);
+  let geCount = 0;
+
+  for (let p = 0; p < permutations; p++) {
+    // Fisher-Yates shuffle
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = combined[i]!;
+      combined[i] = combined[j]!;
+      combined[j] = tmp;
+    }
+    const permJsd = jsdBetweenMultisets(combined.slice(0, nA), combined.slice(nA));
+    if (permJsd >= obsJsd - 1e-12) {
+      geCount += 1;
+    }
+  }
+
+  let pValue = (1 + geCount) / (1 + permutations);
+  if (geCount === 0 && nA + nB >= 12) {
+    // Refine extreme tail beyond 1/(1+permutations) using Wilson-Hilferty chi-squared approximation
+    // to the 2xK G-test (2 * N_traces * ln(2) * JSD_bits ~ chi^2_{df}).
+    const countsA = new Map<string, number>();
+    const countsB = new Map<string, number>();
+    let totalA = 0;
+    let totalB = 0;
+    for (const m of tracesA) {
+      if (m.size === 0) {
+        countsA.set("__empty__", (countsA.get("__empty__") ?? 0) + 1);
+        totalA += 1;
+      } else {
+        for (const [e, c] of m.entries()) {
+          countsA.set(`${e}#${c}`, (countsA.get(`${e}#${c}`) ?? 0) + 1);
+          totalA += 1;
+        }
+      }
+    }
+    for (const m of tracesB) {
+      if (m.size === 0) {
+        countsB.set("__empty__", (countsB.get("__empty__") ?? 0) + 1);
+        totalB += 1;
+      } else {
+        for (const [e, c] of m.entries()) {
+          countsB.set(`${e}#${c}`, (countsB.get(`${e}#${c}`) ?? 0) + 1);
+          totalB += 1;
+        }
+      }
+    }
+    const keys = new Set<string>([...countsA.keys(), ...countsB.keys()]);
+    const df = Math.max(1, keys.size - 1);
+    const gStat = 2 * (totalA + totalB) * Math.LN2 * obsJsd;
+    if (gStat > 0) {
+      const h = 2 / (9 * df);
+      const z = (Math.cbrt(gStat / df) - (1 - h)) / Math.sqrt(h);
+      const chi2P = z > 0 ? Math.max(0, Math.min(1, 0.5 * erfcApprox(z / Math.SQRT2))) : 1;
+      pValue = Math.min(pValue, chi2P);
+    }
+  }
+  return {
+    statistic: obsJsd,
+    pValue,
+    significant: pValue < alpha,
+    nA,
+    nB,
+    alpha,
+    permutations
+  };
+}
+
+function outOfSampleSplitConfirm(
+  vals: readonly number[],
+  alpha: number,
+  minWindow: number
+): { pValue: number; statistic: number; changeIdx: number | null } | null {
+  // Sample-splitting: discover change point on even-indexed observations,
+  // confirm on held-out odd-indexed observations to avoid post-selection double-dipping.
+  if (vals.length < 16) return null;
+  const even: number[] = [];
+  const odd: number[] = [];
+  for (let i = 0; i < vals.length; i++) {
+    if (i % 2 === 0) even.push(vals[i]!);
+    else odd.push(vals[i]!);
+  }
+  const phMin = Math.max(4, Math.min(Math.floor(minWindow / 2), Math.floor(even.length / 3)));
+  const adwMin = Math.max(4, Math.min(Math.floor(minWindow / 4), Math.floor(even.length / 4)));
+  const phEven = pageHinkley(even, { minInstances: phMin });
+  const adwEven = adwin(even, { delta: alpha, minWindow: adwMin });
+  const cpEven = adwEven.changePoints[0] ?? phEven.firstChangeIndex;
+  if (cpEven === null || cpEven === undefined || cpEven < 3 || odd.length - cpEven < 3) {
+    return null;
+  }
+  const ksHoldout = twoSampleKs(odd.slice(0, cpEven), odd.slice(cpEven), { alpha });
+  const mwHoldout = mannWhitneyU(odd.slice(0, cpEven), odd.slice(cpEven), { alpha });
+  const holdoutAdj = holmBonferroni([ksHoldout.pValue, mwHoldout.pValue]);
+  return {
+    pValue: Math.min(holdoutAdj[0]!, holdoutAdj[1]!),
+    statistic: ksHoldout.statistic,
+    changeIdx: Math.min(vals.length - 1, cpEven * 2)
   };
 }
 
@@ -1024,7 +1357,14 @@ export function detectConceptDrift(
     }
   }
 
-  const findings: DriftFinding[] = [];
+  interface DriftCandidate {
+    rawPValue: number;
+    withinAdjustedPValue: number;
+    admitAlpha: number;
+    buildFinding: (adjustedPValue: number) => DriftFinding;
+  }
+
+  const candidates: DriftCandidate[] = [];
   const strataAnalyzed = new Set<string>();
   const kingmanCs2ByStratum: Record<string, number> = {};
 
@@ -1064,89 +1404,85 @@ export function detectConceptDrift(
 
     if (vals.length < 8) continue;
 
-    // Check 2-half, 3-segment, and (for n >= 20) 4-quarter adjacent distributional shifts + m=4..6 recurring
+    // Collect pre-specified split p-values (2-half, 3-segment, 4-quarter, m=4..6 recurring)
+    const splitPs: number[] = [];
+    if (ksHalf) splitPs.push(ksHalf.pValue);
+    if (mwHalf) splitPs.push(mwHalf.pValue);
+
     const t1 = Math.floor(vals.length / 3);
     const t2 = Math.floor((2 * vals.length) / 3);
     const ks01 = t1 >= 4 ? twoSampleKs(vals.slice(0, t1), vals.slice(t1, t2), { alpha }) : null;
     const ks12 = vals.length - t2 >= 4 ? twoSampleKs(vals.slice(t1, t2), vals.slice(t2), { alpha }) : null;
     const mw01 = t1 >= 4 ? mannWhitneyU(vals.slice(0, t1), vals.slice(t1, t2), { alpha }) : null;
     const mw12 = vals.length - t2 >= 4 ? mannWhitneyU(vals.slice(t1, t2), vals.slice(t2), { alpha }) : null;
+    if (ks01) splitPs.push(ks01.pValue);
+    if (ks12) splitPs.push(ks12.pValue);
+    if (mw01) splitPs.push(mw01.pValue);
+    if (mw12) splitPs.push(mw12.pValue);
 
-    let qMinP = 1;
     if (vals.length >= 20) {
       const qCuts = [0, Math.floor(vals.length / 4), Math.floor(vals.length / 2), Math.floor((3 * vals.length) / 4), vals.length];
       for (let qi = 0; qi < 3; qi++) {
         const segA = vals.slice(qCuts[qi]!, qCuts[qi + 1]!);
         const segB = vals.slice(qCuts[qi + 1]!, qCuts[qi + 2]!);
-        qMinP = Math.min(qMinP, twoSampleKs(segA, segB, { alpha }).pValue, mannWhitneyU(segA, segB, { alpha }).pValue);
+        splitPs.push(twoSampleKs(segA, segB, { alpha }).pValue);
+        splitPs.push(mannWhitneyU(segA, segB, { alpha }).pValue);
       }
     }
 
-    const minPVal = Math.min(
-      ksHalf?.pValue ?? 1,
-      mwHalf?.pValue ?? 1,
-      ks01?.pValue ?? 1,
-      ks12?.pValue ?? 1,
-      mw01?.pValue ?? 1,
-      mw12?.pValue ?? 1,
-      qMinP
-    );
     const cs2 = metric === "service_ms" ? (kingmanCs2ByStratum[stratum] ?? 0) : 0;
     const isHeavyTailSvc = metric === "service_ms" && cs2 > 1.5;
-    const distSignificant = minPVal < (isHeavyTailSvc ? alpha / 4 : alpha);
     const multiRec = findMultiPhaseRecurring(vals, alpha, isHeavyTailSvc ? alpha / 2 : alpha);
-
-    // Heavy-tail confirmation guard on service_ms: stationary heavy tails (c_s^2 >> 1) must NOT fire!
-    let triggered = false;
-    if (metric === "service_ms") {
-      triggered = distSignificant || multiRec !== null;
-    } else {
-      triggered = distSignificant || (adw.driftDetected && ph.driftDetected) || multiRec !== null;
+    if (multiRec !== null) {
+      splitPs.push(multiRec.pValue);
     }
 
-    if (triggered) {
-      let localizedMinP = Math.min(minPVal, multiRec?.pValue ?? 1);
-      if (metric !== "service_ms" && adw.driftDetected && ph.driftDetected) {
-        const cps = [adw.changePoints[0], ph.firstChangeIndex].filter(
-          (cp): cp is number => cp !== null && cp !== undefined && cp >= 3 && vals.length - cp >= 3
-        );
-        for (const cp of cps) {
-          const ksCp = twoSampleKs(vals.slice(0, cp), vals.slice(cp), { alpha });
-          const mwCp = mannWhitneyU(vals.slice(0, cp), vals.slice(cp), { alpha });
-          localizedMinP = Math.min(localizedMinP, ksCp.pValue, mwCp.pValue);
-        }
-        if (adw.changePoints.length >= 2) {
-          const c1 = adw.changePoints[0]!;
-          const c2 = adw.changePoints[1]!;
-          if (c1 >= 3 && c2 - c1 >= 3) {
-            const ksSeg = twoSampleKs(vals.slice(0, c1), vals.slice(c1, c2), { alpha });
-            const mwSeg = mannWhitneyU(vals.slice(0, c1), vals.slice(c1, c2), { alpha });
-            localizedMinP = Math.min(localizedMinP, ksSeg.pValue, mwSeg.pValue);
-          }
-        }
+    // Out-of-sample split confirmation when ADWIN and Page-Hinkley both fire (no in-sample double-dipping)
+    let holdout: { pValue: number; statistic: number; changeIdx: number | null } | null = null;
+    if (metric !== "service_ms" && adw.driftDetected && ph.driftDetected) {
+      holdout = outOfSampleSplitConfirm(vals, alpha, minWindow);
+      if (holdout !== null) {
+        splitPs.push(holdout.pValue);
       }
-      const cls = classifyDriftPattern(vals, ph, adw, ew, alpha);
-      const cpTime = cls.changeIdx !== null && points[cls.changeIdx] ? points[cls.changeIdx]!.time : null;
-      const pVal = Math.min(cls.pValue, localizedMinP);
-      findings.push({
-        driftType: cls.kind,
-        stratum,
-        metric,
-        objectType: points[0]!.objectType,
-        edgeOrRule: points[0]!.edgeOrRule,
-        windowStart: points[0]!.time,
-        windowEnd: points[points.length - 1]!.time,
-        changePointTime: cpTime,
-        pValue: pVal,
-        statistic: Math.max(cls.statistic, multiRec?.statistic ?? 0),
-        detector: cls.detector,
-        severity: pVal < 0.001 ? "high" : pVal < alpha ? "medium" : "low"
-      });
     }
+
+    const holmPs = holmBonferroni(splitPs);
+    const rawMinP = splitPs.length > 0 ? Math.min(...splitPs) : 1;
+    const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
+    const admitAlpha = isHeavyTailSvc ? alpha / 2 : alpha;
+
+    candidates.push({
+      rawPValue: rawMinP,
+      withinAdjustedPValue: withinAdjP,
+      admitAlpha,
+      buildFinding: (adjustedPValue: number) => {
+        const cls = classifyDriftPattern(vals, ph, adw, ew, alpha);
+        const cpIdx = cls.changeIdx ?? holdout?.changeIdx ?? null;
+        const cpTime = cpIdx !== null && points[cpIdx] ? points[cpIdx]!.time : null;
+        return {
+          driftType: cls.kind,
+          stratum,
+          metric,
+          objectType: points[0]!.objectType,
+          edgeOrRule: points[0]!.edgeOrRule,
+          windowStart: points[0]!.time,
+          windowEnd: points[points.length - 1]!.time,
+          changePointTime: cpTime,
+          pValue: rawMinP,
+          adjustedPValue,
+          statistic: Math.max(cls.statistic, multiRec?.statistic ?? 0, holdout?.statistic ?? 0),
+          detector: cls.detector,
+          severity: adjustedPValue < 0.001 ? "high" : adjustedPValue < alpha ? "medium" : "low"
+        };
+      }
+    });
   }
 
-  // Control-flow directly-follows edge drift per objectType across chronological traces
-  const tracesByOt = new Map<string, Array<{ startTime: string; endTime: string; edges: Set<string> }>>();
+  // Control-flow directly-follows edge drift & multiset distributional drift per objectType across chronological traces
+  const tracesByOt = new Map<
+    string,
+    Array<{ startTime: string; endTime: string; edges: Set<string>; edgeCounts: Map<string, number> }>
+  >();
   const traceEventsByObjKey = new Map<string, { ot: string; events: DriftEventLike[] }>();
 
   for (const item of allEvents) {
@@ -1168,8 +1504,11 @@ export function detectConceptDrift(
   for (const { ot, events } of traceEventsByObjKey.values()) {
     if (events.length < 2) continue;
     const edgeSet = new Set<string>();
+    const edgeCounts = new Map<string, number>();
     for (let i = 0; i + 1 < events.length; i++) {
-      edgeSet.add(`${events[i]!.type}->${events[i + 1]!.type}`);
+      const edge = `${events[i]!.type}->${events[i + 1]!.type}`;
+      edgeSet.add(edge);
+      edgeCounts.set(edge, (edgeCounts.get(edge) ?? 0) + 1);
     }
     let arr = tracesByOt.get(ot);
     if (!arr) {
@@ -1179,7 +1518,8 @@ export function detectConceptDrift(
     arr.push({
       startTime: events[0]!.time,
       endTime: events[events.length - 1]!.time,
-      edges: edgeSet
+      edges: edgeSet,
+      edgeCounts
     });
   }
 
@@ -1193,73 +1533,149 @@ export function detectConceptDrift(
     const half = Math.floor(traces.length / 2);
     const t1 = Math.floor(traces.length / 3);
     const t2 = Math.floor((2 * traces.length) / 3);
+
+    // 1. Univariate control-flow edge presence drift (with Holm-Bonferroni within-edge & out-of-sample confirmation)
     for (const edge of edgeNames) {
       const series = traces.map((t) => (t.edges.has(edge) ? 1 : 0));
+      const splitPs: number[] = [];
+
       const mw = mannWhitneyU(series.slice(0, half), series.slice(half), { alpha });
       const ks = twoSampleKs(series.slice(0, half), series.slice(half), { alpha });
+      splitPs.push(mw.pValue, ks.pValue);
+
       const ks01 = t1 >= 4 && t2 - t1 >= 4 ? twoSampleKs(series.slice(0, t1), series.slice(t1, t2), { alpha }) : null;
       const ks12 = traces.length - t2 >= 4 && t2 - t1 >= 4 ? twoSampleKs(series.slice(t1, t2), series.slice(t2), { alpha }) : null;
       const mw01 = t1 >= 4 && t2 - t1 >= 4 ? mannWhitneyU(series.slice(0, t1), series.slice(t1, t2), { alpha }) : null;
       const mw12 = traces.length - t2 >= 4 && t2 - t1 >= 4 ? mannWhitneyU(series.slice(t1, t2), series.slice(t2), { alpha }) : null;
+      if (ks01) splitPs.push(ks01.pValue);
+      if (ks12) splitPs.push(ks12.pValue);
+      if (mw01) splitPs.push(mw01.pValue);
+      if (mw12) splitPs.push(mw12.pValue);
 
       const ph = pageHinkley(series, { minInstances: 4 });
       const adw = adwin(series, { delta: alpha, minWindow: 4 });
       const ew = ewmaChart(series, { baselineLength: Math.max(4, Math.floor(series.length / 3)) });
 
-      let cpMinP = 1;
-      for (const cp of [adw.changePoints[0], ph.firstChangeIndex]) {
-        if (cp !== null && cp !== undefined && cp >= 3 && series.length - cp >= 3) {
-          const ksCp = twoSampleKs(series.slice(0, cp), series.slice(cp), { alpha });
-          const mwCp = mannWhitneyU(series.slice(0, cp), series.slice(cp), { alpha });
-          cpMinP = Math.min(cpMinP, ksCp.pValue, mwCp.pValue);
-        }
-      }
-
-      let qMinP = 1;
       if (series.length >= 20) {
         const qCuts = [0, Math.floor(series.length / 4), Math.floor(series.length / 2), Math.floor((3 * series.length) / 4), series.length];
         for (let qi = 0; qi < 3; qi++) {
           const segA = series.slice(qCuts[qi]!, qCuts[qi + 1]!);
           const segB = series.slice(qCuts[qi + 1]!, qCuts[qi + 2]!);
-          qMinP = Math.min(qMinP, twoSampleKs(segA, segB, { alpha }).pValue, mannWhitneyU(segA, segB, { alpha }).pValue);
+          splitPs.push(twoSampleKs(segA, segB, { alpha }).pValue);
+          splitPs.push(mannWhitneyU(segA, segB, { alpha }).pValue);
         }
       }
 
-      const minPVal = Math.min(
-        mw.pValue,
-        ks.pValue,
-        ks01?.pValue ?? 1,
-        ks12?.pValue ?? 1,
-        mw01?.pValue ?? 1,
-        mw12?.pValue ?? 1,
-        cpMinP,
-        qMinP
-      );
       const multiRec = findMultiPhaseRecurring(series, alpha, alpha);
-      if (minPVal < alpha || (adw.driftDetected && ph.driftDetected) || multiRec !== null) {
-        const cls = classifyDriftPattern(series, ph, adw, ew, alpha);
-        const pVal = Math.min(minPVal, cls.pValue, multiRec?.pValue ?? 1);
-        const cpIdx = cls.changeIdx ?? adw.changePoints[0] ?? ph.firstChangeIndex ?? half;
+      if (multiRec !== null) {
+        splitPs.push(multiRec.pValue);
+      }
+
+      let holdout: { pValue: number; statistic: number; changeIdx: number | null } | null = null;
+      if (adw.driftDetected && ph.driftDetected) {
+        holdout = outOfSampleSplitConfirm(series, alpha, 8);
+        if (holdout !== null) {
+          splitPs.push(holdout.pValue);
+        }
+      }
+
+      const holmPs = holmBonferroni(splitPs);
+      const rawMinP = splitPs.length > 0 ? Math.min(...splitPs) : 1;
+      const withinAdjP = holmPs.length > 0 ? Math.min(...holmPs) : 1;
+
+      candidates.push({
+        rawPValue: rawMinP,
+        withinAdjustedPValue: withinAdjP,
+        admitAlpha: alpha,
+        buildFinding: (adjustedPValue: number) => {
+          const cls = classifyDriftPattern(series, ph, adw, ew, alpha);
+          const cpIdx = cls.changeIdx ?? holdout?.changeIdx ?? adw.changePoints[0] ?? ph.firstChangeIndex ?? half;
+          const safeCpIdx = Math.min(traces.length - 1, Math.max(0, cpIdx));
+          return {
+            driftType: cls.kind,
+            stratum: ot,
+            metric: "control_flow_edge",
+            objectType: ot,
+            edgeOrRule: edge,
+            windowStart: traces[0]!.startTime,
+            windowEnd: traces[traces.length - 1]!.endTime,
+            changePointTime: traces[safeCpIdx]!.startTime,
+            pValue: rawMinP,
+            adjustedPValue,
+            statistic: Math.max(ks.statistic, ks01?.statistic ?? 0, ks12?.statistic ?? 0, cls.statistic, multiRec?.statistic ?? 0),
+            detector: cls.detector,
+            severity: adjustedPValue < 0.001 ? "high" : adjustedPValue < alpha ? "medium" : "low"
+          };
+        }
+      });
+    }
+
+    // 2. Distributional control-flow drift over per-trace DFG edge-count multisets (loop multiplicity & joint variant shifts)
+    const multisets = traces.map((t) => t.edgeCounts);
+    const msHalf = multisetControlFlowDrift(multisets.slice(0, half), multisets.slice(half), { alpha, permutations: 399 });
+    const msSplitPs: number[] = [msHalf.pValue];
+    let maxMsStat = msHalf.statistic;
+    let ms01: MultisetDriftResult | null = null;
+    let ms12: MultisetDriftResult | null = null;
+    let ms02: MultisetDriftResult | null = null;
+
+    if (t1 >= 4 && t2 - t1 >= 4 && traces.length - t2 >= 4) {
+      ms01 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t1, t2), { alpha, permutations: 399 });
+      ms12 = multisetControlFlowDrift(multisets.slice(t1, t2), multisets.slice(t2), { alpha, permutations: 399 });
+      ms02 = multisetControlFlowDrift(multisets.slice(0, t1), multisets.slice(t2), { alpha, permutations: 399 });
+      msSplitPs.push(ms01.pValue, ms12.pValue);
+      maxMsStat = Math.max(maxMsStat, ms01.statistic, ms12.statistic);
+    }
+
+    const msHolmPs = holmBonferroni(msSplitPs);
+    const msRawMinP = Math.min(...msSplitPs);
+    const msWithinAdjP = Math.min(...msHolmPs);
+
+    candidates.push({
+      rawPValue: msRawMinP,
+      withinAdjustedPValue: msWithinAdjP,
+      admitAlpha: alpha,
+      buildFinding: (adjustedPValue: number) => {
+        const isRecurring =
+          ms01 !== null &&
+          ms12 !== null &&
+          ms02 !== null &&
+          ms01.pValue < alpha &&
+          ms12.pValue < alpha &&
+          ms02.pValue >= alpha;
+        const cpIdx = isRecurring ? t1 : half;
         const safeCpIdx = Math.min(traces.length - 1, Math.max(0, cpIdx));
-        findings.push({
-          driftType: cls.kind,
+        return {
+          driftType: isRecurring ? "recurring" : "sudden",
           stratum: ot,
-          metric: "control_flow_edge",
+          metric: "control_flow_multiset",
           objectType: ot,
-          edgeOrRule: edge,
+          edgeOrRule: `${ot}:dfg_multiset`,
           windowStart: traces[0]!.startTime,
           windowEnd: traces[traces.length - 1]!.endTime,
           changePointTime: traces[safeCpIdx]!.startTime,
-          pValue: pVal,
-          statistic: Math.max(ks.statistic, ks01?.statistic ?? 0, ks12?.statistic ?? 0, cls.statistic, multiRec?.statistic ?? 0),
-          detector: cls.detector,
-          severity: pVal < 0.001 ? "high" : pVal < alpha ? "medium" : "low"
-        });
+          pValue: msRawMinP,
+          adjustedPValue,
+          statistic: maxMsStat,
+          detector: "jsd_multiset",
+          severity: adjustedPValue < 0.001 ? "high" : adjustedPValue < alpha ? "medium" : "low"
+        };
       }
+    });
+  }
+
+  // Across-family Benjamini-Hochberg (FDR) correction over all analyzed streams, edges, and multisets
+  const globalAdjusted = benjaminiHochberg(candidates.map((c) => c.withinAdjustedPValue));
+  const findings: DriftFinding[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const cand = candidates[i]!;
+    const adjP = Math.max(cand.rawPValue, globalAdjusted[i]!);
+    if (adjP < cand.admitAlpha) {
+      findings.push(cand.buildFinding(adjP));
     }
   }
 
-  findings.sort((a, b) => a.pValue - b.pValue);
+  findings.sort((a, b) => a.adjustedPValue - b.adjustedPValue || a.pValue - b.pValue);
   const driftDetected = findings.length > 0;
   const primaryFinding = findings[0];
 

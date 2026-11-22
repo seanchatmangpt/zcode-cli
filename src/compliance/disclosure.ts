@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -303,6 +304,11 @@ export interface ProvenanceSpanRecord {
   endLine?: number;
 }
 
+export type OcelUnrecordedReason =
+  | "ocel_not_recorded"
+  | "ocel_channel_untappable"
+  | "ocel_tap_failed";
+
 export interface WriteProvenanceSidecarOptions {
   sessionId: string;
   workspaceDir: string;
@@ -310,7 +316,8 @@ export interface WriteProvenanceSidecarOptions {
   provider: string;
   model: string;
   profile: ComplianceProfile;
-  ocelHeadHash?: string;
+  ocelHeadHash?: string | null;
+  ocelUnrecordedReason?: OcelUnrecordedReason;
   modifiedSpans: readonly ModifiedFileSpanInput[];
   timestamp?: string | number;
   redactPii?: boolean;
@@ -325,7 +332,8 @@ export interface ProvenanceSidecarDocument {
   compliance_profile: ComplianceProfile;
   provider: string;
   model: string;
-  ocel_head_hash: string;
+  ocel_head_hash: string | null;
+  ocel_unrecorded_reason?: OcelUnrecordedReason;
   generated_at: string;
   modified_spans: ProvenanceSpanRecord[];
   span_count: number;
@@ -365,11 +373,12 @@ export function writeProvenanceSidecar(
   const provider = options.provider?.trim() ?? "";
   const model = options.model?.trim() ?? "";
   const ocelHeadHash = options.ocelHeadHash?.trim() ?? "";
+  const ocelUnrecordedReason = !ocelHeadHash ? options.ocelUnrecordedReason : undefined;
 
-  if (regulated && (!provider || !model || !ocelHeadHash)) {
+  if (regulated && (!provider || !model || (!ocelHeadHash && !ocelUnrecordedReason))) {
     throw new ComplianceRefusalError(
       "PROVENANCE_SEAL_FAILED",
-      `Profile '${options.profile}' requires non-empty provider, model, and ocelHeadHash to seal Art. 50(2) provenance.`,
+      `Profile '${options.profile}' requires non-empty provider, model, and ocelHeadHash (or explicit ocelUnrecordedReason) to seal Art. 50(2) provenance.`,
       "R_missing_identity"
     );
   }
@@ -559,7 +568,8 @@ export function writeProvenanceSidecar(
       compliance_profile: options.profile,
       provider: provider || "unknown",
       model: model || "unknown",
-      ocel_head_hash: ocelHeadHash,
+      ocel_head_hash: ocelHeadHash ? ocelHeadHash : null,
+      ...(ocelUnrecordedReason ? { ocel_unrecorded_reason: ocelUnrecordedReason } : {}),
       generated_at: generatedAt,
       modified_spans: spanRecords,
       span_count: spanRecords.length
@@ -891,10 +901,17 @@ export function embedMarkdownProvenanceHeader(
 
 export interface WorkspaceFileEntry {
   mtimeMs: number;
+  ctimeMs: number;
+  ino: number;
   size: number;
+  contentSha256?: string;
 }
 
-export type WorkspaceFileSnapshot = Map<string, WorkspaceFileEntry>;
+export interface WorkspaceFileSnapshot {
+  files: Map<string, WorkspaceFileEntry>;
+  truncated: boolean;
+  maxFiles: number;
+}
 
 const PROVENANCE_SKIP_DIRS = new Set([
   ".git",
@@ -910,22 +927,25 @@ const PROVENANCE_SKIP_DIRS = new Set([
 ]);
 
 const DEFAULT_MAX_SNAPSHOT_FILES = 20_000;
+const DEFAULT_MAX_HASH_BYTES = 256 * 1024;
 
 export function snapshotWorkspaceFiles(
   workspaceDir: string,
-  options?: { maxFiles?: number }
+  options?: { maxFiles?: number; maxHashBytes?: number }
 ): WorkspaceFileSnapshot {
-  const snapshot: WorkspaceFileSnapshot = new Map();
+  const files = new Map<string, WorkspaceFileEntry>();
   const maxFiles = options?.maxFiles ?? DEFAULT_MAX_SNAPSHOT_FILES;
+  const maxHashBytes = options?.maxHashBytes ?? DEFAULT_MAX_HASH_BYTES;
   let rootReal: string;
   try {
     rootReal = realpathSync(resolve(workspaceDir));
   } catch {
-    return snapshot;
+    return { files, truncated: false, maxFiles };
   }
 
+  let truncated = false;
   const stack: string[] = [rootReal];
-  while (stack.length > 0 && snapshot.size < maxFiles) {
+  while (stack.length > 0) {
     const current = stack.pop()!;
     let entries;
     try {
@@ -934,25 +954,43 @@ export function snapshotWorkspaceFiles(
       continue;
     }
     for (const entry of entries) {
-      if (snapshot.size >= maxFiles) break;
       const fullPath = join(current, entry.name);
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         if (PROVENANCE_SKIP_DIRS.has(entry.name)) continue;
         stack.push(fullPath);
       } else if (entry.isFile()) {
+        if (files.size >= maxFiles) {
+          truncated = true;
+          break;
+        }
         try {
           const st = lstatSync(fullPath);
           if (!st.isFile() || st.isSymbolicLink()) continue;
           const relPath = relative(rootReal, fullPath).split(sep).join("/");
-          snapshot.set(relPath, { mtimeMs: st.mtimeMs, size: st.size });
+          let contentSha256: string | undefined;
+          if (maxHashBytes > 0 && st.size <= maxHashBytes) {
+            try {
+              contentSha256 = createHash("sha256").update(readFileSync(fullPath)).digest("hex");
+            } catch {
+              // fall back to stat metadata
+            }
+          }
+          files.set(relPath, {
+            mtimeMs: st.mtimeMs,
+            ctimeMs: st.ctimeMs,
+            ino: st.ino,
+            size: st.size,
+            ...(contentSha256 !== undefined ? { contentSha256 } : {})
+          });
         } catch {
           // skip unreadable/vanished file
         }
       }
     }
+    if (truncated) break;
   }
-  return snapshot;
+  return { files, truncated, maxFiles };
 }
 
 export function diffWorkspaceSnapshots(
@@ -960,14 +998,58 @@ export function diffWorkspaceSnapshots(
   after: WorkspaceFileSnapshot
 ): string[] {
   const changed: string[] = [];
-  for (const [relPath, afterEntry] of after.entries()) {
-    const prev = before.get(relPath);
-    if (!prev || prev.mtimeMs !== afterEntry.mtimeMs || prev.size !== afterEntry.size) {
+  for (const [relPath, afterEntry] of after.files.entries()) {
+    const prev = before.files.get(relPath);
+    if (
+      !prev ||
+      prev.mtimeMs !== afterEntry.mtimeMs ||
+      prev.ctimeMs !== afterEntry.ctimeMs ||
+      prev.ino !== afterEntry.ino ||
+      prev.size !== afterEntry.size ||
+      (prev.contentSha256 !== undefined &&
+        afterEntry.contentSha256 !== undefined &&
+        prev.contentSha256 !== afterEntry.contentSha256)
+    ) {
       changed.push(relPath);
     }
   }
   changed.sort();
   return changed;
+}
+
+function listGitModifiedFiles(workspaceReal: string): string[] {
+  const raw = execFileSync("git", ["status", "--porcelain=v1", "-z", "-uall"], {
+    cwd: workspaceReal,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  const tokens = raw.split("\0");
+  const files: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i];
+    if (!entry || entry.length < 4) continue;
+    const x = entry[0]!;
+    const y = entry[1]!;
+    const pathPart = entry.slice(3);
+    if (x === "R" || x === "C" || y === "R" || y === "C") {
+      // In porcelain -z, rename/copy has destination first, then source in the next NUL token.
+      i++;
+    }
+    if (x === "D" || y === "D") continue;
+    const normalized = pathPart.replaceAll("\\", "/");
+    if (!normalized || normalized === ".zcode-provenance" || normalized.startsWith(".zcode-provenance/")) {
+      continue;
+    }
+    try {
+      const st = lstatSync(resolve(workspaceReal, normalized));
+      if (st.isFile() && !st.isSymbolicLink()) {
+        files.push(normalized);
+      }
+    } catch {
+      // skip vanished/unreadable
+    }
+  }
+  return files;
 }
 
 export interface RuntimeArt50ProvenanceOptions {
@@ -978,6 +1060,9 @@ export interface RuntimeArt50ProvenanceOptions {
   provider: string;
   model: string;
   ocelHeadHash?: string;
+  ocelUnrecordedReason?: OcelUnrecordedReason;
+  requireOcelHeadHash?: boolean;
+  maxSnapshotFiles?: number;
   cliVersion?: string;
   redactPii?: boolean;
   redactOptions?: RedactComplianceOptions;
@@ -1001,11 +1086,29 @@ export function applyRuntimeArt50Provenance(
 ): RuntimeArt50ProvenanceResult | null {
   if (!isRegulatedProfile(options.profile)) return null;
 
-  const afterSnapshot = snapshotWorkspaceFiles(options.workspaceDir);
-  const modifiedFiles = diffWorkspaceSnapshots(options.beforeSnapshot, afterSnapshot);
+  const workspaceReal = realpathSync(resolve(options.workspaceDir));
+  const afterSnapshot = snapshotWorkspaceFiles(options.workspaceDir, {
+    maxFiles: options.maxSnapshotFiles ?? options.beforeSnapshot.maxFiles
+  });
+  let modifiedFiles = diffWorkspaceSnapshots(options.beforeSnapshot, afterSnapshot);
+
+  if (options.beforeSnapshot.truncated || afterSnapshot.truncated) {
+    try {
+      const gitFiles = listGitModifiedFiles(workspaceReal);
+      modifiedFiles = Array.from(new Set([...modifiedFiles, ...gitFiles])).sort();
+    } catch (err) {
+      throw new ComplianceRefusalError(
+        "PROVENANCE_SEAL_FAILED",
+        `Workspace snapshot truncated at ${afterSnapshot.maxFiles} files and git status fallback failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        "R_missing_consequence"
+      );
+    }
+  }
+
   if (modifiedFiles.length === 0) return null;
 
-  const workspaceReal = realpathSync(resolve(options.workspaceDir));
   const markedMarkdownFiles: string[] = [];
 
   for (const relPath of modifiedFiles) {
@@ -1027,17 +1130,7 @@ export function applyRuntimeArt50Provenance(
     markedMarkdownFiles.push(relPath);
   }
 
-  const effectiveHeadHash =
-    options.ocelHeadHash?.trim() ||
-    sha256Hex(
-      JSON.stringify({
-        article: "EU-AI-ACT-Art.50(2)",
-        sessionId: options.sessionId,
-        profile: options.profile,
-        provider: options.provider,
-        model: options.model
-      })
-    );
+  const trimmedHeadHash = options.ocelHeadHash?.trim() ?? "";
 
   const sidecar = writeProvenanceSidecar({
     sessionId: options.sessionId,
@@ -1045,7 +1138,11 @@ export function applyRuntimeArt50Provenance(
     provider: options.provider,
     model: options.model,
     profile: options.profile,
-    ocelHeadHash: effectiveHeadHash,
+    ...(trimmedHeadHash
+      ? { ocelHeadHash: trimmedHeadHash }
+      : options.requireOcelHeadHash
+        ? {}
+        : { ocelUnrecordedReason: options.ocelUnrecordedReason ?? "ocel_not_recorded" }),
     modifiedSpans: modifiedFiles.map((filePath) => ({ filePath })),
     redactPii: options.redactPii,
     redactOptions: options.redactOptions,

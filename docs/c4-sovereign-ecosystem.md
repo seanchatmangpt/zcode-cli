@@ -116,9 +116,9 @@ C4Container
 
 ## C4 Level 3A: Component Diagram — Autonomous Foundry & Verification Loop (Planes 1 & 4)
 
-This view zooms into how `zcode-cli 3.14.4*` orchestrates the Explore→Exploit I/O loop across `sJira`, `ggen-marketplace`, `ggen_igniter`, `ferroplan`, and (opt-in) `CASTLE` publish — not a sealed hands-free twin-parity product.
+This view zooms into how `zcode-cli 3.14.4*` orchestrates the Explore→Exploit I/O loop across `sJira`, `ggen-marketplace`, `ggen_igniter`, `ferroplan`, and (opt-in) `CASTLE` publish — brand twin self-test ALIVE; not a sealed full twin-parity product.
 
-> **Rel honesty:** `zcode↛fortune5` (castle-publish `enabled=false`). `ConstructAdmission` **↛** CommandBus/BRCEBroker. `diode↛proof` DOC-ONLY OVERCLAIM. GraphLaw attest **Ed25519** (ML-DSA/Σ_PQC unmet). Arcus emulator **production-parity UNVERIFIED**. Twin pin (CREATE-4): `twin_parity_self_test_cmd=["true"]` → `hands_free` stub-armed only — not a product twin court.
+> **Rel honesty:** `zcode↛fortune5` (castle-publish `enabled=false`). `ConstructAdmission` **↛** CommandBus/BRCEBroker. `diode↛proof` DOC-ONLY OVERCLAIM. GraphLaw attest **Ed25519** (ML-DSA/Σ_PQC unmet). Arcus emulator **production-parity UNVERIFIED**. Twin pin: `twin_parity_self_test_cmd=["bun","scripts/twin-parity-self-test.ts"]` (castle↔zcode `*.brand.toml` SHA-256; **never** `["true"]` stub) → `hands_free=self-test-ok` on exit 0.
 
 ```mermaid
 C4Component
@@ -134,7 +134,7 @@ C4Component
     Component(ad_ui_layout, "src/adapters/ui-layout-court.ts", "Adapter", "TransitionCourtAdapter name=ui-layout-court; TOML [adapters.ui_layout]; exit codes 0/1/2/3; spawns ggen-layout-court layout_court")
     Component(ad_ign, "src/adapters/igniter-sync.ts", "Adapter", "Restricts mutations to .ttl/.rq/.eex; verifies rm -rf + mix ggen_igniter.sync --check")
     Component(ad_castle, "src/adapters/castle-publish.ts", "Adapter", "OPT-IN underwire — [adapters.castle_publish] enabled=false default; CASTLE_PUBLISH_EXECUTE=1 for live invoke; redaction court only — zcode↛fortune5")
-    Component(ad_sink, "src/adapters/receipt-sink.ts", "Adapter", "Enforces 0/1/2/3 exit codes, anti-fake-ALIVE standing; enforce_twin_parity + twin_parity_self_test_cmd=[\"true\"] pin → hands_free auto-armed (stub); DfCM receipts")
+    Component(ad_sink, "src/adapters/receipt-sink.ts", "Adapter", "Enforces 0/1/2/3 exit codes, anti-fake-ALIVE standing; enforce_twin_parity + bun scripts/twin-parity-self-test.ts (brand-hash court; never [\"true\"]) → hands_free; DfCM receipts")
   }
 
   Container_Boundary(foundry_c, "ggen / ggen-marketplace / Compiler Spine") {
@@ -177,7 +177,7 @@ C4Component
   Rel(powl_eng, probes, "DOC-ONLY/aspirational from zcode [no fortune5 court; probes underwire; PIN_ON_BUILD unresolved]")
   Rel(probes, courts, "underwire metric feed [pins/SPEC incomplete]; fortune5 qualify is CASTLE CLI — zcode↛fortune5")
   Rel(courts, publisher, "CASTLE-local standing → Typst-source publish underwire only [SPEC MISSING; not PDF product; not invented ALIVE]")
-  Rel(ocel_tap, ad_sink, "Writes flat cycle stub / loop_receipt (not Chatman-5) & ledger.jsonl; twinParity.hands_free auto-armed via twin_parity_self_test_cmd=[\"true\"] pin (stub court)")
+  Rel(ocel_tap, ad_sink, "Writes flat cycle stub / loop_receipt (not Chatman-5) & ledger.jsonl; twinParity.hands_free via bun scripts/twin-parity-self-test.ts (brand twins; never [\"true\"])")
 ```
 
 ---
@@ -232,7 +232,7 @@ C4Component
 
 This view maps every active repository, live production surface, local cloud-twin code (Arcus `gcp_emulator` ALIVE; **production-parity UNVERIFIED**), and zero-custody client infrastructure node onto its execution environment.
 
-> **Twin / parity honesty:** Arcus emulator ≠ sealed production-parity (**UNVERIFIED**). CREATE-4 pin: `twin_parity_self_test_cmd=["true"]` → `twinParity.hands_free` stub-armed only (not a product ALIVE twin court).
+> **Twin / parity honesty:** Arcus emulator ≠ sealed production-parity (**UNVERIFIED**). Brand twin court ALIVE: `twin_parity_self_test_cmd=["bun","scripts/twin-parity-self-test.ts"]` proves castle↔zcode `*.brand.toml` SHA-256 (**never** `["true"]`); `hands_free=self-test-ok` on exit 0 — not Arcus/GCP production-parity.
 
 > **Deploy packaging truth:** Keep **AWS / Azure / GCP** faces. Treat **4-Cloud RAID / OCI** and **MDS+FROST striping** as **MISSING / aspirational** (not in `~/smalt`). FFB edge packaging = **7 `~/repop` compat shims**, not published `@fnox/*`; **`@fnox/react` MISSING**. **1,350B Isochronous AoQ QUIC = aspirational** (AoQ face without live 1350/9266 product). Arcus `gcp_emulator` **code ALIVE**; **production-parity UNVERIFIED**.
 
@@ -363,6 +363,6 @@ Throughput and size figures that previously appeared as live C4 product claims a
 | `ConstructAdmission` → BRCE/CommandBus | **↛ product Rel** | CASTLE-local opaque; in-crate GymAct/BRCE journal underwire ≠ AshA2A.CommandBus / gymact BRCEBroker |
 | `Rel(diode,proof)` / gamma revoke | **DOC-ONLY OVERCLAIM** | Named Causal Diode MISSING; MDP γ ≠ POWL γ ≠ Affidavit SMT revoke |
 | GraphLaw Rel → Affidavit ML-DSA | **DOC-ONLY / aspirational** | GraphLaw attest Ed25519; Affidavit ML-DSA-65 local ≠ that Rel modulus |
-| twin-parity / `hands_free` | **stub-armed** | CREATE-4 pin `twin_parity_self_test_cmd=["true"]` → `hands_free` auto-armed; not a product twin court |
+| twin-parity / `hands_free` | **brand court ALIVE** | `twin_parity_self_test_cmd=["bun","scripts/twin-parity-self-test.ts"]` (castle↔zcode brand SHA-256; **never** `["true"]`); exit 0 → `hands_free=self-test-ok` |
 | Affidavit slim gatekeeper WASM | **ALIVE @28673 B** | `affidavit-gatekeeper-wasm` Ed25519 `verify_witness`; ≤250 KiB court; fat ~718 KB provenance ≠ gatekeeper / not CTRT/PCCf fossil parse |
 | Arcus production-parity | **UNVERIFIED** | `gcp_emulator` code ALIVE; parity vs real GCP not sealed (`KNOWN_DIVERGENCES`) |

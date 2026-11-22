@@ -9,7 +9,7 @@
 - **System Name**: `zcode-cli` (`zcode-app-cli`)
 - **Provider / Maintainer**: Kingsword09 & zcode-cli contributors (`https://github.com/kingsword09/zcode-cli`)
 - **License**: MIT (vendored runtime notices in `LICENSES/`)
-- **Runtime Lock Provenance**: `zcode-runtime.lock.json` (`appVersion: 3.14.4`, `cliVersion: 0.16.9`, SHA-512 pinned)
+- **Runtime Lock Provenance**: `zcode-runtime.lock.json` (`appVersion: 3.14.4`, SHA-512 pinned)
 - **Compliance Verification CLI**: `zcode compliance info --json` / `zcode version --compliance`
 
 ---
@@ -21,12 +21,13 @@
 
 ### 2.2 Characteristics & Technical Controls
 - **Art. 50 Transparency**: Direct AI interaction notices in TUI/headless `--json`/`stream-json` (`system.disclosure` / `ai_disclosure`) and machine-readable Art. 50(2) provenance sidecars (`.zcode-provenance/<session>.json`), Markdown provenance comments, and git trailers (`AI-Generated-By`).
-- **Art. 12 Record-Keeping**: Tamper-evident SHA-256 hash-chained IEEE OCEL 2.0 event logs (`pi_hash`, `pi_parent`, `pi_attr_sha256`, `pi_obj_sha256`) persisted across JSON, WAL-mode SQLite (`node:sqlite`), and OCEL 2.0 XML with `>= 180`-day retention enforcement.
+- **Art. 12 Record-Keeping**: Tamper-evident SHA-256 hash-chained IEEE OCEL 2.0 event logs (`pi_hash`, `pi_parent`, `pi_attr_sha256`, `pi_obj_sha256`) with strict attribute validation, persisted across JSON, WAL-mode SQLite (`node:sqlite`), and OCEL 2.0 XML round-trip with event-time `>= 180`-day retention enforcement and SHA-256 purge ledger (`retention-purge-ledger.ndjson`).
 - **Art. 15 Accuracy, Robustness & Cybersecurity**:
-  - POWL v2 soundness-by-construction workflow orchestration (`src/powl-ocel-orchestrator.ts`).
-  - Optimal $A^*$ synchronous-product trace alignment ($\gamma = 0$ on conforming traces, exact `log_move` / `model_move` diagnostics).
+  - POWL v2 soundness-by-construction workflow orchestration with recursive write-scope validation, Hasse transitive reduction, and Murata WF-net reductions (`src/powl-ocel-orchestrator.ts`).
+  - Optimal $A^*$ synchronous-product trace alignment with marking-equation LP heuristic ($\gamma = 0$ on conforming traces, exact `log_move` / `model_move` diagnostics) and $\tau^*$-closure Align-ETC precision (`src/compliance/conformance.ts`).
+  - Inductive Miner OCPN discovery, variable-arc & synchronization replay semantics, bounded marking-graph soundness (`src/compliance/ocpn.ts`), and OC-DFG convergence/divergence/synchronization separation (`src/compliance/ocel-discover.ts`).
   - Declare/LTLf temporal verification with explicit anti-vacuity separation (`SATISFIED_WITNESSED` vs `SATISFIED_VACUOUS` vs `VIOLATED`).
-  - Bounded transactional lifecycle nets with workspace snapshot rollback (`workspace_rolled_back`) and per-signature retry caps (`RETRY_BUDGET_EXHAUSTED`).
+  - Bounded transactional lifecycle nets with silent-cycle detection, Saga LIFO compensation, workspace snapshot rollback (`workspace_rolled_back`), and per-signature retry caps (`RETRY_BUDGET_EXHAUSTED`) (`src/compliance/transactional-net.ts`).
   - Ingest-time secret, JWT, PEM, and GDPR PII redaction (`src/compliance/redactor.ts`) + Responsible Process Mining (FACT) $k$-anonymity & HMAC pseudonymization.
 
 ### 2.3 Prohibited & Out-of-Scope Uses
@@ -40,14 +41,14 @@ The following uses are **explicitly prohibited or out-of-scope**:
 ### 2.4 Known Limitations & Uncertainty
 - Underlying LLM outputs are stochastic candidates and can fail compilation, miss edge cases, or misinterpret ambiguous prompts.
 - Static inspection (`zcode compliance info`) reports standing `UNVERIFIED`; empirical accuracy and conformance standing must be measured on observed OCEL 2.0 soak logs via `zcode compliance assess --logs <dir>` and `zcode ocel verify`.
-- Coding turn service durations are heavy-tailed ($c_s^2 \gg 1$); Kingman queueing protection caps concurrency below $\rho \to 1$ to prevent queue collapse rather than maximizing raw utilization.
+- Coding turn service durations are heavy-tailed ($c_s^2 \gg 1$); multi-server $G/G/c$ Kingman (Sakasegawa/Allen-Cunneen) queueing protection (`src/compliance/kingman-scheduler.ts`) caps concurrency below $\rho \to 1$ to prevent queue collapse rather than maximizing raw utilization.
 
 ---
 
 ## 3. Pre-Determined Changes & Lifecycle Integrity — Art. 13(3)(c)
 
 - Upstream runtime updates are pinned via `zcode-runtime.lock.json` (SHA-512) and verified by `bun run sync:locked` and `bun scripts/check-package.ts`.
-- Ontology-to-code projections in `src/generated/` are gated against drift by `bun scripts/gen-ocel.ts --check`.
+- Canonical ontologies (`ontology/zcode-loop.ttl`, `ontology/eu-ai-act.ttl`, `ontology/eu-ai-act.shapes.ttl`, `ontology/airo_risk_description.ttl`) govern compliance semantics; projections in `src/generated/` are gated against drift by `bun scripts/gen-ocel.ts --check`.
 - Annex IV technical dossiers are verified against the active git `HEAD` SHA and configuration via `zcode compliance annex-iv --out <dir> --check`.
 
 ---
@@ -56,7 +57,7 @@ The following uses are **explicitly prohibited or out-of-scope**:
 
 Deployers configuring `[compliance]` in `zcode-cli.toml` must enforce:
 - **`overseer_id`** (`[deployer].overseer_id` or `ZCODE_OVERSEER_ID`): mandatory non-empty identifier for human accountability under high-risk profiles.
-- **Automation Bias Guard (`min_review_ms`, default `1000`)**: approvals faster than `min_review_ms` or rapid consecutive approval streaks raise `AB_RISK_FLAG` in OCEL logs and PMM audits.
+- **TUI Oversight & Automation Bias Guard (`min_review_ms`, default `1000`)**: TUI `PermissionPreview` enforces the `min_review_ms` dwell guard; `AutomationBiasMonitor` (`src/compliance/oversight.ts`) flags approvals faster than `min_review_ms` or rapid consecutive approval streaks with `AB_RISK_FLAG` in OCEL logs and PMM audits.
 - **Emergency Stop & Rollback**: human interruption emits `oversight_intervened` (`standing: "INTERVENED"`) and triggers bounded workspace rollback (`workspace_rolled_back`) when `rollback_on_dirty = true`.
 - **Subagent Non-Escalation**: spawned subagents inherit parent compliance profile, `min_review_ms`, `overseer_id`, and `XAAS_WORKER=1` gates monotonically (`propagateSubagentOversightContext`).
 
@@ -76,3 +77,4 @@ Deployers configuring `[compliance]` in `zcode-cli.toml` must enforce:
 1. **Per-Session Verification**: Run `zcode ocel verify --in <session.ocel.json> --json` (optionally with `--declare` and `--wfnet`).
 2. **Continuous PMM Cadence (Art. 72)**: Periodically run `zcode pmm analyze --logs <dir> --json` (minimum sample window `min_window >= 20`) to monitor Bose/van der Aalst concept drift (Page-Hinkley, ADWIN, EWMA, 2-sample KS, Mann-Whitney U), Kingman $c_s^2 / \lambda_{\text{alive}}$, and Responsible Process Mining fairness across providers/models.
 3. **Serious Incident Reporting (Art. 73)**: On crashes, unredacted secret breaches, oversight stops, or systemic drift, run `zcode incident report --in <file> --out <packet.json> --session <id>` to generate a causal OC-DFG root-cause packet with statutory deadline classification (`2d`, `10d`, or `15d`).
+4. **Closed-Loop Foundry Verification**: Use `zcode foundry` (`R_t -> O*_{t+1}`) to feed Chatman-5 DFCM receipts back into subsequent admitted work cycles.

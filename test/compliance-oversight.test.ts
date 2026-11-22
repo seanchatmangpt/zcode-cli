@@ -2,16 +2,21 @@ import { describe, expect, test } from "bun:test";
 
 import { createPermissionPreview } from "../packages/zcode-tui/src/index.ts";
 import {
+  getSessionAutomationBiasMonitor,
   PermissionPreview,
   PermissionView,
+  resetSessionAutomationBiasMonitor,
   resolvePermissionOversightFromEnv
 } from "../packages/zcode-tui/src/permission-view.ts";
 import { createTheme } from "../packages/zcode-tui/src/theme.ts";
 import { ComplianceRefusalError, parseComplianceConfigToml } from "../src/compliance/config.ts";
+import type { Ocel2Event } from "../src/compliance/ocel2.ts";
 import {
   AutomationBiasMonitor,
+  DEFAULT_AB_STREAK_THRESHOLD,
   enforceOversightArgs,
   evaluatePermissionDecisionLatency,
+  isApprovalDecision,
   propagateSubagentOversightContext,
   recordOversightIntervention
 } from "../src/compliance/oversight.ts";
@@ -461,7 +466,7 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
       const rendered = preview.render(100).join("\n");
       expect(rendered).toContain("Blast radius:");
       expect(rendered).toContain("Review dwell:");
-      expect(rendered).toContain("AB_RISK_FLAG");
+      expect(rendered).not.toContain("AB_RISK_FLAG");
       expect(rendered).toContain("overseer=alice-eu");
 
       // Submitting "allow" before min_review_ms (50ms < 5000ms) must be blocked/held
@@ -470,6 +475,10 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
       expect(heldDecision.held).toBe(true);
       expect(heldDecision.abRiskFlag).toBe(true);
       expect(heldDecision.remainingMs).toBe(4950);
+
+      // Re-rendering after a premature approval attempt now surfaces AB_RISK_FLAG
+      const renderedAfterPremature = preview.render(100).join("\n");
+      expect(renderedAfterPremature).toContain("AB_RISK_FLAG");
 
       // Submitting "deny" is never blocked by dwell guard
       const denyDecision = preview.evaluateDecision("deny", 50);
@@ -503,5 +512,121 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
       if (prevOverseer === undefined) delete process.env.ZCODE_OVERSEER_ID;
       else process.env.ZCODE_OVERSEER_ID = prevOverseer;
     }
+  });
+
+  test("ERRC (15-Art14-Oversight): unified isApprovalDecision includes 'approve', riskStyle/riskBackground escalate from inferred blast radius", () => {
+    expect(isApprovalDecision("allow")).toBe(true);
+    expect(isApprovalDecision("allow_always")).toBe(true);
+    expect(isApprovalDecision("modify")).toBe(true);
+    expect(isApprovalDecision("approve")).toBe(true);
+    expect(isApprovalDecision("APPROVE")).toBe(true);
+    expect(isApprovalDecision("deny")).toBe(false);
+    expect(isApprovalDecision("reject")).toBe(false);
+    expect(isApprovalDecision("emergency_stop")).toBe(false);
+
+    // "approve" must be evaluated as an approval in latency + AutomationBiasMonitor
+    const approveEval = evaluatePermissionDecisionLatency({
+      decisionLatencyMs: 120,
+      minReviewMs: 1000,
+      decision: "approve",
+      riskLevel: "high"
+    });
+    expect(approveEval.abRiskFlag).toBe(true);
+    expect(approveEval.belowMinReview).toBe(true);
+    expect(approveEval.consecutiveFastApprovals).toBe(1);
+
+    const mon = new AutomationBiasMonitor(1000, DEFAULT_AB_STREAK_THRESHOLD);
+    mon.recordDecision({ decisionLatencyMs: 100, decision: "approve", timestampMs: 1000 });
+    mon.recordDecision({ decisionLatencyMs: 150, decision: "approve", timestampMs: 1200 });
+    const third = mon.recordDecision({ decisionLatencyMs: 180, decision: "approve", timestampMs: 1400 });
+    expect(third.streakTriggered).toBe(true);
+    expect(third.flags).toContain("RAPID_CONSECUTIVE_APPROVALS");
+    expect(mon.consecutiveFastApprovals).toBe(3);
+
+    // riskStyle/riskBackground escalate from inferBlastRadius() even when upstream riskLevel is "low"
+    const theme = createTheme(true, "dark");
+    const escalated = new PermissionPreview(theme, "Bash", { command: "rm -rf /tmp/target" }, "low");
+    const safeLow = new PermissionPreview(theme, "Read", { file_path: "README.md" }, "low");
+    const escalatedOut = escalated.render(80).join("\n");
+    const safeLowOut = safeLow.render(80).join("\n");
+    expect(escalatedOut).toContain(theme.error("Risk: low"));
+    expect(safeLowOut).toContain(theme.muted("Risk: low"));
+  });
+
+  test("ERRC (15-Art14-Oversight): session-scoped AutomationBiasMonitor tracks cross-prompt streaks and emits OCEL 2.0 permission_decided & oversight_intervened", () => {
+    const sessionId = "sess_errc_ab_1";
+    resetSessionAutomationBiasMonitor(sessionId);
+    const theme = createTheme(true, "dark");
+    const emitted: Ocel2Event[] = [];
+
+    let clock = 10_000;
+    const nowMs = () => clock;
+
+    // Three distinct prompts in the same session share one AutomationBiasMonitor
+    for (let i = 1; i <= 3; i++) {
+      clock += 200;
+      const preview = new PermissionPreview(
+        theme,
+        "Bash",
+        { command: `echo step-${i}` },
+        "medium",
+        {
+          sessionId,
+          targetObjectId: `tool_call_${i}`,
+          turnId: `turn_${i}`,
+          overseerId: "alice-eu",
+          minReviewMs: 1000,
+          presentedAtMs: clock,
+          nowMs,
+          onOcelEvent: (ev) => emitted.push(ev)
+        }
+      );
+
+      // Fresh prompt at t=0 does not show AB_RISK_FLAG before streak reaches threshold
+      if (i === 1) {
+        expect(preview.render(90).join("\n")).not.toContain("AB_RISK_FLAG");
+      }
+
+      const res = preview.evaluateDecision("approve", 150);
+      expect(res.held).toBe(true);
+      expect(res.abRiskFlag).toBe(true);
+      expect(res.latencyEvaluation?.consecutiveFastApprovals).toBe(i);
+      if (i === 3) {
+        expect(res.latencyEvaluation?.streakTriggered).toBe(true);
+      }
+    }
+
+    const sharedMonitor = getSessionAutomationBiasMonitor(sessionId);
+    expect(sharedMonitor.consecutiveFastApprovals).toBe(3);
+    expect(emitted.filter((e) => e.type === "permission_decided")).toHaveLength(3);
+
+    // Intervention action (emergency_stop / abort_turn / deny_tool) emits oversight_intervened via recordOversightIntervention
+    const stopPreview = new PermissionPreview(
+      theme,
+      "Bash",
+      { command: "rm -rf /" },
+      "critical",
+      {
+        sessionId,
+        targetObjectId: "tool_call_stop",
+        overseerId: "alice.mueller@example.eu",
+        minReviewMs: 1000,
+        nowMs,
+        onOcelEvent: (ev) => emitted.push(ev)
+      }
+    );
+    const stopRes = stopPreview.evaluateDecision("emergency_stop", 50);
+    expect(stopRes.allowed).toBe(true);
+    expect(stopRes.held).toBe(false);
+    expect(stopRes.ocelEvents?.map((e) => e.type)).toEqual([
+      "permission_decided",
+      "oversight_intervened"
+    ]);
+    const interventionEvent = emitted.find((e) => e.type === "oversight_intervened");
+    expect(interventionEvent).toBeDefined();
+    expect(containsUnredactedSecretsOrPii(JSON.stringify(interventionEvent))).toBe(false);
+    expect(sharedMonitor.consecutiveFastApprovals).toBe(0);
+
+    resetSessionAutomationBiasMonitor(sessionId);
   });
 });

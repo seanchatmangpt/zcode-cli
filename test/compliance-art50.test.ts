@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -9,11 +10,14 @@ import { createTheme } from "../packages/zcode-tui/src/theme.ts";
 import { WelcomeBanner } from "../packages/zcode-tui/src/welcome-banner.ts";
 import { ComplianceRefusalError, parseComplianceConfigToml } from "../src/compliance/config.ts";
 import {
+  applyRuntimeArt50Provenance,
   buildArt50DisclosureEnvelope,
+  diffWorkspaceSnapshots,
   embedMarkdownProvenanceHeader,
   emitArt50DisclosureEvent,
   extractMarkdownProvenanceHeader,
   formatGitProvenanceTrailer,
+  snapshotWorkspaceFiles,
   writeProvenanceSidecar
 } from "../src/compliance/disclosure.ts";
 import { Ocel2ComplianceBuilder, validateOcel2 } from "../src/compliance/ocel2.ts";
@@ -632,6 +636,146 @@ describe("F08: EU AI Act Art. 50(2) machine-readable provenance marking", () => 
         { runtimeScriptPath: runtimeStub, cwd: blockedWs }
       );
       expect(blockedExit).not.toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ERRC ELIMINATE: applyRuntimeArt50Provenance never fabricates synthetic ocel_head_hash and fails closed when OCEL is required", () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-errc-ocel-head-"));
+    try {
+      const wsDir = join(root, "ws");
+      mkdirSync(wsDir, { recursive: true });
+      const before = snapshotWorkspaceFiles(wsDir);
+      writeFileSync(join(wsDir, "out.ts"), "export const x = 1;\n", "utf8");
+
+      // 1. Without ocelHeadHash and without requireOcelHeadHash -> ocel_head_hash: null + typed reason
+      const unrecorded = applyRuntimeArt50Provenance({
+        workspaceDir: wsDir,
+        beforeSnapshot: before,
+        sessionId: "sess_errc_null_01",
+        profile: "art50-only",
+        provider: "zai",
+        model: "glm-5.3",
+        ocelUnrecordedReason: "ocel_tap_failed"
+      });
+      expect(unrecorded).not.toBeNull();
+      expect(unrecorded!.document.ocel_head_hash).toBeNull();
+      expect(unrecorded!.document.ocel_unrecorded_reason).toBe("ocel_tap_failed");
+
+      // 2. With requireOcelHeadHash: true and missing ocelHeadHash -> fail closed R_missing_identity
+      let caught: unknown;
+      try {
+        applyRuntimeArt50Provenance({
+          workspaceDir: wsDir,
+          beforeSnapshot: before,
+          sessionId: "sess_errc_req_01",
+          profile: "high-risk-annex-iii",
+          provider: "zai",
+          model: "glm-5.3",
+          requireOcelHeadHash: true
+        });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ComplianceRefusalError);
+      expect((caught as ComplianceRefusalError).code).toBe("PROVENANCE_SEAL_FAILED");
+      expect((caught as ComplianceRefusalError).brokenTerm).toBe("R_missing_identity");
+
+      // 3. With real ocelHeadHash -> recorded verbatim with no unrecorded reason
+      const realHead = "e".repeat(64);
+      const recorded = applyRuntimeArt50Provenance({
+        workspaceDir: wsDir,
+        beforeSnapshot: before,
+        sessionId: "sess_errc_real_01",
+        profile: "high-risk-annex-iii",
+        provider: "zai",
+        model: "glm-5.3",
+        ocelHeadHash: realHead,
+        requireOcelHeadHash: true
+      });
+      expect(recorded).not.toBeNull();
+      expect(recorded!.document.ocel_head_hash).toBe(realHead);
+      expect(recorded!.document.ocel_unrecorded_reason).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ERRC REDUCE: snapshotWorkspaceFiles signals truncation, catches same-mtime/same-size edits, and uses git fallback or fails closed", () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-errc-snap-"));
+    try {
+      // 1. Same-mtime, same-size in-place edit is detected via contentSha256 / ctimeMs
+      const editWs = join(root, "edit_ws");
+      mkdirSync(editWs, { recursive: true });
+      const targetFile = join(editWs, "same_size.ts");
+      writeFileSync(targetFile, "export const v = 1111;\n", "utf8");
+      const origStat = statSync(targetFile);
+      const beforeEdit = snapshotWorkspaceFiles(editWs);
+      expect(beforeEdit.truncated).toBe(false);
+
+      writeFileSync(targetFile, "export const v = 2222;\n", "utf8");
+      utimesSync(targetFile, origStat.atime, origStat.mtime);
+      const afterEdit = snapshotWorkspaceFiles(editWs);
+      expect(diffWorkspaceSnapshots(beforeEdit, afterEdit)).toEqual(["same_size.ts"]);
+
+      // 2. Truncated non-git workspace fails closed under regulated profile
+      const nonGitWs = join(root, "nongit_ws");
+      mkdirSync(nonGitWs, { recursive: true });
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(join(nonGitWs, `f${i}.ts`), `export const n = ${i};\n`, "utf8");
+      }
+      const beforeTrunc = snapshotWorkspaceFiles(nonGitWs, { maxFiles: 2 });
+      expect(beforeTrunc.truncated).toBe(true);
+      expect(beforeTrunc.files.size).toBe(2);
+
+      let truncErr: unknown;
+      try {
+        applyRuntimeArt50Provenance({
+          workspaceDir: nonGitWs,
+          beforeSnapshot: beforeTrunc,
+          sessionId: "sess_trunc_fail",
+          profile: "art50-only",
+          provider: "zai",
+          model: "glm-5.3",
+          maxSnapshotFiles: 2
+        });
+      } catch (e) {
+        truncErr = e;
+      }
+      expect(truncErr).toBeInstanceOf(ComplianceRefusalError);
+      expect((truncErr as ComplianceRefusalError).code).toBe("PROVENANCE_SEAL_FAILED");
+
+      // 3. Truncated git workspace falls back to git status --porcelain and marks modified files beyond maxFiles
+      const gitWs = join(root, "git_ws");
+      mkdirSync(gitWs, { recursive: true });
+      execFileSync("git", ["init"], { cwd: gitWs, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: gitWs, stdio: "ignore" });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: gitWs, stdio: "ignore" });
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(join(gitWs, `f${i}.ts`), `export const n = ${i};\n`, "utf8");
+      }
+      execFileSync("git", ["add", "."], { cwd: gitWs, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: gitWs, stdio: "ignore" });
+
+      const beforeGit = snapshotWorkspaceFiles(gitWs, { maxFiles: 2 });
+      expect(beforeGit.truncated).toBe(true);
+      writeFileSync(join(gitWs, "zzz_late.md"), "# Late doc\n", "utf8");
+
+      const gitRes = applyRuntimeArt50Provenance({
+        workspaceDir: gitWs,
+        beforeSnapshot: beforeGit,
+        sessionId: "sess_trunc_git",
+        profile: "art50-only",
+        provider: "zai",
+        model: "glm-5.3",
+        ocelHeadHash: "f".repeat(64),
+        maxSnapshotFiles: 2
+      });
+      expect(gitRes).not.toBeNull();
+      expect(gitRes!.modifiedFiles).toContain("zzz_late.md");
+      expect(gitRes!.markedMarkdownFiles).toContain("zzz_late.md");
+      expect(extractMarkdownProvenanceHeader(readFileSync(join(gitWs, "zzz_late.md"), "utf8"))).not.toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

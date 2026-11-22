@@ -37,7 +37,7 @@ bun run sync:local
 It applies the same patch plan and capability extraction and records the
 provenance in `vendor/extraction.json`: the source application path (`source`),
 the Desktop `appVersion` and the official runtime `cliVersion` (the current
-sync records `3.14.3` / `0.16.9`), the extraction timestamp and each patch
+sync records `3.14.4` / `0.16.9`), the extraction timestamp and each patch
 result. A local sync never rewrites `package.json` or
 `zcode-runtime.lock.json`: the lock keeps pinning the exact remote installer
 that published releases reproduce. When the local app is newer than the lock,
@@ -126,7 +126,7 @@ stays decoupled, recorded in `zcode-runtime.lock.json` (`appVersion`) and in
 `vendor/extraction.json` (`appVersion`, `cliVersion`).
 
 Since 1b0c604 (2026-09-25), the committed `package.json` version between
-releases is runtime-synchronized to `<appVersion>-<n>` (currently `3.14.3-1`,
+releases is runtime-synchronized to `<appVersion>-<n>` (currently `3.14.4-1`,
 via `syncedReleaseVersion` in `scripts/release-version.ts`), so it tracks the
 extracted ZCode App rather than the last calver tag. Calver is stamped only by
 the release flow; the in-between `<appVersion>-<n>` value is a synchronization
@@ -243,6 +243,12 @@ the version check to 15 seconds, and plugin initialization to 30 seconds;
 timed-out checks terminate their subprocesses before cleanup. Only after all
 checks pass are the final size, integrity and file count written to
 `.release/release.json`.
+
+For EU AI Act (Regulation (EU) 2024/1689) release verification, `zcode version --compliance`
+emits the locked `runtime_app_version`, `runtime_cli_version`, `runtime_lock_sha512`,
+active `compliance_profile`, `ocel_standard` (`IEEE OCEL 2.0`), and supported articles
+(9, 10, 11, 12, 13, 14, 15, 17, 26, 27, 43, 47, 50, 72, 73). Run `bun run receipts:validate`
+to verify committed Chatman-5 DFCM receipts under `receipts/`.
 
 Inspect that manifest and then publish explicitly:
 

@@ -22,6 +22,7 @@ import {
   RETENTION_PURGE_LEDGER_FILENAME,
   enforceRetentionPolicy,
   readOcel2Sqlite,
+  verifyRetentionPurgeLedger,
   writeOcel2Sqlite,
   type RetentionPurgeReceipt
 } from "../src/compliance/ocel-sqlite.ts";
@@ -353,7 +354,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       writeOcel2Sqlite(doc, dbPath);
 
       // Inspect standard IEEE OCEL 2.0 tables directly via node:sqlite DatabaseSync
-      const rawDb = new DatabaseSync(dbPath, { readOnly: true });
+      const rawDb = new DatabaseSync(dbPath);
       try {
         const tables = (
           rawDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<
@@ -696,15 +697,17 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       const dbPath = join(dir, "collisions.sqlite");
       writeOcel2Sqlite(doc, dbPath);
 
-      // Verify WAL mode via both bun:sqlite { readonly: true } and node:sqlite { readOnly: true }
-      const bunDb = new BunSqliteDatabase(dbPath, { readonly: true });
+      // Verify WAL mode via both bun:sqlite and node:sqlite on cleanly-closed WAL DB (no stale sidecars)
+      expect(existsSync(`${dbPath}-wal`)).toBe(false);
+      expect(existsSync(`${dbPath}-shm`)).toBe(false);
+      const bunDb = new BunSqliteDatabase(dbPath);
       try {
         const mode = bunDb.query("PRAGMA journal_mode;").get() as { journal_mode?: string };
         expect((mode?.journal_mode ?? "").toLowerCase()).toBe("wal");
       } finally {
         bunDb.close();
       }
-      const nodeDb = new DatabaseSync(dbPath, { readOnly: true });
+      const nodeDb = new DatabaseSync(dbPath);
       try {
         const mode = nodeDb.prepare("PRAGMA journal_mode;").get() as Record<string, unknown>;
         expect(String(mode["journal_mode"] ?? "").toLowerCase()).toBe("wal");
@@ -742,6 +745,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       const activeDb = join(retDir, "active.sqlite");
       const activeWal = join(retDir, "active.sqlite-wal");
       writeOcel2Sqlite(doc, activeDb);
+      writeFileSync(activeWal, "", "utf8");
       utimesSync(activeDb, new Date(nowMs - 181 * dayMs), new Date(nowMs - 181 * dayMs));
       utimesSync(activeWal, new Date(nowMs - 1 * dayMs), new Date(nowMs - 1 * dayMs));
 
@@ -881,7 +885,7 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       });
       const cleanDb = join(dir, "clean.sqlite");
       writeOcel2Sqlite(cleanBuilder.build(), cleanDb);
-      const rawClean = new DatabaseSync(cleanDb, { readOnly: true });
+      const rawClean = new DatabaseSync(cleanDb);
       try {
         const cnt = rawClean
           .prepare("SELECT COUNT(*) AS cnt FROM zcode_ocel_event_attr_multi")
@@ -1306,6 +1310,150 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
       const receipt2 = JSON.parse(linesAfter[1]!) as RetentionPurgeReceipt;
       expect(receipt2.prevHash).toBe(receipt1.entryHash);
       expect(receipt2.entryHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(verifyRetentionPurgeLedger(ledgerPath)).toEqual({
+        ok: true,
+        entryCount: 2,
+        headHash: receipt2.entryHash,
+        errors: []
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ERRC (06-OCEL-SQLite-XML): clean WAL close, idempotent object attributes, SQLite retention metadata & purge ledger verifier", () => {
+    const dir = mkdtempSync(join(tmpdir(), "zcode-errc-ocel-sqlite-"));
+    try {
+      // 1. ELIMINATE: writeOcel2Sqlite leaves cleanly closed WAL DB without stale -wal/-shm/.keep sidecars
+      const b = new Ocel2ComplianceBuilder();
+      b.upsertObject("sess_e", "session", { compliance_profile: "high-risk-annex-iii" }, "2026-01-01T00:00:00.000Z");
+      b.recordEvent({
+        id: "ev_e1",
+        type: "session_created",
+        time: "2026-01-01T00:00:01.000Z",
+        attributes: { note: "clean-wal" },
+        relationships: [{ objectId: "sess_e", qualifier: "in_session" }]
+      });
+      const doc = b.build();
+      const walDbPath = join(dir, "clean-wal.sqlite");
+      writeOcel2Sqlite(doc, walDbPath);
+      expect(existsSync(walDbPath)).toBe(true);
+      expect(existsSync(`${walDbPath}-wal`)).toBe(false);
+      expect(existsSync(`${walDbPath}-shm`)).toBe(false);
+      expect(existsSync(`${walDbPath}-wal.keep`)).toBe(false);
+      expect(existsSync(`${walDbPath}-shm.keep`)).toBe(false);
+      expect(readOcel2Sqlite(walDbPath)).toEqual(doc);
+
+      // 2. RAISE: idempotent object attribute history on repeated upsertObjects and appendEvent(objectHints)
+      const idempPath = join(dir, "idempotent.sqlite");
+      const sink = new AppendableOcel2SqliteSink(idempPath);
+      try {
+        const objHint = {
+          id: "turn_idemp",
+          type: "turn",
+          attributes: [{ name: "standing", time: "2026-01-01T00:00:00.000Z", value: "RUNNING" }],
+          relationships: []
+        };
+        sink.upsertObjects([objHint]);
+        sink.upsertObjects([objHint]);
+        sink.appendEvent(
+          {
+            id: "ev_idemp_1",
+            type: "turn_started",
+            time: "2026-01-01T00:00:01.000Z",
+            attributes: [],
+            relationships: [{ objectId: "turn_idemp", qualifier: "in_turn" }]
+          },
+          [objHint]
+        );
+        sink.appendEvent(
+          {
+            id: "ev_idemp_2",
+            type: "turn_completed",
+            time: "2026-01-01T00:00:02.000Z",
+            attributes: [],
+            relationships: [{ objectId: "turn_idemp", qualifier: "in_turn" }]
+          },
+          [
+            {
+              id: "turn_idemp",
+              type: "turn",
+              attributes: [
+                { name: "standing", time: "2026-01-01T00:00:00.000Z", value: "RUNNING" },
+                { name: "standing", time: "2026-01-01T00:00:02.000Z", value: "ALIVE" }
+              ],
+              relationships: []
+            }
+          ]
+        );
+        const readBack = sink.readDocument();
+        const turnObj = readBack.objects.find((o) => o.id === "turn_idemp")!;
+        expect(turnObj.attributes).toEqual([
+          { name: "standing", time: "2026-01-01T00:00:00.000Z", value: "RUNNING" },
+          { name: "standing", time: "2026-01-01T00:00:02.000Z", value: "ALIVE" }
+        ]);
+      } finally {
+        sink.close();
+      }
+
+      // 3. REDUCE + CREATE: verifyRetentionPurgeLedger detects tampering and enforceRetentionPolicy fails closed
+      const retDir = join(dir, "ledger-verify");
+      mkdirSync(retDir, { recursive: true });
+      const nowMs = Date.parse("2026-10-01T00:00:00.000Z");
+      const dayMs = 86_400_000;
+      const oldIso = new Date(nowMs - 200 * dayMs).toISOString();
+      const oldDate = new Date(nowMs - 200 * dayMs);
+
+      const oldBuilder = new Ocel2ComplianceBuilder();
+      oldBuilder.upsertObject("sess_old", "session", { compliance_profile: "high-risk-annex-iii" }, oldIso);
+      oldBuilder.recordEvent({
+        id: "ev_old_1",
+        type: "session_created",
+        time: oldIso,
+        attributes: { note: "old" },
+        relationships: [{ objectId: "sess_old", qualifier: "in_session" }]
+      });
+      const oldDoc = oldBuilder.build();
+      const oldDb1 = join(retDir, "old1.sqlite");
+      writeOcel2Sqlite(oldDoc, oldDb1);
+      utimesSync(oldDb1, oldDate, oldDate);
+
+      const ledgerPath = join(retDir, RETENTION_PURGE_LEDGER_FILENAME);
+      expect(verifyRetentionPurgeLedger(ledgerPath)).toEqual({
+        ok: true,
+        entryCount: 0,
+        headHash: "GENESIS",
+        errors: []
+      });
+
+      const r1 = enforceRetentionPolicy(retDir, 180, { nowMs });
+      expect(r1.purged).toEqual([oldDb1]);
+      expect(verifyRetentionPurgeLedger(ledgerPath).ok).toBe(true);
+      expect(verifyRetentionPurgeLedger(ledgerPath).entryCount).toBe(1);
+
+      // Tamper with the ledger's artifactSizeBytes without updating entryHash
+      const origLine = readFileSync(ledgerPath, "utf8").trim();
+      const parsed = JSON.parse(origLine) as RetentionPurgeReceipt;
+      parsed.artifactSizeBytes += 1;
+      writeFileSync(ledgerPath, `${JSON.stringify(parsed)}\n`, "utf8");
+
+      const tamperedCheck = verifyRetentionPurgeLedger(ledgerPath);
+      expect(tamperedCheck.ok).toBe(false);
+      expect(tamperedCheck.errors.some((e) => e.includes("entryHash mismatch"))).toBe(true);
+
+      // enforceRetentionPolicy must fail closed before appending to a tampered ledger
+      const oldDb2 = join(retDir, "old2.sqlite");
+      writeOcel2Sqlite(oldDoc, oldDb2);
+      utimesSync(oldDb2, oldDate, oldDate);
+      let caught: unknown;
+      try {
+        enforceRetentionPolicy(retDir, 180, { nowMs });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(ComplianceRefusalError);
+      expect((caught as ComplianceRefusalError).code).toBe("LOGGING_UNAVAILABLE");
+      expect(existsSync(oldDb2)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

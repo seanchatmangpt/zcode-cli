@@ -183,9 +183,10 @@ describe("F13 OC-DFG Discovery & Object-Centric Petri Nets (Chicago)", () => {
     expect(dfg.objectTypes).toContain("model_request");
     expect(dfg.byObjectType.turn!.edges.length).toBeGreaterThan(0);
 
-    // Convergence & Divergence
-    expect(dfg.convergence.some((c) => c.activity === "tool_updated" && c.objectTypes.length >= 3)).toBe(true);
-    expect(dfg.divergence.some((d) => d.activity === "tool_updated" && d.objectType === "tool_call" && d.maxObjectsPerEvent === 2)).toBe(true);
+    // Convergence (1-to-many same-type), Divergence (same object >= 2 same-activity events), & Synchronization (multi-type)
+    expect(dfg.convergence.some((c) => c.activity === "tool_updated" && c.objectType === "tool_call" && c.maxObjectsPerEvent === 2)).toBe(true);
+    expect(dfg.divergence.some((d) => d.activity === "tool_updated" && d.objectType === "tool_call" && d.maxEventsPerObject === 2)).toBe(true);
+    expect(dfg.synchronization.some((s) => s.activity === "tool_updated" && s.objectTypes.length >= 3)).toBe(true);
 
     // Single-event model_request sojourn captures heavy-tailed c_s^2 >> 1
     expect(dfg.sojournByObjectType.model_request!.count).toBe(10);
@@ -505,5 +506,234 @@ describe("F13 OC-DFG Discovery & Object-Centric Petri Nets (Chicago)", () => {
     expect(missingSync.perObjectType.session!.missing).toBeGreaterThan(0);
     expect(missingSync.perObjectType.session!.fitness).toBeLessThan(1);
     expect(missingSync.perObjectType.tool_call!.missing).toBe(0);
+  });
+
+  test("ERRC RAISE: aligns convergence, divergence (with differingOtherTypes), and synchronization with OCEL 2.0 semantics", () => {
+    const t0 = Date.parse("2026-08-03T10:00:00.000Z");
+    const iso = (d: number) => new Date(t0 + d).toISOString();
+    const doc: DiscoverDocLike = {
+      objects: [
+        { id: "s1", type: "session", attributes: [] },
+        { id: "tc1", type: "tool_call", attributes: [] },
+        { id: "tc2", type: "tool_call", attributes: [] },
+        { id: "f1", type: "workspace_file", attributes: [{ name: "path", value: "a.ts" }] },
+        { id: "f2", type: "workspace_file", attributes: [{ name: "path", value: "b.ts" }] }
+      ],
+      events: [
+        // Convergence on tool_call (2 tool_calls on 1 event) + Synchronization (session, tool_call, workspace_file)
+        {
+          id: "e1",
+          type: "batch_edit",
+          time: iso(0),
+          relationships: [
+            { objectId: "s1", qualifier: "in_session" },
+            { objectId: "tc1", qualifier: "about_tool_call" },
+            { objectId: "tc2", qualifier: "about_tool_call" },
+            { objectId: "f1", qualifier: "mutated_in" }
+          ]
+        },
+        // Divergence on session s1: second batch_edit for s1 paired with differing workspace_file f2
+        {
+          id: "e2",
+          type: "batch_edit",
+          time: iso(500),
+          relationships: [
+            { objectId: "s1", qualifier: "in_session" },
+            { objectId: "tc1", qualifier: "about_tool_call" },
+            { objectId: "f2", qualifier: "mutated_in" }
+          ]
+        }
+      ]
+    };
+
+    const dfg = discoverOcDfg(doc);
+
+    // Convergence: same-type multiplicity >= 2 on one event
+    const conv = dfg.convergence.find((c) => c.activity === "batch_edit" && c.objectType === "tool_call");
+    expect(conv).toBeDefined();
+    expect(conv!.maxObjectsPerEvent).toBe(2);
+    expect(conv!.count).toBe(1);
+
+    // Divergence: s1 participates in 2 batch_edit events with differing workspace_file & tool_call sets
+    const divSession = dfg.divergence.find((d) => d.activity === "batch_edit" && d.objectType === "session");
+    expect(divSession).toBeDefined();
+    expect(divSession!.maxEventsPerObject).toBe(2);
+    expect(divSession!.count).toBe(1);
+    expect(divSession!.differingOtherTypes).toContain("workspace_file");
+    expect(divSession!.differingOtherTypes).toContain("tool_call");
+
+    // Synchronization: multi-type co-occurrence separated from convergence
+    const sync = dfg.synchronization.find((s) => s.activity === "batch_edit");
+    expect(sync).toBeDefined();
+    expect(sync!.objectTypes).toEqual(["session", "tool_call", "workspace_file"]);
+    expect(sync!.count).toBe(2);
+  });
+
+  test("ERRC CREATE: tracks distinct objectCount (UO) on nodes/edges and filters noise while preserving start-to-end connectivity", () => {
+    const t0 = Date.parse("2026-08-03T11:00:00.000Z");
+    const iso = (d: number) => new Date(t0 + d).toISOString();
+    const objects: DiscoverDocLike["objects"] = [];
+    const events: DiscoverDocLike["events"] = [];
+
+    // 5 main-path turns: start -> work -> end (turn_0 repeats work twice so frequency=6, objectCount=5)
+    for (let i = 0; i < 5; i++) {
+      const tid = `turn_${i}`;
+      (objects as unknown[]).push({ id: tid, type: "turn", attributes: [] });
+      (events as unknown[]).push(
+        { id: `m_${i}_1`, type: "start", time: iso(i * 1000 + 0), relationships: [{ objectId: tid, qualifier: "in_turn" }] },
+        { id: `m_${i}_2`, type: "work", time: iso(i * 1000 + 100), relationships: [{ objectId: tid, qualifier: "in_turn" }] }
+      );
+      if (i === 0) {
+        (events as unknown[]).push({
+          id: `m_${i}_2b`,
+          type: "work",
+          time: iso(i * 1000 + 150),
+          relationships: [{ objectId: tid, qualifier: "in_turn" }]
+        });
+      }
+      (events as unknown[]).push({
+        id: `m_${i}_3`,
+        type: "end",
+        time: iso(i * 1000 + 200),
+        relationships: [{ objectId: tid, qualifier: "in_turn" }]
+      });
+    }
+
+    // 1 noisy outlier turn: start -> rare_detour -> end
+    (objects as unknown[]).push({ id: "turn_noise", type: "turn", attributes: [] });
+    (events as unknown[]).push(
+      { id: "n_1", type: "start", time: iso(9000), relationships: [{ objectId: "turn_noise", qualifier: "in_turn" }] },
+      { id: "n_2", type: "rare_detour", time: iso(9100), relationships: [{ objectId: "turn_noise", qualifier: "in_turn" }] },
+      { id: "n_3", type: "end", time: iso(9200), relationships: [{ objectId: "turn_noise", qualifier: "in_turn" }] }
+    );
+
+    const unfiltered = discoverOcDfg({ objects, events });
+    const workNode = unfiltered.byObjectType.turn!.nodes.find((n) => n.activity === "work")!;
+    expect(workNode.frequency).toBe(6);
+    expect(workNode.objectCount).toBe(5);
+
+    const startToWork = unfiltered.byObjectType.turn!.edges.find((e) => e.source === "start" && e.target === "work")!;
+    expect(startToWork.frequency).toBe(5);
+    expect(startToWork.objectCount).toBe(5);
+
+    // Relative noiseThreshold prunes rare_detour while preserving start -> work -> end
+    const filtered = discoverOcDfg({ objects, events }, { noiseThreshold: 0.4 });
+    const keptActs = filtered.byObjectType.turn!.nodes.map((n) => n.activity);
+    expect(keptActs).toContain("start");
+    expect(keptActs).toContain("work");
+    expect(keptActs).toContain("end");
+    expect(keptActs).not.toContain("rare_detour");
+
+    // Extreme threshold still preserves start-to-end connectivity via widest path
+    const extreme = discoverOcDfg({ objects, events }, { minActivityFrequency: 100, minEdgeFrequency: 100 });
+    const extActs = extreme.byObjectType.turn!.nodes.map((n) => n.activity);
+    expect(extActs).toContain("start");
+    expect(extActs).toContain("work");
+    expect(extActs).toContain("end");
+    expect(extreme.byObjectType.turn!.edges.some((e) => e.source === "start" && e.target === "work")).toBe(true);
+    expect(extreme.byObjectType.turn!.edges.some((e) => e.source === "work" && e.target === "end")).toBe(true);
+  });
+
+  test("ERRC ELIMINATE: inter-trace concurrency does not fabricate synthetic SCC reworkCycles", () => {
+    const t0 = Date.parse("2026-08-03T12:00:00.000Z");
+    const iso = (d: number) => new Date(t0 + d).toISOString();
+    const doc: DiscoverDocLike = {
+      objects: [
+        { id: "t1", type: "turn", attributes: [] },
+        { id: "t2", type: "turn", attributes: [] }
+      ],
+      events: [
+        // t1: A -> B
+        { id: "e1", type: "act_A", time: iso(0), relationships: [{ objectId: "t1", qualifier: "in_turn" }] },
+        { id: "e2", type: "act_B", time: iso(100), relationships: [{ objectId: "t1", qualifier: "in_turn" }] },
+        // t2: B -> A (inter-trace concurrency, NOT rework)
+        { id: "e3", type: "act_B", time: iso(200), relationships: [{ objectId: "t2", qualifier: "in_turn" }] },
+        { id: "e4", type: "act_A", time: iso(300), relationships: [{ objectId: "t2", qualifier: "in_turn" }] }
+      ]
+    };
+
+    const dfg = discoverOcDfg(doc);
+    // DFG has both A->B and B->A, forming an SCC, but zero traces repeated any activity
+    expect(dfg.byObjectType.turn!.edges).toHaveLength(2);
+    expect(dfg.reworkCycles).toHaveLength(0);
+  });
+
+  test("ERRC REDUCE: merges multi-document rotated logs, deduplicates overlapping events, and preserves cross-boundary edges & sojourn", () => {
+    const t0 = Date.parse("2026-08-03T13:00:00.000Z");
+    const iso = (d: number) => new Date(t0 + d).toISOString();
+
+    const slice1: DiscoverDocLike = {
+      objects: [
+        { id: "turn_span", type: "turn", attributes: [] },
+        { id: "perm_span", type: "permission", attributes: [] }
+      ],
+      events: [
+        {
+          id: "ev_1",
+          type: "turn_started",
+          time: iso(0),
+          relationships: [{ objectId: "turn_span", qualifier: "in_turn" }]
+        },
+        {
+          id: "ev_2",
+          type: "permission_requested",
+          time: iso(1000),
+          relationships: [
+            { objectId: "turn_span", qualifier: "in_turn" },
+            { objectId: "perm_span", qualifier: "governs" }
+          ]
+        }
+      ]
+    };
+
+    const slice2: DiscoverDocLike = {
+      objects: [
+        { id: "turn_span", type: "turn", attributes: [] },
+        { id: "perm_span", type: "permission", attributes: [] }
+      ],
+      events: [
+        // Overlapping duplicate of ev_2
+        {
+          id: "ev_2",
+          type: "permission_requested",
+          time: iso(1000),
+          relationships: [
+            { objectId: "turn_span", qualifier: "in_turn" },
+            { objectId: "perm_span", qualifier: "governs" }
+          ]
+        },
+        {
+          id: "ev_3",
+          type: "permission_resolved",
+          time: iso(1500),
+          attributes: [{ name: "decision", value: "allow" }],
+          relationships: [
+            { objectId: "turn_span", qualifier: "in_turn" },
+            { objectId: "perm_span", qualifier: "governs" }
+          ]
+        },
+        {
+          id: "ev_4",
+          type: "turn_completed",
+          time: iso(5000),
+          relationships: [{ objectId: "turn_span", qualifier: "in_turn" }]
+        }
+      ]
+    };
+
+    const dfg = discoverOcDfg([slice1, slice2], { minReviewMs: 1000 });
+    expect(dfg.totalObjects).toBe(2);
+    expect(dfg.totalEvents).toBe(4); // ev_2 deduplicated
+    expect(dfg.byObjectType.turn!.traceCount).toBe(1);
+    expect(dfg.byObjectType.turn!.startActivities).toEqual({ turn_started: 1 });
+    expect(dfg.byObjectType.turn!.endActivities).toEqual({ turn_completed: 1 });
+    expect(
+      dfg.byObjectType.turn!.edges.some(
+        (e) => e.source === "permission_requested" && e.target === "permission_resolved" && e.frequency === 1
+      )
+    ).toBe(true);
+    expect(dfg.sojournByObjectType.turn!.meanMs).toBe(5000);
+    // Permission request/resolve paired across rotated slices (500ms < 1000ms -> rubber_stamp)
+    expect(dfg.oversightBottlenecks.some((b) => b.permissionObjectId === "perm_span" && b.kind === "rubber_stamp" && b.latencyMs === 500)).toBe(true);
   });
 });

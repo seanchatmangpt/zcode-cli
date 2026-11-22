@@ -86,8 +86,17 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     expect(doc.events.map((e) => e.type)).toContain("turn_started");
     expect(doc.events.map((e) => e.type)).toContain("tool_updated");
     expect(doc.events.map((e) => e.type)).toContain("turn_failed");
-    // 10 session/event lines (2 computer-use/operation-event lines without params.type are safely ignored)
-    expect(doc.events.length).toBe(10);
+    const parsedLines = lines.map((l) => JSON.parse(l) as Record<string, any>);
+    const sessionEventLines = parsedLines.filter((m) => m.method === "session/event");
+    const computerUseLines = parsedLines.filter((m) => m.method === "computer-use/operation-event");
+    // Explicit accounting: 10 session/event lines + 2 computer-use/operation-event lines (explicitly pi:Unmapped in ontology)
+    expect(sessionEventLines.length).toBe(10);
+    expect(computerUseLines.length).toBe(2);
+    expect(doc.events.length).toBe(sessionEventLines.length);
+    const ttl = ontologyText();
+    expect(ttl).toContain('zl:Unmapped-App-computerUse-operationEvent a pi:Unmapped');
+    expect(ttl).toContain('pi:sourceEvent "computer-use/operation-event"');
+    expect(ttl).toContain('pi:unmappedReason');
 
     const objTypes = new Set(doc.objects.map((o) => o.type));
     expect(objTypes.has("session")).toBe(true);
@@ -95,6 +104,96 @@ describe("F03 Source-AppServer contract & recorded capture verification (zero-mo
     expect(objTypes.has("tool_call")).toBe(true);
     const qualifiers = new Set(doc.events.flatMap((e) => e.relationships.map((r) => r.qualifier)));
     expect(qualifiers.has("about_tool_call")).toBe(true);
+
+    // Batch tool.updated events (kind: "batch") carry params.payload.toolCallIds
+    const batchLines = sessionEventLines.filter(
+      (m) => m.params?.type === "tool.updated" && m.params?.payload?.kind === "batch"
+    );
+    expect(batchLines.length).toBe(2);
+    const hasBatchRule = RULES.some(
+      (r) => r.source === APP_SERVER_SOURCE && r.event === "tool.updated" && r.path === "params.payload.toolCallIds"
+    );
+    if (hasBatchRule) {
+      for (const batchLine of batchLines) {
+        const ev = doc.events.find((e) => e.id === batchLine.params.eventId);
+        expect(ev).toBeDefined();
+        const linkedToolCalls = ev!.relationships
+          .filter((r) => r.qualifier === "about_tool_call")
+          .map((r) => r.objectId);
+        for (const id of batchLine.params.payload.toolCallIds as string[]) {
+          expect(linkedToolCalls).toContain(id);
+        }
+      }
+    }
+  });
+
+  test("ontology declares batch toolCallIds relations, distinct user_input object type, and explicit computer-use/operation-event unmapped policy", () => {
+    const ttl = ontologyText();
+    // 1. Batch tool.updated relations
+    expect(ttl).toContain(
+      'zl:Rel-Stream-tool_call_batch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "payload.toolCallIds" .'
+    );
+    expect(ttl).toContain(
+      'zl:Rel-App-tool_call_batch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "params.payload.toolCallIds" .'
+    );
+    expect(ttl).toMatch(/zl:Rule-Stream-tool-updated[\s\S]*?zl:Rel-Stream-tool_call_batch/);
+    expect(ttl).toMatch(/zl:Rule-App-tool-updated[\s\S]*?zl:Rel-App-tool_call_batch/);
+
+    // 2. Distinct user_input object type & qualifier (not conflated with permission)
+    expect(ttl).toContain('zl:ObjectType-user_input a pi:ObjectType ; pi:typeId "user_input" .');
+    expect(ttl).toContain('zl:Qualifier-about_user_input a pi:Qualifier ; pi:qualifierId "about_user_input" .');
+    expect(ttl).toContain(
+      'zl:Rel-Stream-user_input a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-user_input ; pi:hasQualifier zl:Qualifier-about_user_input ; pi:objectIdPath "payload.requestId" .'
+    );
+    expect(ttl).toContain(
+      'zl:Rel-App-user_input a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-user_input ; pi:hasQualifier zl:Qualifier-about_user_input ; pi:objectIdPath "params.payload.requestId" .'
+    );
+    expect(ttl).toMatch(/zl:Rule-Stream-userInput-requested[\s\S]*?zl:Rel-Stream-user_input/);
+    expect(ttl).toMatch(/zl:Rule-Stream-userInput-resolved[\s\S]*?zl:Rel-Stream-user_input/);
+    expect(ttl).toMatch(/zl:Rule-App-userInput-requested[\s\S]*?zl:Rel-App-user_input/);
+    expect(ttl).toMatch(/zl:Rule-App-userInput-resolved[\s\S]*?zl:Rel-App-user_input/);
+
+    // Runtime verification when generated RULES include user_input binding
+    const hasUserInputRule = RULES.some(
+      (r) => r.source === APP_SERVER_SOURCE && r.event === "userInput.requested" && r.qualifier === "about_user_input"
+    );
+    if (hasUserInputRule) {
+      const outDir = makeTempDir("zcode-appserver-userinput-");
+      const rec = new OcelRecorder(APP_SERVER_SOURCE, outDir);
+      rec.write(
+        `${JSON.stringify({
+          method: "session/event",
+          params: {
+            type: "userInput.requested",
+            eventId: "ev-ui-1",
+            timestamp: 1790030095000,
+            sessionId: "sess-ui-1",
+            turnId: "turn-ui-1",
+            payload: { requestId: "req-ui-1" }
+          }
+        })}\n` +
+          `${JSON.stringify({
+            method: "session/event",
+            params: {
+              type: "userInput.resolved",
+              eventId: "ev-ui-2",
+              timestamp: 1790030096000,
+              sessionId: "sess-ui-1",
+              turnId: "turn-ui-1",
+              payload: { requestId: "req-ui-1" }
+            }
+          })}\n`
+      );
+      const res = rec.finish();
+      const doc = JSON.parse(readFileSync(res.ocelPath, "utf8")) as OcelDoc;
+      expect(ocelProblems(doc)).toEqual([]);
+      for (const ev of doc.events) {
+        const quals = ev.relationships.map((r) => r.qualifier);
+        expect(quals).toContain("about_user_input");
+        expect(quals).not.toContain("about_permission");
+      }
+      expect(doc.objects.some((o) => o.type === "user_input" && o.id === "req-ui-1")).toBe(true);
+    }
   });
 
   test("validates existing app-server-list.jsonocel + receipt fixture", () => {
@@ -282,7 +381,23 @@ describe.skipIf(runtimeMissing)("F03 live vendor/zcode.cjs app-server subprocess
     const receipt = JSON.parse(readFileSync(out.receiptPath, "utf8")) as Record<string, unknown>;
     expect(ocelProblems(doc)).toEqual([]);
     expect(verifyChain(doc, "sha256")).toBeNull();
-    expect(out.events).toBeGreaterThanOrEqual(1);
+    const expectedEvents = captured.sessionEvents.filter((m) => m.params?.type !== "part.delta");
+    expect(out.events).toBe(expectedEvents.length);
+    const objByKey = new Set(doc.objects.map((o) => `${o.type}:${o.id}`));
+    const relsByQualifier = (q: string) =>
+      new Set(doc.events.flatMap((e) => e.relationships.filter((r) => r.qualifier === q).map((r) => r.objectId)));
+    const inSessionIds = relsByQualifier("in_session");
+    const inTurnIds = relsByQualifier("in_turn");
+    for (const m of expectedEvents) {
+      if (typeof m.params?.sessionId === "string") {
+        expect(objByKey.has(`session:${m.params.sessionId}`)).toBe(true);
+        expect(inSessionIds.has(m.params.sessionId)).toBe(true);
+      }
+      if (typeof m.params?.turnId === "string") {
+        expect(objByKey.has(`turn:${m.params.turnId}`)).toBe(true);
+        expect(inTurnIds.has(m.params.turnId)).toBe(true);
+      }
+    }
     expect(receipt.source).toBe(APP_SERVER_SOURCE);
     expect(receipt.chain_intact).toBe(true);
     expect(receipt.receipt_chain_intact).toBe(true);

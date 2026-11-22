@@ -62,12 +62,14 @@ export function computeKingmanQueueEstimate(
   ca2: number,
   cs2: number,
   meanServiceMs: number,
-  targetWaitRatio = 1.5
+  targetWaitRatio = 1.5,
+  servers = 1
 ): KingmanQueueEstimate {
   const safeCa2 = Number.isFinite(ca2) && ca2 >= 0 ? ca2 : 1;
   const safeCs2 = Number.isFinite(cs2) && cs2 >= 0 ? cs2 : 1;
   const safeServiceMs = Number.isFinite(meanServiceMs) && meanServiceMs > 0 ? meanServiceMs : 1;
   const safeRho = Number.isFinite(rho) ? Math.max(0, rho) : 0;
+  const safeServers = Number.isFinite(servers) && servers >= 1 ? servers : 1;
 
   const variabilityFactor = (safeCa2 + safeCs2) / 2;
   const recommendedMaxRho = Math.min(
@@ -91,13 +93,17 @@ export function computeKingmanQueueEstimate(
     };
   }
 
-  const utilizationFactor = safeRho / (1 - safeRho);
+  // Sakasegawa / Allen-Cunneen G/G/c queueing approximation (reduces to G/G/1 when servers = 1)
+  const sakasegawaExponent = Math.sqrt(2 * (safeServers + 1)) - 1;
+  const utilizationFactor =
+    Math.pow(safeRho, sakasegawaExponent) / (safeServers * (1 - safeRho));
   const expectedQueueWaitMs = utilizationFactor * variabilityFactor * safeServiceMs;
   const expectedSojournMs = expectedQueueWaitMs + safeServiceMs;
   const deadlineMs = Math.max(safeServiceMs * 4, 30_000);
   const serviceSec = safeServiceMs / 1000;
   const survivalProbability = 1 / (1 + expectedQueueWaitMs / deadlineMs);
-  const lambdaAlivePerSec = safeRho > 0 ? (safeRho / serviceSec) * survivalProbability : 0;
+  const lambdaAlivePerSec =
+    safeRho > 0 ? ((safeServers * safeRho) / serviceSec) * survivalProbability : 0;
 
   return {
     rho: safeRho,
@@ -173,7 +179,14 @@ export class KingmanScheduler {
       arrStats.count >= 1 && arrStats.meanMs > 0
         ? Math.min(0.99, meanSvc / (arrStats.meanMs * Math.max(1, this.wip)))
         : Math.min(0.95, this.wip / Math.max(2, this.maxWip));
-    return computeKingmanQueueEstimate(rho, ca2, cs2, meanSvc, this.targetWaitRatio);
+    return computeKingmanQueueEstimate(
+      rho,
+      ca2,
+      cs2,
+      meanSvc,
+      this.targetWaitRatio,
+      Math.max(1, this.wip)
+    );
   }
 
   onSuccess(serviceMs: number, transport: TransportTelemetrySample = {}): KingmanStepDecision {
@@ -244,9 +257,9 @@ export class KingmanScheduler {
       this.heavyTailedProtectedCount += 1;
     }
 
-    // Cap AI growth using Kingman recommendedMaxRho when heavy-tailed variance is observed
+    // Cap AI growth using Kingman recommendedMaxRho when combined arrival/service variability is high
     const kingmanCeiling =
-      estimate.cs2 > 1.5
+      estimate.variabilityFactor > 1.25
         ? Math.max(this.minWip + 1, Math.round(estimate.recommendedMaxRho * this.maxWip))
         : this.maxWip;
 

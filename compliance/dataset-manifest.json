@@ -8,8 +8,8 @@
       "role": "ontology",
       "article": "Arts. 9-15,17,26,27,50,72,73",
       "description": "Canonical EU AI Act AIRO/DPV/OCEL2/Declare ontology",
-      "sha256": "1e68b0d4e4ceb6ae8625f70ec7385ce0a1a5c05564cdbc5107723b68eca6e434",
-      "bytes": 39908
+      "sha256": "57445d8a8e5df15e7d675c880a3e2a26247d85fd482ce1f42e4dcad93ec750ee",
+      "bytes": 42041
     },
     {
       "id": "ontology-airo-risk-description",
@@ -17,7 +17,7 @@
       "role": "ontology",
       "article": "Arts. 9,12,14,15",
       "description": "AIRO baseline risk description and article mappings",
-      "sha256": "f1cd605423c92183858afc86aaeca97b7a0f7c297583d08bdcf366b2064c9ddd",
+      "sha256": "5572180ee49c022c794ab941e458bd4f6c88d77d0b2f645a0728a422564a320c",
       "bytes": 10379
     },
     {
@@ -26,8 +26,8 @@
       "role": "ontology",
       "article": "Art. 12",
       "description": "Canonical ZCode OCEL loop state machine & event sources",
-      "sha256": "f5d10c01e7951892dc159001cfceaa42d0c9ad2e83d3f40a3d95cabd2e9459b6",
-      "bytes": 46774
+      "sha256": "c7f4eaf3f419cc1e7185c50441778b81ff8c539c78a55c337c2d632b9d79b1d8",
+      "bytes": 54441
     },
     {
       "id": "contract-gall-work",
@@ -36,7 +36,7 @@
       "article": "Art. 15",
       "description": "SHA-256 pinned gall-work lease contract",
       "sha256": "9f722813725bb814228b77044fd8875510d7d7e11f326df4b427d98792a7e979",
-      "bytes": 9028
+      "bytes": 9282
     },
     {
       "id": "contract-xaas-remote-relay",

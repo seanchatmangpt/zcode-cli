@@ -63,5 +63,14 @@ and replayed. Never retry a whole agent turn and repeat completed external tools
 Per-session databases or a shared writer service are separate architectural changes
 requiring discovery, lifecycle, and migration design. The contention regression
 tests also pass against the locked Desktop runtime (observed on the 3.14.0 lock;
-the lock now selects 3.14.3 — `zcode-runtime.lock.json`). They do not establish
+`zcode-runtime.lock.json` now selects `3.14.4`). They do not establish
 that sustained high-concurrency workloads are free of contention.
+
+## Separate SQLite surface: OCEL 2.0 compliance store
+
+This document covers the vendored `SqliteSessionStore` contention regression
+(#162 / #163). The EU AI Act Art. 12 IEEE OCEL 2.0 SQLite export/import and
+180-day event-time retention surface (`src/compliance/ocel-sqlite.ts`, backed by
+`node:sqlite` `DatabaseSync` with `retention-purge-ledger.ndjson`) operates on
+separate per-export/compliance SQLite files and does not share the session
+database file or its lock domain.

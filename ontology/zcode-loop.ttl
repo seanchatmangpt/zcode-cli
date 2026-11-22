@@ -25,6 +25,8 @@ zl:Source-StreamJson a pi:EventSource ; pi:sourceId "zcode_stream" ; pi:sourceKi
 zl:Source-AppServer a pi:EventSource ; pi:sourceId "zcode_app_server" ; pi:sourceKind "app-server-subscription" ;
   pi:nameField "params.type" ; pi:idField "params.eventId" ; pi:timeField "params.timestamp" ; pi:chainPolicy zl:ChainPolicy ;
   rdfs:comment "zcode app-server event notifications: params carries the wire event (VERIFIED against live vendor/zcode.cjs app-server session/subscribe + session/event capture and test/fixtures/zcode-ocel/app-server-list.jsonocel)" .
+zl:Unmapped-App-computerUse-operationEvent a pi:Unmapped ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "computer-use/operation-event" ;
+  pi:unmappedReason "computer-use/operation-event notifications carry params.kind instead of params.type and duplicate turn lifecycle already captured by session/event (turn.started, turn.failed); explicitly accounted as unmapped on zl:Source-AppServer" .
 
 # ===== objects and qualifiers =====
 zl:ObjectType-session a pi:ObjectType ; pi:typeId "session" .
@@ -33,12 +35,14 @@ zl:ObjectType-tool_call a pi:ObjectType ; pi:typeId "tool_call" .
 zl:ObjectType-model_request a pi:ObjectType ; pi:typeId "model_request" .
 zl:ObjectType-subagent a pi:ObjectType ; pi:typeId "subagent" .
 zl:ObjectType-permission a pi:ObjectType ; pi:typeId "permission" .
+zl:ObjectType-user_input a pi:ObjectType ; pi:typeId "user_input" .
 zl:Qualifier-in_session a pi:Qualifier ; pi:qualifierId "in_session" .
 zl:Qualifier-in_turn a pi:Qualifier ; pi:qualifierId "in_turn" .
 zl:Qualifier-about_tool_call a pi:Qualifier ; pi:qualifierId "about_tool_call" .
 zl:Qualifier-about_model_request a pi:Qualifier ; pi:qualifierId "about_model_request" .
 zl:Qualifier-by_subagent a pi:Qualifier ; pi:qualifierId "by_subagent" .
 zl:Qualifier-about_permission a pi:Qualifier ; pi:qualifierId "about_permission" .
+zl:Qualifier-about_user_input a pi:Qualifier ; pi:qualifierId "about_user_input" .
 
 # ===== lease identity objects (stream + gall; Explore 21cd2acc) =====
 # work_order id = work_order_iri; epoch/subject/base use epoch:/subj:/base: namespaces.
@@ -83,15 +87,19 @@ zl:EventType-streamRecovery-updated a pi:EventType ; pi:typeId "stream_recovery_
 zl:Rel-Stream-session a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-session ; pi:hasQualifier zl:Qualifier-in_session ; pi:objectIdPath "sessionId" .
 zl:Rel-Stream-turn a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-turn ; pi:hasQualifier zl:Qualifier-in_turn ; pi:objectIdPath "turnId" .
 zl:Rel-Stream-tool_call a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "payload.toolCallId" .
+zl:Rel-Stream-tool_call_batch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "payload.toolCallIds" .
 zl:Rel-Stream-model_request a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-model_request ; pi:hasQualifier zl:Qualifier-about_model_request ; pi:objectIdPath "payload.requestId" .
 zl:Rel-Stream-subagent a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subagent ; pi:hasQualifier zl:Qualifier-by_subagent ; pi:objectIdPath "payload.agentId" .
 zl:Rel-Stream-permission a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-permission ; pi:hasQualifier zl:Qualifier-about_permission ; pi:objectIdPath "payload.requestId" .
+zl:Rel-Stream-user_input a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-user_input ; pi:hasQualifier zl:Qualifier-about_user_input ; pi:objectIdPath "payload.requestId" .
 zl:Rel-App-session a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-session ; pi:hasQualifier zl:Qualifier-in_session ; pi:objectIdPath "params.sessionId" .
 zl:Rel-App-turn a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-turn ; pi:hasQualifier zl:Qualifier-in_turn ; pi:objectIdPath "params.turnId" .
 zl:Rel-App-tool_call a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "params.payload.toolCallId" .
+zl:Rel-App-tool_call_batch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-tool_call ; pi:hasQualifier zl:Qualifier-about_tool_call ; pi:objectIdPath "params.payload.toolCallIds" .
 zl:Rel-App-model_request a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-model_request ; pi:hasQualifier zl:Qualifier-about_model_request ; pi:objectIdPath "params.payload.requestId" .
 zl:Rel-App-subagent a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subagent ; pi:hasQualifier zl:Qualifier-by_subagent ; pi:objectIdPath "params.payload.agentId" .
 zl:Rel-App-permission a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-permission ; pi:hasQualifier zl:Qualifier-about_permission ; pi:objectIdPath "params.payload.requestId" .
+zl:Rel-App-user_input a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-user_input ; pi:hasQualifier zl:Qualifier-about_user_input ; pi:objectIdPath "params.payload.requestId" .
 zl:Rel-Stream-work_order a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-work_order ; pi:hasQualifier pi:Qualifier-Subject ; pi:objectIdPath "work_order_iri" .
 zl:Rel-Stream-epoch a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-epoch ; pi:hasQualifier zl:Qualifier-on_epoch ; pi:objectIdPath "epoch" .
 zl:Rel-Stream-subject a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-subject ; pi:hasQualifier zl:Qualifier-about_subject ; pi:objectIdPath "subject" .
@@ -151,7 +159,7 @@ zl:Rule-Stream-model-streaming a pi:MappingRule ; pi:ruleId "stream-model_stream
   pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-model-streaming a pi:RuntimeEvent ; pi:runtimeEventName "model.streaming" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-tool-updated a pi:MappingRule ; pi:ruleId "stream-tool_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "tool.updated" ;
-  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
+  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-tool_call_batch , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-tool-updated a pi:RuntimeEvent ; pi:runtimeEventName "tool.updated" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-permission-requested a pi:MappingRule ; pi:ruleId "stream-permission_requested" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "permission.requested" ;
   pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
@@ -160,10 +168,10 @@ zl:Rule-Stream-permission-resolved a pi:MappingRule ; pi:ruleId "stream-permissi
   pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-permission-resolved a pi:RuntimeEvent ; pi:runtimeEventName "permission.resolved" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-userInput-requested a pi:MappingRule ; pi:ruleId "stream-user_input_requested" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "userInput.requested" ;
-  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
+  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-user_input , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-userInput-requested a pi:RuntimeEvent ; pi:runtimeEventName "userInput.requested" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-userInput-resolved a pi:MappingRule ; pi:ruleId "stream-user_input_resolved" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "userInput.resolved" ;
-  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-permission , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
+  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-user_input , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-userInput-resolved a pi:RuntimeEvent ; pi:runtimeEventName "userInput.resolved" ; pi:emittedBy zl:Source-StreamJson .
 zl:Rule-Stream-checkpoint-created a pi:MappingRule ; pi:ruleId "stream-checkpoint_created" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "checkpoint.created" ;
   pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
@@ -223,7 +231,7 @@ zl:Rule-App-model-streaming a pi:MappingRule ; pi:ruleId "app-model_streaming" ;
   pi:emitsEventType zl:EventType-model-streaming ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-model-streaming a pi:RuntimeEvent ; pi:runtimeEventName "model.streaming" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-tool-updated a pi:MappingRule ; pi:ruleId "app-tool_updated" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "tool.updated" ;
-  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
+  pi:emitsEventType zl:EventType-tool-updated ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-tool_call , zl:Rel-App-tool_call_batch , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-tool-updated a pi:RuntimeEvent ; pi:runtimeEventName "tool.updated" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-permission-requested a pi:MappingRule ; pi:ruleId "app-permission_requested" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "permission.requested" ;
   pi:emitsEventType zl:EventType-permission-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
@@ -232,10 +240,10 @@ zl:Rule-App-permission-resolved a pi:MappingRule ; pi:ruleId "app-permission_res
   pi:emitsEventType zl:EventType-permission-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-permission-resolved a pi:RuntimeEvent ; pi:runtimeEventName "permission.resolved" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-userInput-requested a pi:MappingRule ; pi:ruleId "app-user_input_requested" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "userInput.requested" ;
-  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
+  pi:emitsEventType zl:EventType-userInput-requested ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-user_input , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-userInput-requested a pi:RuntimeEvent ; pi:runtimeEventName "userInput.requested" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-userInput-resolved a pi:MappingRule ; pi:ruleId "app-user_input_resolved" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "userInput.resolved" ;
-  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-permission , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
+  pi:emitsEventType zl:EventType-userInput-resolved ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-user_input , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-userInput-resolved a pi:RuntimeEvent ; pi:runtimeEventName "userInput.resolved" ; pi:emittedBy zl:Source-AppServer .
 zl:Rule-App-checkpoint-created a pi:MappingRule ; pi:ruleId "app-checkpoint_created" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "checkpoint.created" ;
   pi:emitsEventType zl:EventType-checkpoint-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .

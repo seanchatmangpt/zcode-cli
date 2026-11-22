@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -18,6 +18,7 @@ import {
   SjiraWorkOrderSource,
   runFoundryLoop
 } from "../src/adapters/index.ts";
+import { structuralPrivateNamespaceScan } from "../src/adapters/marketplace-court.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures/sjira/candidates.jsonl");
 
@@ -194,5 +195,83 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     });
     expect(close.aggregateStanding).toBe("PARTIAL_ALIVE");
     expect(close.exitCode).toBe(2);
+  });
+
+  test("ERRC ELIMINATE: SjiraWorkOrderSource rejects interactive/authority frontierArgs before spawn", async () => {
+    const root = mkdtempSync(join(tmpdir(), "chicago-sjira-argv-"));
+    const fakeBin = join(root, "fake-ggen.sh");
+    writeFileSync(fakeBin, "#!/bin/sh\necho '{\"id\":\"SHOULD_NOT_RUN\"}'\n");
+    chmodSync(fakeBin, 0o755);
+
+    const source = new SjiraWorkOrderSource({
+      cwd: root,
+      ggenBin: fakeBin,
+      enforceMinGgenAncestor: false,
+      forbidTtyPrompts: true,
+      frontierArgs: ["--yes"]
+    });
+    await expect(source.ingestFrontier()).rejects.toThrow(/interactive\/authority flag forbidden/i);
+
+    const sourceAuth = new SjiraWorkOrderSource({
+      cwd: root,
+      ggenBin: fakeBin,
+      enforceMinGgenAncestor: false,
+      forbidTtyPrompts: true,
+      frontierArgs: ["--authority=ADMIN"]
+    });
+    await expect(sourceAuth.ingestFrontier()).rejects.toThrow(/interactive\/authority flag forbidden/i);
+  });
+
+  test("ERRC REDUCE: preflightVerify propagates LOUD_SKIP (exitCode 3) when GGEN_BIN is outside git", async () => {
+    const nonGitDir = mkdtempSync(join(tmpdir(), "chicago-nongit-ggen-"));
+    const fakeBin = join(nonGitDir, "ggen");
+    writeFileSync(fakeBin, "#!/bin/sh\nexit 0\n");
+    chmodSync(fakeBin, 0o755);
+
+    const source = new SjiraWorkOrderSource({
+      cwd: nonGitDir,
+      ggenBin: fakeBin,
+      enforceMinGgenAncestor: true
+    });
+    const pre = await source.preflightVerify();
+    expect(pre.ok).toBe(true);
+    expect(pre.exitCode).toBe(3);
+    expect(pre.detail).toContain("not inside a git checkout");
+  });
+
+  test("ERRC RAISE: structuralPrivateNamespaceScan enforces strict allowlist and parses @prefix/PREFIX", () => {
+    const packDir = mkdtempSync(join(tmpdir(), "chicago-privns-"));
+    const ontDir = join(packDir, "ontology");
+    mkdirSync(ontDir, { recursive: true });
+    const rqPath = join(packDir, "gates", "000_forbid_private_namespaces.rq");
+
+    // 1. Clean public ontology passes
+    writeFileSync(
+      join(ontDir, "clean.ttl"),
+      "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+        "@prefix schema: <https://schema.org/> .\n" +
+        "<urn:uuid:12345678-1234-1234-1234-123456789abc> a <https://schema.org/Thing> .\n"
+    );
+    expect(structuralPrivateNamespaceScan(packDir, rqPath).status).toBe(0);
+
+    // 2. Arbitrary private namespace (not in 5-host denylist) fails closed
+    writeFileSync(
+      join(ontDir, "private.ttl"),
+      "@prefix corp: <http://corp.example/ont#> .\ncorp:Widget a <http://corp.example/ont#Thing> .\n"
+    );
+    const privRes = structuralPrivateNamespaceScan(packDir, rqPath);
+    expect(privRes.status).toBe(1);
+    expect(privRes.stderr).toContain("http://corp.example/ont#");
+
+    // 3. Substring-spoofed URI fails closed (no includes() bypass)
+    const spoofPack = mkdtempSync(join(tmpdir(), "chicago-spoof-"));
+    mkdirSync(join(spoofPack, "ontology"), { recursive: true });
+    writeFileSync(
+      join(spoofPack, "ontology", "spoof.rq"),
+      "PREFIX evil: <http://evil.example/http://www.w3.org/1999/02/22-rdf-syntax-ns#>\nSELECT ?s WHERE { ?s a evil:X }\n"
+    );
+    const spoofRes = structuralPrivateNamespaceScan(spoofPack, rqPath);
+    expect(spoofRes.status).toBe(1);
+    expect(spoofRes.stderr).toContain("http://evil.example/http://www.w3.org/");
   });
 });

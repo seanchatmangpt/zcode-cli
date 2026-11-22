@@ -131,6 +131,7 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const knownTargetScopes = collectTargetScopes(current);
   let converged = false;
   let retryBudgetExhausted = false;
+  let rollbackFault: { transitionId: string; detail: string } | null = null;
 
   const defaultExecutor = async (t: Transition): Promise<ExecutionOutcome> => {
     if (opts.dryRun) {
@@ -153,9 +154,14 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     for (const [k, v] of collectTargetScopes(current)) {
       knownTargetScopes.set(k, v);
     }
+    const cycleBaseSha = readGitHead(opts.workspaceDir);
+    const transitionBaseShas = new Map<string, string>();
     const run = await executePowlWithTokenReplay(
       current,
       async (t) => {
+        if (rollbackFault) {
+          return { ok: false, exitCode: 2, detail: rollbackFault.detail };
+        }
         // Pre: validateWriteScope before any executor mutation (EU AI Act human oversight / fail-closed).
         const planned = plannedWriteRels(t, opts, knownTargetScopes);
         if (!planned || planned.length === 0) {
@@ -170,12 +176,22 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
           return { ok: false, exitCode: scope, detail: `write-scope refused (${scope})` };
         }
 
+        const preHead = readGitHead(opts.workspaceDir) ?? cycleBaseSha;
+        if (preHead) {
+          transitionBaseShas.set(t.activityId ?? t.id, preHead);
+          transitionBaseShas.set(t.id, preHead);
+        }
+
         let snapshot: WorkspaceSnapshotHandle | null = null;
-        if (useRollback && existsSync(opts.workspaceDir)) {
+        if (useRollback) {
           try {
             snapshot = captureWorkspaceSnapshot(opts.workspaceDir);
-          } catch {
-            snapshot = null;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const detail = `snapshot-capture failed (${t.activityId ?? t.id}): ${msg}`;
+            priorDiagnostics.set(t.activityId ?? t.id, detail);
+            rollbackFault = { transitionId: t.activityId ?? t.id, detail };
+            return { ok: false, exitCode: 2, detail };
           }
         }
 
@@ -185,8 +201,12 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
             if (snapshot && !res.transportBackpressure) {
               try {
                 snapshot.rollback(res.detail ?? "executor_failed", t.id, true);
-              } catch {
-                // Best-effort rollback; refusal still propagates.
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                const detail = `rollback failed after executor refusal (${t.activityId ?? t.id}): ${msg}`;
+                priorDiagnostics.set(t.activityId ?? t.id, detail);
+                rollbackFault = { transitionId: t.activityId ?? t.id, detail };
+                return { ok: false, exitCode: 2, detail };
               }
             }
             if (!res.transportBackpressure) {
@@ -212,8 +232,12 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
             if (snapshot) {
               try {
                 snapshot.rollback(detail, t.id, true);
-              } catch {
-                // Best-effort rollback; refusal still propagates.
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                const rbDetail = `rollback failed after court refusal (${t.activityId ?? t.id}): ${msg}`;
+                priorDiagnostics.set(t.activityId ?? t.id, rbDetail);
+                rollbackFault = { transitionId: t.activityId ?? t.id, detail: rbDetail };
+                return { ok: false, exitCode: 2, detail: rbDetail };
               }
             }
             priorDiagnostics.set(t.activityId ?? t.id, detail);
@@ -253,18 +277,26 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       if (opts.unverified && standing === "ALIVE") standing = "UNVERIFIED";
       if (opts.blocked) standing = "BLOCKED";
 
+      const workOrderId = obj.id.replace(/^art:/, "");
+      const baseSha =
+        transitionBaseShas.get(workOrderId) ?? transitionBaseShas.get(obj.id) ?? cycleBaseSha;
       const receipt: TransitionReceipt = {
         cycleId: `${cycleId}-c${c}`,
-        workOrderId: obj.id.replace(/^art:/, ""),
+        workOrderId,
         outcome: standing,
         standing,
         sha256Receipt: createHash("sha256").update(`${obj.id}:${last}:${run.ocelSha256}`).digest("hex"),
+        ...(baseSha ? { baseSha } : {}),
         ocelSha256: run.ocelSha256,
         detail: last
       };
       receipts.push(receipt);
       cycleReceipts.push(receipt);
       await opts.source.recordOutcome(receipt);
+    }
+
+    if (rollbackFault) {
+      break;
     }
 
     const cycleAllPassed =
@@ -335,6 +367,11 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       aggregateStanding === "ALIVE" ? 0 : aggregateStanding === "REFUSED" ? 1 : 2;
   }
 
+  if (rollbackFault) {
+    aggregateStanding = "REFUSED";
+    exitCode = 2;
+  }
+
   // Net compile sanity (Gall: structural soundness of the simple system)
   compilePowlToWorkflowNet(current);
 
@@ -348,6 +385,16 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     retryBudgetExhausted,
     commitsCreated
   };
+}
+
+function readGitHead(workspaceDir: string): string | undefined {
+  if (!existsSync(join(workspaceDir, ".git"))) return undefined;
+  const rev = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspaceDir,
+    encoding: "utf8"
+  });
+  const sha = rev.status === 0 ? rev.stdout.trim() : "";
+  return sha.length > 0 ? sha : undefined;
 }
 
 function commitAliveTransition(workspaceDir: string, t: Transition): string | null {
@@ -414,22 +461,34 @@ function plannedWriteRels(
   return null;
 }
 
-function frontierActivitySignature(node: PowlNode): string {
-  const ids: string[] = [];
-  const walk = (n: PowlNode): void => {
+export function frontierActivitySignature(node: PowlNode): string {
+  const canon = (n: PowlNode): string => {
     if (n.kind === "activity") {
-      ids.push(`${n.id}:${n.label}`);
-    } else if (n.kind === "xor") {
-      for (const b of n.branches) walk(b);
-    } else if (n.kind === "loop") {
-      walk(n.doBranch);
-      walk(n.redoBranch);
-    } else if (n.kind === "partial_order") {
-      for (const c of n.children) walk(c);
+      const scopes = [
+        ...new Set([
+          ...(n.targetFile ? [n.targetFile] : []),
+          ...(n.fileScope ?? [])
+        ].map(normalizeWriteRel))
+      ].sort();
+      return `act(${n.id}:${n.label}:${n.objectType}:${n.activityKind ?? ""}:[${scopes.join(",")}])`;
     }
+    if (n.kind === "tau") {
+      return `tau(${n.id})`;
+    }
+    if (n.kind === "xor") {
+      return `xor(${n.id}:[${n.branches.map(canon).join(",")}])`;
+    }
+    if (n.kind === "loop") {
+      return `loop(${n.id}:do=${canon(n.doBranch)},redo=${canon(n.redoBranch)},max=${n.maxIterations ?? ""})`;
+    }
+    const children = n.children.map(canon).join(",");
+    const edges = [...n.order]
+      .map(([u, v]) => `${u}->${v}`)
+      .sort()
+      .join(",");
+    return `po(${n.id}:children=[${children}],order=[${edges}])`;
   };
-  walk(node);
-  return ids.join("|");
+  return canon(node);
 }
 
 function collectTargetScopes(

@@ -406,4 +406,256 @@ describe("F10 Declare / LTLf Conformance Engine (Chicago)", () => {
     expect(byId.get("DEC-PREC-HIGHRISK-TOOL")!.status).toBe("VIOLATED");
     expect(byId.get("DEC-PREC-HIGHRISK-TOOL")!.counterexample_event_ids).toContain("ev_crit_tool");
   });
+
+  test("ERRC RAISE: antiVacuityRequired fails allMandatorySatisfied on empty or unactivated logs and unifies antiVacuityPassed", () => {
+    const emptyDoc: Ocel2DocLike = { objects: [], events: [] };
+    const emptyReport = evaluateDeclareRules(emptyDoc, DEFAULT_EU_AI_ACT_DECLARE_RULES);
+    expect(emptyReport.allMandatorySatisfied).toBe(false);
+    expect(emptyReport.vacuousCount).toBe(DEFAULT_EU_AI_ACT_DECLARE_RULES.length);
+    for (const r of emptyReport.results) {
+      expect(r.status).toBe("SATISFIED_VACUOUS");
+      expect(r.antiVacuityRequired).toBe(true);
+      expect(r.antiVacuityPassed).toBe(false);
+    }
+
+    // Non-empty trace with 0 activations also fails antiVacuityRequired
+    const unactivatedTurn: Ocel2DocLike = {
+      objects: [{ id: "t1", type: "turn", attributes: [] }],
+      events: [
+        {
+          id: "e1",
+          type: "turn_started",
+          time: "2026-08-02T10:00:00.000Z",
+          attributes: [],
+          relationships: [{ objectId: "t1", qualifier: "in_turn" }]
+        }
+      ]
+    };
+    const precOnly = DEFAULT_EU_AI_ACT_DECLARE_RULES.filter((r) => r.id === "DEC-PREC-ART14");
+    const vacReport = evaluateDeclareRules(unactivatedTurn, precOnly);
+    expect(vacReport.results[0]!.status).toBe("SATISFIED_VACUOUS");
+    expect(vacReport.results[0]!.antiVacuityPassed).toBe(false);
+    expect(vacReport.allMandatorySatisfied).toBe(false);
+  });
+
+  test("ERRC CREATE: DEC-PREC-ART14 enforces AlternatePrecedence and per-tool_call correlation", () => {
+    const precRule = DEFAULT_EU_AI_ACT_DECLARE_RULES.filter((r) => r.id === "DEC-PREC-ART14");
+
+    // 1 permission_resolved followed by 2 tool_updated events in the same turn -> second tool_updated is VIOLATED
+    const piggybackDoc: Ocel2DocLike = {
+      objects: [{ id: "t1", type: "turn", attributes: [] }],
+      events: [
+        {
+          id: "p1",
+          type: "permission_resolved",
+          time: "2026-08-02T10:00:01.000Z",
+          attributes: [{ name: "decision", value: "allow" }],
+          relationships: [{ objectId: "t1", qualifier: "in_turn" }]
+        },
+        {
+          id: "tool1",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:02.000Z",
+          attributes: [{ name: "tool_name", value: "Write" }],
+          relationships: [{ objectId: "t1", qualifier: "in_turn" }]
+        },
+        {
+          id: "tool2",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:03.000Z",
+          attributes: [{ name: "tool_name", value: "Bash" }],
+          relationships: [{ objectId: "t1", qualifier: "in_turn" }]
+        }
+      ]
+    };
+    const piggybackRes = evaluateDeclareRules(piggybackDoc, precRule).results[0]!;
+    expect(piggybackRes.status).toBe("VIOLATED");
+    expect(piggybackRes.counterexample_event_ids).toEqual(["tool2"]);
+
+    // Mismatched tool_call correlation -> VIOLATED
+    const mismatchedCorrDoc: Ocel2DocLike = {
+      objects: [
+        { id: "t1", type: "turn", attributes: [] },
+        { id: "tc_1", type: "tool_call", attributes: [] },
+        { id: "tc_2", type: "tool_call", attributes: [] }
+      ],
+      events: [
+        {
+          id: "p1",
+          type: "permission_resolved",
+          time: "2026-08-02T10:00:01.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_1", qualifier: "about_tool_call" }
+          ]
+        },
+        {
+          id: "tool2",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:02.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_2", qualifier: "about_tool_call" }
+          ]
+        }
+      ]
+    };
+    const mismatchRes = evaluateDeclareRules(mismatchedCorrDoc, precRule).results[0]!;
+    expect(mismatchRes.status).toBe("VIOLATED");
+    expect(mismatchRes.counterexample_event_ids).toEqual(["tool2"]);
+
+    // Interleaved correlated pairs (p1->tc_1, p2->tc_2, tool1->tc_1, tool2->tc_2) -> SATISFIED_WITNESSED
+    const correlatedDoc: Ocel2DocLike = {
+      objects: [
+        { id: "t1", type: "turn", attributes: [] },
+        { id: "tc_1", type: "tool_call", attributes: [] },
+        { id: "tc_2", type: "tool_call", attributes: [] }
+      ],
+      events: [
+        {
+          id: "p1",
+          type: "permission_resolved",
+          time: "2026-08-02T10:00:01.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_1", qualifier: "about_tool_call" }
+          ]
+        },
+        {
+          id: "p2",
+          type: "permission_resolved",
+          time: "2026-08-02T10:00:02.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_2", qualifier: "about_tool_call" }
+          ]
+        },
+        {
+          id: "tool1",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:03.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_1", qualifier: "about_tool_call" }
+          ]
+        },
+        {
+          id: "tool2",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:04.000Z",
+          attributes: [],
+          relationships: [
+            { objectId: "t1", qualifier: "in_turn" },
+            { objectId: "tc_2", qualifier: "about_tool_call" }
+          ]
+        }
+      ]
+    };
+    const corrRes = evaluateDeclareRules(correlatedDoc, precRule).results[0]!;
+    expect(corrRes.status).toBe("SATISFIED_WITNESSED");
+    expect(corrRes.witness_event_ids).toEqual(expect.arrayContaining(["p1", "tool1", "p2", "tool2"]));
+  });
+
+  test("ERRC CREATE: ChainPrecedence, MP-Declare data conditions, and time-window bounds", () => {
+    const doc: Ocel2DocLike = {
+      objects: [{ id: "s1", type: "session", attributes: [] }],
+      events: [
+        {
+          id: "e1",
+          type: "permission_resolved",
+          time: "2026-08-02T10:00:00.000Z",
+          attributes: [{ name: "decision", value: "allow" }],
+          relationships: [{ objectId: "s1", qualifier: "in_session" }]
+        },
+        {
+          id: "e2",
+          type: "tool_updated",
+          time: "2026-08-02T10:00:00.500Z",
+          attributes: [{ name: "risk_level", value: "high" }],
+          relationships: [{ objectId: "s1", qualifier: "in_session" }]
+        },
+        {
+          id: "e3",
+          type: "receipt_persist",
+          time: "2026-08-02T10:00:05.500Z",
+          attributes: [],
+          relationships: [{ objectId: "s1", qualifier: "in_session" }]
+        }
+      ]
+    };
+
+    const rules: DeclareRule[] = [
+      {
+        id: "CP-OK",
+        template: "ChainPrecedence",
+        activation: "tool_updated",
+        target: "permission_resolved",
+        activationCondition: { attribute: "risk_level", equals: "high" },
+        targetCondition: { attribute: "decision", equals: "allow" },
+        maxTimeDeltaMs: 1000,
+        objectType: "session",
+        mandatory: true
+      },
+      {
+        id: "RESP-WINDOW-FAIL",
+        template: "Response",
+        activation: "tool_updated",
+        target: "receipt_persist",
+        maxTimeDeltaMs: 2000,
+        objectType: "session",
+        mandatory: true
+      },
+      {
+        id: "RESP-WINDOW-OK",
+        template: "Response",
+        activation: "tool_updated",
+        target: "receipt_persist",
+        minTimeDeltaMs: 1000,
+        maxTimeDeltaMs: 10000,
+        objectType: "session",
+        mandatory: true
+      }
+    ];
+
+    const report = evaluateDeclareRules(doc, rules);
+    const byId = new Map(report.results.map((r) => [r.id, r]));
+    expect(byId.get("CP-OK")!.status).toBe("SATISFIED_WITNESSED");
+    expect(byId.get("RESP-WINDOW-FAIL")!.status).toBe("VIOLATED");
+    expect(byId.get("RESP-WINDOW-FAIL")!.counterexample_event_ids).toEqual(["e2"]);
+    expect(byId.get("RESP-WINDOW-OK")!.status).toBe("SATISFIED_WITNESSED");
+  });
+
+  test("ERRC ELIMINATE: objectless OCEL log yields 0 session traces (no __default_session__) and report JSON omits duplicate declareResults", () => {
+    const objectlessDoc: Ocel2DocLike = {
+      objects: [],
+      events: [
+        {
+          id: "orphan_1",
+          type: "session_created",
+          time: "2026-08-02T10:00:00.000Z",
+          attributes: [],
+          relationships: []
+        }
+      ]
+    };
+
+    const report = evaluateDeclareRules(objectlessDoc, DEFAULT_EU_AI_ACT_DECLARE_RULES);
+    expect(report.allMandatorySatisfied).toBe(false);
+    for (const r of report.results) {
+      expect(r.evaluatedTraces).toBe(0);
+      expect(r.status).toBe("SATISFIED_VACUOUS");
+    }
+
+    // Serialized JSON has `results` and does not duplicate `declareResults`
+    const parsed = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
+    expect(Array.isArray(parsed.results)).toBe(true);
+    expect("declareResults" in parsed).toBe(false);
+    // Compatibility alias remains accessible on the live object
+    expect(report.declareResults).toBe(report.results);
+  });
 });

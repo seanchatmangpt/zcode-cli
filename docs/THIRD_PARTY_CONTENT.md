@@ -18,8 +18,8 @@ compatibility patches applied.
 
 The [upstream notices shipped here](../LICENSES/README.md) come from a separately
 pinned public source revision. That revision declares version 3.14.0; the current
-runtime lock selects Desktop 3.14.3 (darwin/arm64; see `zcode-runtime.lock.json`,
-relocked 2026-09-23 with lock-vs-extraction appVersion validation in
+runtime lock selects Desktop 3.14.4 (darwin/arm64; see `zcode-runtime.lock.json`,
+with lock-vs-extraction `appVersion` validation in
 `scripts/check-runtime.ts`). The notices are a conservative upstream
 inventory, not proof that the extracted binary was built from that exact commit
 or that every listed component is included in this npm package. Review artifact
@@ -44,7 +44,7 @@ patches; the patch report is in `vendor/extraction.json`.
 ## Plugin declarations
 
 These are the declarations observed in the Desktop 3.14.1 packages (the
-lock has since moved to 3.14.3; the declarations below were not re-extracted),
+lock has since moved to 3.14.4; the declarations below were not re-extracted),
 not a
 replacement for nested dependency or asset licenses:
 

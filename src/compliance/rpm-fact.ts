@@ -44,6 +44,10 @@ export type RpmStanding = "ALIVE" | "PARTIAL_ALIVE" | "UNVERIFIED";
 
 export interface RpmAuditOptions {
   fairnessThreshold?: number;
+  minGroupSessions?: number;
+  fairnessAlpha?: number;
+  latencyParityThreshold?: number;
+  ttftParityThreshold?: number;
   redactPii?: boolean;
   redactEnv?: readonly string[];
   env?: NodeJS.ProcessEnv;
@@ -66,15 +70,21 @@ export interface FairnessDimensionReport {
   groups: FairnessGroupMetric[];
   disparateImpactRatio: number;
   parityDifference: number;
+  pValue?: number;
+  insufficientSample?: boolean;
+  serviceMsParityRatio?: number;
+  ttftMsParityRatio?: number;
   passed: boolean;
 }
 
 export interface FairnessDisparityFinding {
   dimension: "provider_id" | "model_id" | "repo";
+  metric?: "conforming_rate" | "service_ms" | "ttft_ms";
   lowestGroup: string;
   highestGroup: string;
   disparateImpactRatio: number;
   threshold: number;
+  pValue?: number;
   offendingSessionIds: string[];
   articleRef: string;
 }
@@ -86,6 +96,7 @@ export interface RpmAccuracyReport {
   missingE2oCount: number;
   missingE2oRatio: number;
   danglingE2oCount: number;
+  danglingO2oCount: number;
   invalidTimestampCount: number;
   nonMonotonicCount: number;
   chainStatus: "INTACT" | "BROKEN" | "PARTIAL" | "ABSENT";
@@ -215,12 +226,14 @@ function sha256Hex(data: string): string {
 function verifyOcelDocChain(events: readonly RpmEventLike[]): {
   status: "INTACT" | "BROKEN" | "PARTIAL" | "ABSENT";
   reason: string | null;
+  offendingEventIds: string[];
 } {
-  if (events.length === 0) return { status: "ABSENT", reason: null };
+  if (events.length === 0) return { status: "ABSENT", reason: null, offendingEventIds: [] };
 
   let withHash = 0;
   let withoutHash = 0;
   let parent = "";
+  const unhashedIds: string[] = [];
 
   for (const ev of events) {
     const hash = readAttrStr(ev.attributes, "pi_hash");
@@ -231,26 +244,78 @@ function verifyOcelDocChain(events: readonly RpmEventLike[]): {
 
     if (hash === undefined) {
       withoutHash += 1;
+      unhashedIds.push(ev.id);
       continue;
     }
     withHash += 1;
 
     if (alg !== "sha256") {
-      return { status: "BROKEN", reason: `unsupported hash algorithm "${alg}" at event ${ev.id}` };
+      return {
+        status: "BROKEN",
+        reason: `unsupported hash algorithm "${alg}" at event ${ev.id}`,
+        offendingEventIds: [ev.id]
+      };
     }
     if (piParent !== undefined && piParent !== parent) {
-      return { status: "BROKEN", reason: `pi_parent mismatch at event ${ev.id}` };
+      return {
+        status: "BROKEN",
+        reason: `pi_parent mismatch at event ${ev.id}`,
+        offendingEventIds: [ev.id]
+      };
     }
     const expected = sha256Hex(`${parent}\n${canonOcelEvent(ev, phase, pendingRef)}`);
     if (hash !== expected) {
-      return { status: "BROKEN", reason: `pi_hash mismatch at event ${ev.id}` };
+      return {
+        status: "BROKEN",
+        reason: `pi_hash mismatch at event ${ev.id}`,
+        offendingEventIds: [ev.id]
+      };
     }
     parent = expected;
   }
 
-  if (withHash === 0) return { status: "ABSENT", reason: null };
-  if (withoutHash > 0) return { status: "PARTIAL", reason: null };
-  return { status: "INTACT", reason: null };
+  if (withHash === 0) return { status: "ABSENT", reason: null, offendingEventIds: unhashedIds };
+  if (withoutHash > 0) return { status: "PARTIAL", reason: null, offendingEventIds: unhashedIds };
+  return { status: "INTACT", reason: null, offendingEventIds: [] };
+}
+
+function logFactorial(n: number): number {
+  let s = 0;
+  for (let i = 2; i <= n; i++) s += Math.log(i);
+  return s;
+}
+
+function logChoose(n: number, k: number): number {
+  if (k < 0 || k > n) return -Infinity;
+  return logFactorial(n) - logFactorial(k) - logFactorial(n - k);
+}
+
+/**
+ * Two-sided Fisher's exact test for a 2x2 contingency table:
+ *   [[a, b],
+ *    [c, d]]
+ */
+function fisherExactTwoSided(a: number, b: number, c: number, d: number): number {
+  const row1 = a + b;
+  const row2 = c + d;
+  const col1 = a + c;
+  const n = row1 + row2;
+  if (n === 0) return 1;
+  const denom = logChoose(n, col1);
+  const hyperProb = (x: number): number =>
+    Math.exp(logChoose(row1, x) + logChoose(row2, col1 - x) - denom);
+
+  const pObs = hyperProb(a);
+  const lo = Math.max(0, col1 - row2);
+  const hi = Math.min(row1, col1);
+  let pSum = 0;
+  for (let x = lo; x <= hi; x++) {
+    const px = hyperProb(x);
+    if (px <= pObs + 1e-12) {
+      pSum += px;
+    }
+  }
+  return Math.min(1, pSum);
 }
 
 function isActorValueRedactedOrPseudonymized(val: string): boolean {
@@ -268,6 +333,11 @@ export function auditRpmFact(
 ): RpmFactAuditReport {
   const docs: readonly RpmDocLike[] = Array.isArray(logs) ? logs : [logs as RpmDocLike];
   const fairnessThreshold = options.fairnessThreshold ?? 0.8;
+  const minGroupSessions = options.minGroupSessions ?? 2;
+  const fairnessAlpha = options.fairnessAlpha ?? 0.15;
+  const latencyParityThreshold = options.latencyParityThreshold ?? 0.5;
+  const ttftParityThreshold = options.ttftParityThreshold ?? 0.5;
+  const strictHashChain = options.strictHashChain ?? false;
   const redactorOpts = {
     redactPii: options.redactPii ?? true,
     redactEnv: options.redactEnv,
@@ -278,6 +348,7 @@ export function auditRpmFact(
   let totalObjects = 0;
   let missingE2oCount = 0;
   let danglingE2oCount = 0;
+  let danglingO2oCount = 0;
   let invalidTimestampCount = 0;
   let nonMonotonicCount = 0;
 
@@ -285,6 +356,7 @@ export function auditRpmFact(
   let intactChains = 0;
   let partialChains = 0;
   let chainFailureReason: string | null = null;
+  const accuracyEvidenceIds = new Set<string>();
 
   const confidentialityViolations: RpmConfidentialityViolation[] = [];
 
@@ -360,15 +432,29 @@ export function auditRpmFact(
       }
     }
 
+    for (const obj of doc.objects ?? []) {
+      const o2oRels = (obj.relationships ?? []) as readonly RpmRelationshipLike[];
+      for (const rel of o2oRels) {
+        if (rel && typeof rel.objectId === "string" && !objById.has(rel.objectId)) {
+          danglingO2oCount += 1;
+          accuracyEvidenceIds.add(obj.id);
+        }
+      }
+    }
+
     const docEvents = doc.events ?? [];
     const chainRes = verifyOcelDocChain(docEvents);
     if (chainRes.status === "BROKEN") {
       brokenChains += 1;
       if (!chainFailureReason) chainFailureReason = chainRes.reason;
+      for (const eid of chainRes.offendingEventIds) accuracyEvidenceIds.add(eid);
     } else if (chainRes.status === "INTACT") {
       intactChains += 1;
     } else if (chainRes.status === "PARTIAL") {
       partialChains += 1;
+      for (const eid of chainRes.offendingEventIds) accuracyEvidenceIds.add(eid);
+    } else if (chainRes.status === "ABSENT") {
+      for (const eid of chainRes.offendingEventIds) accuracyEvidenceIds.add(eid);
     }
 
     let prevMs = -Infinity;
@@ -379,18 +465,24 @@ export function auditRpmFact(
       const ms = Date.parse(ev.time);
       if (!Number.isFinite(ms)) {
         invalidTimestampCount += 1;
+        accuracyEvidenceIds.add(ev.id);
       } else {
-        if (ms < prevMs) nonMonotonicCount += 1;
+        if (ms < prevMs) {
+          nonMonotonicCount += 1;
+          accuracyEvidenceIds.add(ev.id);
+        }
         prevMs = ms;
       }
 
       const rels = ev.relationships ?? [];
       if (rels.length === 0) {
         missingE2oCount += 1;
+        accuracyEvidenceIds.add(ev.id);
       } else {
         for (const rel of rels) {
           if (!objById.has(rel.objectId)) {
             danglingE2oCount += 1;
+            accuracyEvidenceIds.add(ev.id);
           }
         }
       }
@@ -480,12 +572,18 @@ export function auditRpmFact(
   const missingE2oRatio = totalEvents > 0 ? missingE2oCount / totalEvents : 1;
 
   let standing: RpmStanding;
-  if (totalEvents === 0 || chainStatus === "BROKEN" || invalidTimestampCount > 0) {
+  if (
+    totalEvents === 0 ||
+    chainStatus === "BROKEN" ||
+    invalidTimestampCount > 0 ||
+    (strictHashChain && chainStatus !== "INTACT")
+  ) {
     standing = "UNVERIFIED";
   } else if (
     chainStatus === "INTACT" &&
     missingE2oCount === 0 &&
     danglingE2oCount === 0 &&
+    danglingO2oCount === 0 &&
     invalidTimestampCount === 0 &&
     nonMonotonicCount === 0
   ) {
@@ -497,7 +595,9 @@ export function auditRpmFact(
   const penalty =
     (chainStatus === "BROKEN" ? 0.5 : chainStatus === "ABSENT" ? 0.15 : chainStatus === "PARTIAL" ? 0.1 : 0) +
     0.35 * Math.min(1, missingE2oRatio) +
-    (totalEvents > 0 ? 0.15 * Math.min(1, (danglingE2oCount + invalidTimestampCount + nonMonotonicCount) / totalEvents) : 0);
+    (totalEvents > 0
+      ? 0.15 * Math.min(1, (danglingE2oCount + danglingO2oCount + invalidTimestampCount + nonMonotonicCount) / totalEvents)
+      : 0);
   const qualityScore = totalEvents === 0 ? 0 : Math.max(0, Math.min(1, 1 - penalty));
 
   const accuracy: RpmAccuracyReport = {
@@ -507,6 +607,7 @@ export function auditRpmFact(
     missingE2oCount,
     missingE2oRatio,
     danglingE2oCount,
+    danglingO2oCount,
     invalidTimestampCount,
     nonMonotonicCount,
     chainStatus,
@@ -517,7 +618,11 @@ export function auditRpmFact(
   // Finalize Fairness dimensions
   const buildDimension = (
     dim: "provider_id" | "model_id" | "repo"
-  ): { report: FairnessDimensionReport; disparity: FairnessDisparityFinding | null } => {
+  ): {
+    report: FairnessDimensionReport;
+    disparities: FairnessDisparityFinding[];
+    underpoweredSessionIds: string[];
+  } => {
     const byGroup = new Map<
       string,
       { sessions: string[]; conforming: number; svcSum: number; svcCnt: number; ttftSum: number; ttftCnt: number }
@@ -559,9 +664,14 @@ export function auditRpmFact(
           groups,
           disparateImpactRatio: 1,
           parityDifference: 0,
+          pValue: 1,
+          insufficientSample: false,
+          serviceMsParityRatio: 1,
+          ttftMsParityRatio: 1,
           passed: true
         },
-        disparity: null
+        disparities: [],
+        underpoweredSessionIds: []
       };
     }
 
@@ -575,7 +685,92 @@ export function auditRpmFact(
     const disparateImpactRatio =
       maxGrp.conformingRate > 0 ? minGrp.conformingRate / maxGrp.conformingRate : 1;
     const parityDifference = maxGrp.conformingRate - minGrp.conformingRate;
-    const passed = disparateImpactRatio >= fairnessThreshold;
+
+    const pValue = fisherExactTwoSided(
+      maxGrp.conformingCount,
+      maxGrp.totalSessions - maxGrp.conformingCount,
+      minGrp.conformingCount,
+      minGrp.totalSessions - minGrp.conformingCount
+    );
+
+    const poweredGroups = groups.filter((g) => g.totalSessions >= minGroupSessions);
+    const hasUnderpoweredDisparity =
+      disparateImpactRatio < fairnessThreshold &&
+      (minGrp.totalSessions < minGroupSessions ||
+        maxGrp.totalSessions < minGroupSessions ||
+        pValue > fairnessAlpha);
+
+    const dimDisparities: FairnessDisparityFinding[] = [];
+    if (disparateImpactRatio < fairnessThreshold && !hasUnderpoweredDisparity) {
+      dimDisparities.push({
+        dimension: dim,
+        metric: "conforming_rate",
+        lowestGroup: minGrp.group,
+        highestGroup: maxGrp.group,
+        disparateImpactRatio,
+        threshold: fairnessThreshold,
+        pValue,
+        offendingSessionIds: minGrp.sessionIds,
+        articleRef: "EU AI Act Art. 10/15"
+      });
+    }
+
+    // Latency (service_ms) parity check across powered groups with service_ms > 0
+    let serviceMsParityRatio = 1;
+    const svcGroups = poweredGroups.filter((g) => g.meanServiceMs > 0);
+    if (svcGroups.length >= 2) {
+      let fastestSvc = svcGroups[0]!;
+      let slowestSvc = svcGroups[0]!;
+      for (const g of svcGroups) {
+        if (g.meanServiceMs < fastestSvc.meanServiceMs) fastestSvc = g;
+        if (g.meanServiceMs > slowestSvc.meanServiceMs) slowestSvc = g;
+      }
+      serviceMsParityRatio =
+        slowestSvc.meanServiceMs > 0 ? fastestSvc.meanServiceMs / slowestSvc.meanServiceMs : 1;
+      if (serviceMsParityRatio < latencyParityThreshold) {
+        dimDisparities.push({
+          dimension: dim,
+          metric: "service_ms",
+          lowestGroup: slowestSvc.group,
+          highestGroup: fastestSvc.group,
+          disparateImpactRatio: serviceMsParityRatio,
+          threshold: latencyParityThreshold,
+          offendingSessionIds: slowestSvc.sessionIds,
+          articleRef: "EU AI Act Art. 10/15"
+        });
+      }
+    }
+
+    // TTFT (ttft_ms) parity check across powered groups with ttft_ms > 0
+    let ttftMsParityRatio = 1;
+    const ttftGroups = poweredGroups.filter((g) => g.meanTtftMs > 0);
+    if (ttftGroups.length >= 2) {
+      let fastestTtft = ttftGroups[0]!;
+      let slowestTtft = ttftGroups[0]!;
+      for (const g of ttftGroups) {
+        if (g.meanTtftMs < fastestTtft.meanTtftMs) fastestTtft = g;
+        if (g.meanTtftMs > slowestTtft.meanTtftMs) slowestTtft = g;
+      }
+      ttftMsParityRatio =
+        slowestTtft.meanTtftMs > 0 ? fastestTtft.meanTtftMs / slowestTtft.meanTtftMs : 1;
+      if (ttftMsParityRatio < ttftParityThreshold) {
+        dimDisparities.push({
+          dimension: dim,
+          metric: "ttft_ms",
+          lowestGroup: slowestTtft.group,
+          highestGroup: fastestTtft.group,
+          disparateImpactRatio: ttftMsParityRatio,
+          threshold: ttftParityThreshold,
+          offendingSessionIds: slowestTtft.sessionIds,
+          articleRef: "EU AI Act Art. 10/15"
+        });
+      }
+    }
+
+    const passed = dimDisparities.length === 0;
+    const underpoweredSessionIds = hasUnderpoweredDisparity
+      ? [...new Set([...minGrp.sessionIds, ...maxGrp.sessionIds])]
+      : [];
 
     return {
       report: {
@@ -583,33 +778,41 @@ export function auditRpmFact(
         groups,
         disparateImpactRatio,
         parityDifference,
+        pValue,
+        insufficientSample: hasUnderpoweredDisparity,
+        serviceMsParityRatio,
+        ttftMsParityRatio,
         passed
       },
-      disparity: passed
-        ? null
-        : {
-            dimension: dim,
-            lowestGroup: minGrp.group,
-            highestGroup: maxGrp.group,
-            disparateImpactRatio,
-            threshold: fairnessThreshold,
-            offendingSessionIds: minGrp.sessionIds,
-            articleRef: "EU AI Act Art. 10/15"
-          }
+      disparities: dimDisparities,
+      underpoweredSessionIds
     };
   };
 
   const pDim = buildDimension("provider_id");
   const mDim = buildDimension("model_id");
   const rDim = buildDimension("repo");
-  const disparities: FairnessDisparityFinding[] = [pDim.disparity, mDim.disparity, rDim.disparity].filter(
-    (d): d is FairnessDisparityFinding => d !== null
-  );
+  const disparities: FairnessDisparityFinding[] = [
+    ...pDim.disparities,
+    ...mDim.disparities,
+    ...rDim.disparities
+  ];
+  const underpoweredSessionIds = [
+    ...new Set([
+      ...pDim.underpoweredSessionIds,
+      ...mDim.underpoweredSessionIds,
+      ...rDim.underpoweredSessionIds
+    ])
+  ];
+  const hasUnderpoweredFairness =
+    pDim.report.insufficientSample === true ||
+    mDim.report.insufficientSample === true ||
+    rDim.report.insufficientSample === true;
   const fairnessPassed = disparities.length === 0;
   const confidentialityPassed = confidentialityViolations.length === 0;
 
   // Build White-Box Transparency Explanations
-  const explanations: RpmTransparencyExplanation[] = [
+  const pillarExplanations: RpmTransparencyExplanation[] = [
     {
       pillar: "accuracy",
       ruleId: "RPM-ACC-01",
@@ -617,9 +820,9 @@ export function auditRpmFact(
       verdict: standing === "ALIVE" ? "PASS" : standing === "PARTIAL_ALIVE" ? "WARN" : "FAIL",
       summary:
         standing === "ALIVE"
-          ? `All ${totalEvents} events verified with intact SHA-256 chain and complete E2O bindings.`
-          : `Accuracy standing is ${standing}: chainStatus=${chainStatus}, missingE2o=${missingE2oCount}/${totalEvents}, invalidTimestamps=${invalidTimestampCount}.`,
-      evidenceIds: chainFailureReason ? [chainFailureReason] : [],
+          ? `All ${totalEvents} events verified with intact SHA-256 chain and complete E2O/O2O bindings.`
+          : `Accuracy standing is ${standing}: chainStatus=${chainStatus}, missingE2o=${missingE2oCount}/${totalEvents}, danglingE2o=${danglingE2oCount}, danglingO2o=${danglingO2oCount}, invalidTimestamps=${invalidTimestampCount}.`,
+      evidenceIds: [...accuracyEvidenceIds],
       metric: "missing_e2o_ratio",
       observed: Number(missingE2oRatio.toFixed(4)),
       threshold: 0
@@ -641,11 +844,15 @@ export function auditRpmFact(
       pillar: "fairness",
       ruleId: "RPM-FAIR-01",
       articleRef: "EU AI Act Art. 10/15",
-      verdict: fairnessPassed ? "PASS" : "FAIL",
-      summary: fairnessPassed
-        ? "Operational conformance parity across provider_id, model_id, and repo satisfies disparate-impact threshold."
-        : `Disparate impact violation across ${disparities.map((d) => d.dimension).join(", ")}.`,
-      evidenceIds: disparities.flatMap((d) => d.offendingSessionIds),
+      verdict: !fairnessPassed ? "FAIL" : hasUnderpoweredFairness ? "WARN" : "PASS",
+      summary: !fairnessPassed
+        ? `Disparate impact violation across ${[...new Set(disparities.map((d) => d.dimension))].join(", ")}.`
+        : hasUnderpoweredFairness
+          ? "Observed group disparity did not meet minimum session floor or statistical significance threshold (insufficient sample)."
+          : "Operational conformance and latency parity across provider_id, model_id, and repo satisfies thresholds.",
+      evidenceIds: !fairnessPassed
+        ? disparities.flatMap((d) => d.offendingSessionIds)
+        : underpoweredSessionIds,
       metric: "min_disparate_impact_ratio",
       observed: Number(
         Math.min(
@@ -655,16 +862,40 @@ export function auditRpmFact(
         ).toFixed(4)
       ),
       threshold: fairnessThreshold
-    },
+    }
+  ];
+
+  // Derived transparency completeness check (no hardcoded PASS)
+  const hasEntities = totalEvents > 0 || totalObjects > 0;
+  const incompleteRuleIds: string[] = [];
+  for (const exp of pillarExplanations) {
+    const hasMetadata =
+      exp.ruleId.trim().length > 0 &&
+      exp.articleRef.trim().length > 0 &&
+      exp.summary.trim().length > 0 &&
+      exp.metric.trim().length > 0;
+    const hasRequiredEvidence =
+      exp.verdict === "PASS" || !hasEntities || exp.evidenceIds.length > 0;
+    if (!hasMetadata || !hasRequiredEvidence) {
+      incompleteRuleIds.push(exp.ruleId);
+    }
+  }
+  const completePillars = pillarExplanations.length - incompleteRuleIds.length;
+  const transparencyPassed = incompleteRuleIds.length === 0;
+
+  const explanations: RpmTransparencyExplanation[] = [
+    ...pillarExplanations,
     {
       pillar: "transparency",
       ruleId: "RPM-TRANS-01",
       articleRef: "EU AI Act Art. 13/50",
-      verdict: "PASS",
-      summary: "All FACT verdicts emit white-box metric citations, thresholds, and exact OCEL evidence IDs.",
-      evidenceIds: [],
+      verdict: transparencyPassed ? "PASS" : "FAIL",
+      summary: transparencyPassed
+        ? "All FACT verdicts emit white-box metric citations, thresholds, and exact OCEL evidence IDs."
+        : `Incomplete white-box evidence citations for rule(s): ${incompleteRuleIds.join(", ")}.`,
+      evidenceIds: incompleteRuleIds,
       metric: "explanation_coverage",
-      observed: 4,
+      observed: completePillars + (transparencyPassed ? 1 : 0),
       threshold: 4
     }
   ];
@@ -672,7 +903,8 @@ export function auditRpmFact(
   const passed =
     standing !== "UNVERIFIED" &&
     fairnessPassed &&
-    confidentialityPassed;
+    confidentialityPassed &&
+    transparencyPassed;
 
   return {
     schema: "zcode.rpm-fact/1",
@@ -695,7 +927,7 @@ export function auditRpmFact(
       violations: confidentialityViolations
     },
     transparency: {
-      passed: true,
+      passed: transparencyPassed,
       explanationCount: explanations.length
     },
     explanations
@@ -707,6 +939,7 @@ export interface KAnonOptions {
   suppressBelowK?: boolean;
   resealHashChain?: boolean;
   timestampBucket?: "hour" | "day" | "none";
+  lDiversity?: number;
 }
 
 export interface KAnonResult<T extends RpmDocLike = RpmDocLike> {
@@ -717,6 +950,7 @@ export interface KAnonResult<T extends RpmDocLike = RpmDocLike> {
   suppressedTraces: number;
   generalizedTraces: number;
   minEquivalenceClassSize: number;
+  minLDiversity: number;
   variantCounts: Record<string, number>;
 }
 
@@ -772,6 +1006,14 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
   const generalizeQuasi = options.generalizeQuasiIdentifiers ?? true;
   const suppressBelowK = options.suppressBelowK ?? true;
   const timestampBucket = options.timestampBucket ?? "none";
+  const lDiversity = options.lDiversity ?? 1;
+  if (!Number.isInteger(lDiversity) || lDiversity < 1) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `lDiversity must be an integer >= 1 (got ${String(lDiversity)})`,
+      "admission_vacuous"
+    );
+  }
 
   // 1. Pseudonymize actor object IDs and rewrite relationships
   const actorIdMap = new Map<string, string>();
@@ -865,9 +1107,27 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     caseKey: string;
     events: RpmEventLike[];
     variant: string;
+    timeBucket: string;
     quasiKey: string;
+    sensitiveOutcome: string;
     linkedObjectIds: Set<string>;
   }
+
+  const classifySensitiveOutcome = (evs: readonly RpmEventLike[]): string => {
+    for (const ev of evs) {
+      if (ev.type === "oversight_policy_refused") return "oversight_policy_refused";
+      if (
+        ev.type === "turn_failed" ||
+        ev.type === "execution_crash" ||
+        ev.type === "transition_refused"
+      ) {
+        return ev.type;
+      }
+      const st = readAttrStr(ev.attributes, "status");
+      if (st === "error" || st === "failed") return `status_${st}`;
+    }
+    return "conforming";
+  };
 
   const collectReachableObjectIds = (evs: readonly RpmEventLike[]): Set<string> => {
     const visited = new Set<string>();
@@ -938,11 +1198,21 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     const prov = formatQuasiSet(provVals);
     const model = formatQuasiSet(modelVals);
     const repo = formatQuasiSet(repoVals);
+    const timeBucket =
+      timestampBucket !== "none"
+        ? formatQuasiSet(new Set(evs.map((e) => generalizeTimestamp(e.time, timestampBucket))))
+        : "*";
+    const quasiKey =
+      timestampBucket !== "none"
+        ? `${variant}::${prov}|${model}|${repo}|${timeBucket}`
+        : `${variant}::${prov}|${model}|${repo}`;
     traces.push({
       caseKey,
       events: evs,
       variant,
-      quasiKey: `${variant}::${prov}|${model}|${repo}`,
+      timeBucket,
+      quasiKey,
+      sensitiveOutcome: classifySensitiveOutcome(evs),
       linkedObjectIds
     });
   }
@@ -964,24 +1234,37 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
   });
 
   const postGenKey = (tr: TraceInfo, gen: boolean): string =>
-    gen ? `${tr.variant}::*|*|*` : tr.quasiKey;
+    gen
+      ? timestampBucket !== "none"
+        ? `${tr.variant}::*|*|*|${tr.timeBucket}`
+        : `${tr.variant}::*|*|*`
+      : tr.quasiKey;
 
   if (generalizeQuasi) {
     const postGenCounts = new Map<string, number>();
+    const postGenOutcomes = new Map<string, Set<string>>();
     for (const item of tracePlan) {
       if (item.suppressed) continue;
       const pk = postGenKey(item.tr, item.generalize);
       postGenCounts.set(pk, (postGenCounts.get(pk) ?? 0) + 1);
+      let outs = postGenOutcomes.get(pk);
+      if (!outs) {
+        outs = new Set<string>();
+        postGenOutcomes.set(pk, outs);
+      }
+      outs.add(item.tr.sensitiveOutcome);
     }
 
-    // If generalizing minority quasi-classes left any equivalence class < k within a variant of size >= k,
-    // widen generalization to all traces in that variant so every retained equivalence class has size >= k.
+    // If generalizing minority quasi-classes left any equivalence class < k or < lDiversity
+    // within a variant of size >= k, widen generalization to all traces in that variant.
     const variantsToWiden = new Set<string>();
     for (const item of tracePlan) {
       if (item.suppressed) continue;
       const vCount = variantCountsMap.get(item.tr.variant) ?? 0;
       const pk = postGenKey(item.tr, item.generalize);
-      if (vCount >= k && (postGenCounts.get(pk) ?? 0) < k) {
+      const eqSize = postGenCounts.get(pk) ?? 0;
+      const eqDiversity = postGenOutcomes.get(pk)?.size ?? 0;
+      if (vCount >= k && (eqSize < k || eqDiversity < lDiversity)) {
         variantsToWiden.add(item.tr.variant);
       }
     }
@@ -994,18 +1277,27 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     }
   }
 
-  // Final post-generalization equivalence-class enforcement & counting
+  // Final post-generalization equivalence-class k-anonymity & l-diversity enforcement
   const preFinalEqCounts = new Map<string, number>();
+  const preFinalEqOutcomes = new Map<string, Set<string>>();
   for (const item of tracePlan) {
     if (item.suppressed) continue;
     const pk = postGenKey(item.tr, item.generalize);
     preFinalEqCounts.set(pk, (preFinalEqCounts.get(pk) ?? 0) + 1);
+    let outs = preFinalEqOutcomes.get(pk);
+    if (!outs) {
+      outs = new Set<string>();
+      preFinalEqOutcomes.set(pk, outs);
+    }
+    outs.add(item.tr.sensitiveOutcome);
   }
   if (suppressBelowK) {
     for (const item of tracePlan) {
       if (item.suppressed) continue;
       const pk = postGenKey(item.tr, item.generalize);
-      if ((preFinalEqCounts.get(pk) ?? 0) < k) {
+      const eqSize = preFinalEqCounts.get(pk) ?? 0;
+      const eqDiversity = preFinalEqOutcomes.get(pk)?.size ?? 0;
+      if (eqSize < k || eqDiversity < lDiversity) {
         item.suppressed = true;
       }
     }
@@ -1119,6 +1411,7 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
   const retainedEvents: RpmEventLike[] = [];
   const retainedVariantCounts: Record<string, number> = {};
   const retainedEqClassCounts = new Map<string, number>();
+  const retainedEqClassOutcomes = new Map<string, Set<string>>();
 
   for (const item of tracePlan) {
     const { tr, suppressed, generalize } = item;
@@ -1131,6 +1424,12 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     retainedVariantCounts[tr.variant] = (retainedVariantCounts[tr.variant] ?? 0) + 1;
     const finalEqKey = postGenKey(tr, generalize);
     retainedEqClassCounts.set(finalEqKey, (retainedEqClassCounts.get(finalEqKey) ?? 0) + 1);
+    let outs = retainedEqClassOutcomes.get(finalEqKey);
+    if (!outs) {
+      outs = new Set<string>();
+      retainedEqClassOutcomes.set(finalEqKey, outs);
+    }
+    outs.add(tr.sensitiveOutcome);
 
     for (const ev of tr.events) {
       let attrs = ev.attributes;
@@ -1144,7 +1443,7 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
         : ev.relationships;
       retainedEvents.push({
         ...ev,
-        time: generalize && timestampBucket !== "none" ? generalizeTimestamp(ev.time, timestampBucket) : ev.time,
+        time: timestampBucket !== "none" ? generalizeTimestamp(ev.time, timestampBucket) : ev.time,
         attributes: attrs,
         relationships: rels
       });
@@ -1222,6 +1521,9 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
   const retainedEqCountsList = [...retainedEqClassCounts.values()];
   const minEquivalenceClassSize =
     retainedEqCountsList.length > 0 ? Math.min(...retainedEqCountsList) : 0;
+  const retainedLDiversities = [...retainedEqClassOutcomes.values()].map((s) => s.size);
+  const minLDiversity =
+    retainedLDiversities.length > 0 ? Math.min(...retainedLDiversities) : 0;
 
   const outDoc = {
     ...doc,
@@ -1245,6 +1547,7 @@ export function anonymizeOcel2KAnon<T extends RpmDocLike>(
     suppressedTraces,
     generalizedTraces,
     minEquivalenceClassSize,
+    minLDiversity,
     variantCounts: retainedVariantCounts
   };
 }

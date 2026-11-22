@@ -13,6 +13,9 @@ runtime settings and provider configuration live in separate files.
 | `~/.zcode/v2/setting.json` | Existing Desktop language and memory preferences, read without modification |
 | `~/.zcode/v2/provider_config.json` | Providers, model metadata overrides and the default model |
 | `~/.zcode/v2/credentials.json` | Credentials persisted by the native runtime |
+| `./zcode-cli.toml` | Project-level EU AI Act compliance, deployer, PMM and OCEL redaction config (`ZCODE_CONFIG_PATH` overrides) |
+| `~/.zcode/ocel/` | IEEE OCEL 2.0 event logs and SHA-256 retention purge ledger (`ZCODE_OCEL_DIR` overrides) |
+| `~/.zcode/compliance/` | Compliance ledgers, conformity artifacts and provenance state (`ZCODE_COMPLIANCE_DIR` overrides) |
 
 On Windows, use `%USERPROFILE%` in place of `~`. The provider file is shared
 with ZCode Desktop by default: changing providers or the saved default affects
@@ -451,18 +454,17 @@ the runtime provides the required registry. No user configuration is rewritten.
 
 ## Registering a local or dev MCP server or plugin
 
-Nothing else in this repository's docs covers how to connect a local or
-in-development MCP server (or plugin) to ZCode. This section documents both
-supported paths, verified end to end this session against ZCode 3.11.2-25 by
-reverse-engineering the bundled runtime (`vendor/zcode.cjs`) and confirming
-behavior live in the TUI.
+Two supported paths connect a local or in-development MCP server (or plugin) to
+ZCode: direct `mcp.servers` configuration for interactive sessions, and
+project-level `.mcp.json` or plugin marketplace installation.
 
 ### Direct MCP server registration
 
-The fastest path — and, per the known limitation below, currently the only
-path that works for a server needing a real secret — is registering the
-server directly under the `mcp.servers` key in `config.json`. No plugin,
-marketplace, or trust system is involved:
+For interactive sessions — and for any server needing a real secret without
+going through plugin preflight — register the server directly under the
+`mcp.servers` key in `~/.zcode/cli/setting.json` (or a project-level
+`zcode.json` / `.zcode/config.json` found by walking up from the working
+directory to the nearest `.git` ancestor):
 
 ```json
 {
@@ -478,33 +480,20 @@ marketplace, or trust system is involved:
 }
 ```
 
-The config loader reads this key from either the global config
-(`~/.zcode/cli/config.json`, see "Configuration file location" above) or a
-project-level config file — `zcode.json` or `.zcode/config.json` — found by
-walking up from the current working directory to the nearest `.git`
-ancestor. This is the same project-override mechanism already used for
-provider and model settings (see "Using the custom provider" above); an
-`mcp.servers` entry works the same way at either level.
-
-Verified this session end to end: adding an entry this way made the server
-show up in the TUI's `/mcp` panel as `connected · http · N tools`, and it
-was genuinely callable by name from a live task after starting (or
-restarting) `zcode`.
+Once configured and `zcode` is started (or restarted), the server appears in
+the TUI's `/mcp` panel as `connected · http · N tools`.
 
 ### Headless session registration: the project `.mcp.json`
 
-As of the runtime rebuild on this tree (2026-09-21), **headless** sessions —
-`zcode --prompt "..."` runs and automation entry points such as XaaS's
-`node bin/zcode.js gall-work --lease <n>` — register MCP servers from a
-project-level `.mcp.json` file in the working directory. Interactive sessions
-do not read this file; they resolve `mcp.servers` from user-scope settings
-(`~/.zcode/cli/setting.json` as of the same rebuild — the "Direct MCP server
-registration" section above documents the pre-rebuild `config.json` location
-and predates today's change). The asymmetry is load-bearing for leased-worker
-flows: a worker session runs from a consumer repo with no interactive session
-open, so an integration like the xaas-fabric `xaas-execution` MCP server must
-be registered in the repo's `.mcp.json`, not only in the operator's user-scope
-settings.
+**Headless** sessions — `zcode --prompt "..."` runs and automation entry points
+such as XaaS's `node bin/zcode.js gall-work --lease <n>` — register MCP servers
+from a project-level `.mcp.json` file in the working directory. Interactive
+sessions do not read `.mcp.json`; they resolve `mcp.servers` from user-scope
+settings (`~/.zcode/cli/setting.json`). The asymmetry is load-bearing for
+leased-worker flows: a worker session runs from a consumer repo with no
+interactive session open, so an integration like the xaas-fabric
+`xaas-execution` MCP server must be registered in the repo's `.mcp.json`, not
+only in the operator's user-scope settings.
 
 Schema — the installed xaas-fabric plugin cache ships exactly this file:
 
@@ -580,7 +569,7 @@ server definitions) lives.
 
 #### Known limitation: install fails for any `.mcp.json` with a plain env var
 
-Confirmed this session: `zcode plugins install` fails with
+`zcode plugins install` fails with
 
 ```json
 {
@@ -591,20 +580,16 @@ Confirmed this session: `zcode plugins install` fails with
 ```
 
 for **any** plugin whose `.mcp.json` references a plain, non-`user_config.*`
-placeholder — `${ENV_VAR_NAME}` — even when that variable is genuinely set
-in the process environment, and even for `ZCODE_`-prefixed names that do not
-require `allowSensitive`. Root cause, found by reading the bundled runtime:
-the plugin-diagnostics preflight (function `Y4o` in this build) hardcodes an
-empty object (`env: {}`) as the substitution context for that check,
-regardless of the real process environment. This is a confirmed bug in the
-vendored runtime, not a mistake in the plugin author's `.mcp.json`.
+placeholder — `${ENV_VAR_NAME}` — even when that variable is set in the process
+environment, and even for `ZCODE_`-prefixed names that do not require
+`allowSensitive`. The vendored runtime's plugin-diagnostics preflight passes an
+empty object (`env: {}`) as the substitution context for that check regardless
+of the real process environment.
 
-**Practical consequence:** any plugin whose `.mcp.json` needs a
-bearer-token or other secret environment variable cannot currently be
-installed via `zcode plugins install` on this ZCode build (3.11.2-25) at
-all. Until the runtime is patched, use the direct `mcp.servers`
-registration path above instead — it has no such preflight and works for
-servers needing real secrets today.
+**Practical consequence:** any plugin whose `.mcp.json` needs a bearer-token or
+other secret environment variable cannot be installed via `zcode plugins install`
+unless it uses `${user_config.*}` placeholders. Otherwise, use the direct
+`mcp.servers` registration path above.
 
 ### See Also
 
@@ -635,3 +620,54 @@ explicit `ZCODE_SUBAGENT_MAX_TURNS` env > `subagents.maxTurns` > upstream
 default 4. Only positive integers take effect; the top-level `--max-turns`
 cap does not apply to subagents (the child's turn cap is set at spawn). A
 launch is required to pick up changes — a running session keeps its env.
+
+## EU AI Act compliance and OCEL telemetry (`zcode-cli.toml`)
+
+Project-level compliance, human-oversight, post-market monitoring (PMM), and
+OCEL redaction settings live in `zcode-cli.toml` in the working directory
+(override path with `ZCODE_CONFIG_PATH`). The parser (`src/compliance/config.ts`)
+fails closed with typed refusal codes (`INVALID_COMPLIANCE_CONFIG`,
+`INVALID_COMPLIANCE_PROFILE`, `OVERSIGHT_POLICY_REFUSED`,
+`DISCLOSURE_REQUIRED`, `LOGGING_UNAVAILABLE`).
+
+```toml
+[compliance]
+profile = "high-risk-annex-iii" # standard | art50-only | high-risk-annex-iii | high-risk-annex-i
+redact_pii = true
+min_review_ms = 2000            # Art. 14 TUI PermissionPreview dwell guard
+git_provenance_trailer = true   # Art. 50(2) provenance sidecar/trailer
+allow_yolo = false              # forbidden (true) under high-risk profiles
+max_retries_per_signature = 3
+redact_env = ["MY_SECRET_TOKEN"]
+
+[deployer]
+overseer_id = "alice@example.com" # required for high-risk Art. 14/26 preflight
+log_retention_days = 180          # Art. 12 minimum 180-day event-time retention
+monitoring_enabled = true
+worker_notice_acknowledged = true
+
+[pmm]
+drift_alpha = 0.01                # strictly between 0 and 1
+min_window = 30
+k_anonymity = 5
+
+[ocel]
+redact_env = ["EXTRA_SECRET"]     # merged with [compliance].redact_env
+```
+
+### Key environment overrides
+
+| Variable | Effect |
+| --- | --- |
+| `ZCODE_CONFIG_PATH` | Override path to `zcode-cli.toml` |
+| `ZCODE_COMPLIANCE_PROFILE` | Override `[compliance].profile` (`standard`, `art50-only`, `high-risk-annex-iii`, `high-risk-annex-i`) |
+| `ZCODE_COMPLIANCE_DIR` | Override compliance state directory (default `~/.zcode/compliance`) |
+| `ZCODE_OCEL=1` / `ZCODE_COMPLIANCE_LOG=1` | Enable IEEE OCEL 2.0 event-log tap (required under high-risk profiles; `0` disables) |
+| `ZCODE_OCEL_DIR` | Override OCEL output and `retention-purge-ledger.ndjson` directory (default `~/.zcode/ocel`) |
+| `ZCODE_REDACT_PII` | Override `[compliance].redact_pii` (`1`/`0`/`true`/`false`) |
+| `ZCODE_ALLOW_YOLO` | Override `allow_yolo` (`0`/`1`/`false`/`true`; refused under high-risk profiles) |
+| `ZCODE_MIN_REVIEW_MS` | Floor (ms) for Art. 14 `PermissionPreview` dwell guard; propagated monotonically to subagents |
+| `ZCODE_POLICY_CEILING` | Policy ceiling propagated to child subagents alongside `ZCODE_OVERSEER_ID` |
+| `ZCODE_OVERSEER_ID` | Override `[deployer].overseer_id` |
+| `ZCODE_SUPPRESS_DISCLOSURE=1` | Suppress Art. 50(1) AI interaction disclosure (refused under regulated profiles) |
+| `ZCODE_RPM_SALT` | Non-empty cryptographic salt required for `--rpm-safe` pseudonymization in `zcode compliance` |

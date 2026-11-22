@@ -52,7 +52,25 @@ const BEARER_RE =
   /(Bearer\s+)((?=[^\s"'\\]{8,})[^\s"'\\]+|(?=[^\s"'\\]*[0-9_.\-+/=])[^\s"'\\]{3,})/gi;
 const AUTH_RAW_RE =
   /(authorization\s*[:=]\s*)(["']?)(?!(?:basic|token|digest|bearer|apikey)\s)([^\s"'\\]+)(\2)/gi;
+const URL_SECRET_PARAM_RE = new RegExp(`([?&#](?:${KEY_ALT})=)([^&#\\s"']+)`, "gi");
 const URL_USERINFO_RE = /(https?:\/\/[^:/\s@]+:)([^@\s/]+)(@)/gi;
+// TOML assignments (capability-snapshot parity): quoted `"..."` / `'...'` and bare
+// unquoted `key = value` / `key=value` (no quotes). Omit bare `authorization` so
+// header-shaped `authorization="Bearer …"` stays on AUTH_* (not whole-value wipe).
+const TOML_KEY_ALT =
+  "(?:(?:[a-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|token|(?:[a-z0-9_-]+[-_])?secret|password|passwd|pwd|private[-_]?key|set[-_]?cookie|cookie)";
+const TOML_DOUBLE_SECRET_RE = new RegExp(
+  `^(\\s*(?:${TOML_KEY_ALT})\\s*=\\s*")(?!REDACTED")((?:[^"\\\\]|\\\\.)+)(")`,
+  "gim"
+);
+const TOML_SINGLE_SECRET_RE = new RegExp(
+  `^(\\s*(?:${TOML_KEY_ALT})\\s*=\\s*')(?!REDACTED')([^'\\r\\n]+)(')`,
+  "gim"
+);
+const TOML_BARE_SECRET_RE = new RegExp(
+  `^(\\s*(?:${TOML_KEY_ALT})\\s*=\\s*)(?!["'\\s#])(?!REDACTED(?:\\s|$|#))([^\\s#\\r\\n]+)`,
+  "gim"
+);
 
 // GDPR PII patterns
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
@@ -144,12 +162,35 @@ function replaceQuotedSecrets(text: string, replacement: string): string {
     .replace(ESC2_JSON_SECRET_RE, replacer);
 }
 
+/** Auth-scheme-prefixed values belong to AUTH_SCHEME/BEARER, not TOML key=value scrub. */
+function isAuthSchemePrefixedValue(val: string): boolean {
+  return /^(?:bearer|basic|token|digest|apikey)\s+/i.test(val);
+}
+
+function replaceTomlSecrets(text: string, replacement: string): string {
+  const quoted = (full: string, pre: string, val: string, post: string): string => {
+    if (isAlreadyRedacted(val, replacement) || isAuthSchemePrefixedValue(val)) return full;
+    return `${pre}${replacement}${post}`;
+  };
+  const bare = (full: string, pre: string, val: string): string => {
+    if (isAlreadyRedacted(val, replacement) || isAuthSchemePrefixedValue(val)) return full;
+    return `${pre}${replacement}`;
+  };
+  return text
+    .replace(TOML_DOUBLE_SECRET_RE, quoted)
+    .replace(TOML_SINGLE_SECRET_RE, quoted)
+    .replace(TOML_BARE_SECRET_RE, bare);
+}
+
 function redactSchemesAndTokens(text: string, ctx: CompiledContext): string {
   const r = ctx.replacement;
   let out = text
     .replace(PEM_PRIVATE_KEY_RE, r)
     .replace(PEM_TRUNCATED_RE, r)
     .replace(JWT_RE, r)
+    .replace(URL_SECRET_PARAM_RE, (full, pre: string, val: string) =>
+      isAlreadyRedacted(val, r) ? full : `${pre}${r}`
+    )
     .replace(URL_USERINFO_RE, (full, pre: string, pw: string, at: string) =>
       isAlreadyRedacted(pw, r) ? full : `${pre}${r}${at}`
     )
@@ -160,6 +201,9 @@ function redactSchemesAndTokens(text: string, ctx: CompiledContext): string {
     .replace(AUTH_RAW_RE, (full, pre: string, q: string, val: string, closeQ: string) =>
       isAlreadyRedacted(val, r) ? full : `${pre}${q}${r}${closeQ}`
     );
+  // TOML after auth-scheme scrub; skip scheme-prefixed values so
+  // `authorization="Bearer REDACTED"` is not collapsed to `authorization="REDACTED"`.
+  out = replaceTomlSecrets(out, r);
 
   for (const secret of ctx.envSecrets) {
     if (out.includes(secret)) out = out.replaceAll(secret, r);
@@ -202,6 +246,7 @@ function redactStringValue(text: string, ctx: CompiledContext, seen: WeakSet<obj
     }
   }
   out = replaceQuotedSecrets(out, ctx.replacement);
+  out = replaceTomlSecrets(out, ctx.replacement);
   return redactSchemesAndTokens(out, ctx);
 }
 
@@ -224,6 +269,22 @@ function redactSensitiveValue(value: unknown, ctx: CompiledContext, seen: WeakSe
     seen.add(value);
     try {
       return value.map((item) => redactSensitiveValue(item, ctx, seen, depth + 1));
+    } finally {
+      seen.delete(value);
+    }
+  }
+  if (typeof value === "object") {
+    if (value instanceof Date || value instanceof RegExp) return ctx.replacement;
+    if (depth >= 128) return "[REDACTED_MAX_DEPTH]";
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    try {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+          k,
+          redactSensitiveValue(v, ctx, seen, depth + 1)
+        ])
+      );
     } finally {
       seen.delete(value);
     }
@@ -265,6 +326,24 @@ function redactNode(value: unknown, ctx: CompiledContext, seen: WeakSet<object>,
   }
 }
 
+export interface ComplianceRedactor {
+  redactData<T = unknown>(value: T): T;
+  redactText(text: string): string;
+  containsUnredacted(text: string): boolean;
+}
+
+export function createComplianceRedactor(options?: RedactComplianceOptions): ComplianceRedactor {
+  const ctx = buildContext(options);
+  return {
+    redactData: <T = unknown>(value: T): T => redactNode(value, ctx, new WeakSet<object>(), 0) as T,
+    redactText: (text: string): string => redactStringValue(text, ctx, new WeakSet<object>(), 0),
+    containsUnredacted: (text: string): boolean => {
+      if (typeof text !== "string" || text.length === 0) return false;
+      return containsInNode(text, ctx, new WeakSet<object>(), 0);
+    }
+  };
+}
+
 export function redactComplianceData<T = unknown>(value: T, options?: RedactComplianceOptions): T {
   const ctx = buildContext(options);
   return redactNode(value, ctx, new WeakSet<object>(), 0) as T;
@@ -289,9 +368,11 @@ export function pseudonymizeActor(id: string, salt: string): string {
   return createHmac("sha256", salt).update(id, "utf8").digest("hex");
 }
 
+const QUOTED_SECRET_RES = [PLAIN_JSON_SECRET_RE, ESC1_JSON_SECRET_RE, ESC2_JSON_SECRET_RE] as const;
+
 function testQuotedSecrets(text: string, replacement: string): boolean {
-  for (const base of [PLAIN_JSON_SECRET_RE, ESC1_JSON_SECRET_RE, ESC2_JSON_SECRET_RE]) {
-    const re = new RegExp(base.source, "gi");
+  for (const re of QUOTED_SECRET_RES) {
+    re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
       const val = m[2];
@@ -301,8 +382,8 @@ function testQuotedSecrets(text: string, replacement: string): boolean {
   return false;
 }
 
-function hasUnredactedGroup(text: string, base: RegExp, groupIdx: number, replacement: string): boolean {
-  const re = new RegExp(base.source, base.flags.includes("g") ? base.flags : `${base.flags}g`);
+function hasUnredactedGroup(text: string, re: RegExp, groupIdx: number, replacement: string): boolean {
+  re.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const val = m[groupIdx];
@@ -314,9 +395,13 @@ function hasUnredactedGroup(text: string, base: RegExp, groupIdx: number, replac
 function testStringRaw(text: string, ctx: CompiledContext): boolean {
   if (!text) return false;
   if (testQuotedSecrets(text, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, TOML_DOUBLE_SECRET_RE, 2, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, TOML_SINGLE_SECRET_RE, 2, ctx.replacement)) return true;
+  if (hasUnredactedGroup(text, TOML_BARE_SECRET_RE, 2, ctx.replacement)) return true;
   if (PEM_HEADER_ONLY_RE.test(text)) return true;
   JWT_RE.lastIndex = 0;
   if (JWT_RE.test(text)) return true;
+  if (hasUnredactedGroup(text, URL_SECRET_PARAM_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, URL_USERINFO_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, AUTH_SCHEME_RE, 2, ctx.replacement)) return true;
   if (hasUnredactedGroup(text, BEARER_RE, 2, ctx.replacement)) return true;
@@ -329,18 +414,18 @@ function testStringRaw(text: string, ctx: CompiledContext): boolean {
     if (re.test(text)) return true;
   }
   if (ctx.redactPii) {
-    const emailRe = new RegExp(EMAIL_RE.source, "g");
+    EMAIL_RE.lastIndex = 0;
     let em: RegExpExecArray | null;
-    while ((em = emailRe.exec(text)) !== null) {
+    while ((em = EMAIL_RE.exec(text)) !== null) {
       if (!isRedactedUrlUserinfoEmail(text, em[0], em.index, ctx.replacement)) return true;
     }
     for (const re of [IPV4_RE, IPV6_RE]) {
       re.lastIndex = 0;
       if (re.test(text)) return true;
     }
-    const homeRe = new RegExp(HOME_USER_PATH_RE.source, "g");
+    HOME_USER_PATH_RE.lastIndex = 0;
     let hm: RegExpExecArray | null;
-    while ((hm = homeRe.exec(text)) !== null) {
+    while ((hm = HOME_USER_PATH_RE.exec(text)) !== null) {
       const pre = hm[1] ?? "";
       const user = hm[2] ?? "";
       if (!isAlreadyRedacted(user, ctx.replacement) && !isRedactedHomeUserPath(text, hm.index, pre.length, ctx.replacement)) {
@@ -369,6 +454,17 @@ function containsUnredactedSensitiveValue(
     seen.add(value);
     try {
       return value.some((item) => containsUnredactedSensitiveValue(item, ctx, seen, depth + 1));
+    } finally {
+      seen.delete(value);
+    }
+  }
+  if (typeof value === "object") {
+    if (depth >= 128 || seen.has(value)) return false;
+    seen.add(value);
+    try {
+      return Object.values(value as Record<string, unknown>).some((v) =>
+        containsUnredactedSensitiveValue(v, ctx, seen, depth + 1)
+      );
     } finally {
       seen.delete(value);
     }

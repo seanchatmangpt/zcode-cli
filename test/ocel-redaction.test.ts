@@ -11,9 +11,24 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { containsUnredactedSecretsOrPii } from "../src/compliance/redactor.ts";
+import {
+  containsUnredactedSecretsOrPii,
+  createComplianceRedactor,
+  pseudonymizeActor
+} from "../src/compliance/redactor.ts";
 import { verifyChain } from "../src/generated/ocel.ts";
-import { OcelRecorder, redactSecrets, sanitizeSessionFileId } from "../src/ocel-tap.ts";
+import {
+  OcelRecorder,
+  isSecretfulOcelSeal,
+  leaseIdentityObjectIds,
+  prepareOcelDiskWrite,
+  redactLeaseIdentityFields,
+  redactSecrets,
+  sanitizeSessionFileId,
+  scrubLeaseIdentity,
+  verifyOcelReceipt,
+  type OcelTapReceipt
+} from "../src/ocel-tap.ts";
 import { fixtures } from "./support/ocel.ts";
 
 const fakeKey = "FAKEKEY-9ce8af9704914b78a47ecb91ded590c3";
@@ -419,6 +434,283 @@ describe("recorder-level redaction", () => {
     } finally {
       if (prevOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = prevOpenAiKey;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ELIMINATE: cyclic objects do not crash OcelRecorder.feed() and URL/nested secrets are detected", () => {
+    expect(containsUnredactedSecretsOrPii(`https://api.example.com/v1?api_key=${fakeKey}`)).toBe(true);
+    expect(containsUnredactedSecretsOrPii("https://api.example.com/v1?api_key=REDACTED")).toBe(false);
+    expect(
+      containsUnredactedSecretsOrPii(JSON.stringify({ client_secret: { inner: "still-secret" } }))
+    ).toBe(true);
+    expect(
+      containsUnredactedSecretsOrPii(JSON.stringify({ client_secret: { inner: "REDACTED" } }))
+    ).toBe(false);
+
+    const dir = mkdtempSync(join(tmpdir(), "ocel-cyclic-"));
+    try {
+      const recorder = new OcelRecorder("zcode_stream", dir);
+      const cyclic: Record<string, unknown> = {
+        type: "session.created",
+        eventId: "e-cyc",
+        timestamp: 1700000000000,
+        sessionId: "sess-cyclic",
+        url: `https://api.example.com/?api_key=${fakeKey}`,
+        client_secret: { nested: fakeKey }
+      };
+      cyclic.self = cyclic;
+      expect(() => recorder.feed(cyclic)).not.toThrow();
+      const result = recorder.finish();
+      const ocelText = readFileSync(result.ocelPath, "utf8");
+      expect(ocelText.includes(fakeKey)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("RAISE: tampering with O2O objects or receipt digests breaks verifyOcelReceipt", () => {
+    const suite = fixtures().find((f) => f.name === "turn-simple.ndjson") ?? fixtures()[0];
+    expect(suite).toBeDefined();
+    const dir = mkdtempSync(join(tmpdir(), "ocel-o2o-bind-"));
+    try {
+      const recorder = new OcelRecorder("zcode_stream", dir, {
+        workOrderIri: "urn:sjira:wo-123",
+        epochId: "ep-1"
+      });
+      for (const line of suite!.lines) recorder.feedLine(line);
+      const result = recorder.finish();
+      const ocelText = readFileSync(result.ocelPath, "utf8");
+      const receipt = JSON.parse(readFileSync(result.receiptPath, "utf8")) as OcelTapReceipt;
+
+      expect(receipt.receipt_chain_intact).toBe(true);
+      expect(verifyOcelReceipt(receipt, ocelText)).toBe(true);
+      expect(verifyOcelReceipt(receipt)).toBe(true);
+
+      // Tamper with an O2O relationship in .jsonocel without touching events/pi_hash.
+      const tamperedDoc = JSON.parse(ocelText) as {
+        objects: { id: string; relationships: { objectId: string; qualifier: string }[] }[];
+      };
+      expect(tamperedDoc.objects.length).toBeGreaterThan(0);
+      tamperedDoc.objects[0]!.relationships.push({ objectId: "evil:obj", qualifier: "forged" });
+      const tamperedOcelText = JSON.stringify(tamperedDoc);
+      // Event chain still passes verifyChain, but receipt binding catches O2O tampering.
+      expect(verifyChain(tamperedDoc as never, "sha256")).toBeNull();
+      expect(verifyOcelReceipt(receipt, tamperedOcelText)).toBe(false);
+
+      // Tamper with ocel_file_sha256 or head_hash in receipt.
+      expect(verifyOcelReceipt({ ...receipt, ocel_file_sha256: "0".repeat(64) })).toBe(false);
+      expect(verifyOcelReceipt({ ...receipt, head_hash: "f".repeat(64) })).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("REDUCE: createComplianceRedactor reuses compiled context without regex lastIndex drift", () => {
+    const redactor = createComplianceRedactor({
+      redactEnv: ["CUSTOM_TOKEN"],
+      env: { CUSTOM_TOKEN: "super-secret-custom-val" }
+    });
+    for (let i = 0; i < 5; i++) {
+      expect(redactor.containsUnredacted("alice@example.com")).toBe(true);
+      expect(redactor.containsUnredacted("/Users/alice/file.ts")).toBe(true);
+      expect(redactor.containsUnredacted("https://x/?token=secret123")).toBe(true);
+      expect(redactor.containsUnredacted("val=super-secret-custom-val")).toBe(true);
+      expect(redactor.containsUnredacted("safe-string-123")).toBe(false);
+      expect(redactor.redactText("val=super-secret-custom-val")).toBe("val=REDACTED");
+    }
+  });
+
+  test("CREATE: OcelRecorder supports redactEnv, salted actor pseudonymization, and fail-closed tripwire", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ocel-actor-salt-"));
+    try {
+      const salt = "test-salt-9ce8af97";
+      const customSecret = "my-custom-env-secret-42";
+      const recorder = new OcelRecorder(
+        "zcode_stream",
+        dir,
+        {},
+        {
+          redactEnv: ["MY_CUSTOM_SECRET"],
+          env: { MY_CUSTOM_SECRET: customSecret },
+          actorSalt: salt
+        }
+      );
+      recorder.feed({
+        type: "session.created",
+        eventId: "e-actor",
+        timestamp: 1700000000000,
+        sessionId: "sess-actor",
+        actor: "alice@example.com",
+        payload: { note: `leaked=${customSecret}` }
+      });
+      const result = recorder.finish();
+      const ocelText = readFileSync(result.ocelPath, "utf8");
+      expect(ocelText.includes("alice@example.com")).toBe(false);
+      expect(ocelText.includes(customSecret)).toBe(false);
+      expect(containsUnredactedSecretsOrPii(ocelText)).toBe(false);
+      // Verify deterministic pseudonymization matches pseudonymizeActor.
+      expect(pseudonymizeActor("alice@example.com", salt)).toMatch(/^[0-9a-f]{64}$/);
+
+      // Empty actorSalt fails closed.
+      const badSaltRecorder = new OcelRecorder("zcode_stream", dir, {}, { actorSalt: "" });
+      expect(() =>
+        badSaltRecorder.feed({
+          type: "session.created",
+          eventId: "e-bad-salt",
+          timestamp: 1700000000000,
+          sessionId: "sess-bad",
+          actor: "alice@example.com"
+        })
+      ).toThrow(/REDACTION_FAILURE/);
+
+      // Fail-closed post-redaction tripwire blocks residual secrets/PII before ingest.
+      const tripwireRecorder = new OcelRecorder("zcode_stream", dir, {}, { replacement: "alice@example.com" });
+      expect(() =>
+        tripwireRecorder.feed({
+          type: "session.created",
+          eventId: "e-trip",
+          timestamp: 1700000000000,
+          sessionId: "sess-trip",
+          payload: { apiKey: fakeKey }
+        })
+      ).toThrow(/REDACTION_FAILURE/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("lease identity JWT/Bearer is scrubbed before bind+receipt (post-redact reinject gate)", () => {
+    const jwt = [
+      "eyJhbGciOiJIUzI1NiJ9",
+      "eyJzdWIiOiJ3b3JrLW9yZGVyIn0",
+      "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    ].join(".");
+    const dirty = scrubLeaseIdentity({
+      workOrderIri: `https://w3id.org/chatman/sjira#Bearer ${jwt}`,
+      epochId: `epoch-Bearer ${fakeKey}`,
+      baseSha: "a".repeat(40)
+    });
+    expect(dirty.workOrderIri?.includes(jwt)).toBe(false);
+    expect(dirty.epochId?.includes(fakeKey)).toBe(false);
+    expect(JSON.stringify(dirty).includes(jwt)).toBe(false);
+    const fields = redactLeaseIdentityFields({
+      work_order_iri: `urn:wo:?api_key=${fakeKey}`,
+      subject_sha: "b".repeat(40)
+    });
+    expect(fields.work_order_iri?.includes(fakeKey)).toBe(false);
+    expect(fields.subject_sha).toBe("b".repeat(40));
+    const ids = leaseIdentityObjectIds({
+      workOrderIri: `https://example.com/?access_token=${fakeKey}`,
+      epochId: "7f0e0c5e-4b1a-4c9d-8e2f-1a2b3c4d5e6f",
+      baseSha: "c".repeat(40)
+    });
+    expect(JSON.stringify(ids).includes(fakeKey)).toBe(false);
+
+    const suite = fixtures().find((f) => f.name === "turn-simple.ndjson") ?? fixtures()[0];
+    expect(suite).toBeDefined();
+    const dir = mkdtempSync(join(tmpdir(), "ocel-id-scrub-"));
+    try {
+      const recorder = new OcelRecorder("zcode_stream", dir, {
+        workOrderIri: `https://w3id.org/chatman/sjira#ZOCEL?api_key=${fakeKey}`,
+        epochId: "7f0e0c5e-4b1a-4c9d-8e2f-1a2b3c4d5e6f",
+        baseSha: "d".repeat(40)
+      });
+      for (const line of suite!.lines) recorder.feedLine(line);
+      const result = recorder.finish();
+      const ocel = readFileSync(result.ocelPath, "utf8");
+      const receipt = readFileSync(result.receiptPath, "utf8");
+      expect(ocel.includes(fakeKey)).toBe(false);
+      expect(receipt.includes(fakeKey)).toBe(false);
+      expect(containsUnredactedSecretsOrPii(ocel)).toBe(false);
+      const parsed = JSON.parse(receipt) as OcelTapReceipt;
+      expect(parsed.chain_intact).toBe(true);
+      expect(parsed.work_order_iri?.includes(fakeKey)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("finish refuse/seal blocked when containsUnredactedSecretsOrPii (capability-snapshot assert parity)", () => {
+    expect(isSecretfulOcelSeal(`{"apiKey":"${fakeKey}"}`)).toBe(true);
+    expect(isSecretfulOcelSeal('{"note":"ok"}', { work_order_iri: "urn:clean" })).toBe(false);
+    expect(isSecretfulOcelSeal('{"note":"ok"}', { Authorization: `Bearer ${fakeKey}` })).toBe(true);
+
+    // Secrets under attribute `value` are not secret-key shaped — use Bearer.
+    const dirtyDoc = {
+      objectTypes: [],
+      eventTypes: [],
+      objects: [],
+      events: [
+        {
+          id: "e1",
+          type: "session_created",
+          time: "2026-01-01T00:00:00.000Z",
+          attributes: [{ name: "note", value: `Bearer ${fakeKey}` }],
+          relationships: []
+        }
+      ]
+    };
+    expect(containsUnredactedSecretsOrPii(JSON.stringify(dirtyDoc))).toBe(true);
+    const prepared = prepareOcelDiskWrite(dirtyDoc as never);
+    expect(prepared.redactionOk).toBe(false);
+    expect(prepared.ocelText.includes(fakeKey)).toBe(false);
+    expect(prepared.diskDoc.events).toEqual([]);
+    expect(containsUnredactedSecretsOrPii(prepared.ocelText)).toBe(false);
+  });
+
+  // RAISE-1: CAPABILITY_SNAPSHOT alignment — TOML assignments + pwd key + finish refuse.
+  test("RAISE-1: TOML assignment scrub and pwd key align with capability-snapshot", () => {
+    const toml = [
+      `api_key = "${fakeKey}"`,
+      `pwd = 'short'`,
+      "passwd = bare_unquoted_secret",
+      'note = "the token bucket refills"'
+    ].join("\n");
+    const scrubbed = redactSecrets(toml);
+    expect(scrubbed.includes(fakeKey)).toBe(false);
+    expect(scrubbed.includes("bare_unquoted_secret")).toBe(false);
+    expect(scrubbed).toContain('api_key = "REDACTED"');
+    expect(scrubbed).toContain("pwd = 'REDACTED'");
+    expect(scrubbed).toContain("passwd = REDACTED");
+    expect(scrubbed).toContain('note = "the token bucket refills"');
+    expect(containsUnredactedSecretsOrPii(toml, { redactPii: false })).toBe(true);
+    expect(containsUnredactedSecretsOrPii(scrubbed, { redactPii: false })).toBe(false);
+    expect(redactSecrets(JSON.stringify({ pwd: fakeKey }))).toBe(JSON.stringify({ pwd: "REDACTED" }));
+  });
+
+  test("RAISE-1: assert_no_secrets refuse leaves no husk when redaction replacement is itself PII", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ocel-raise1-refuse-"));
+    try {
+      // Replacement itself is PII — after "redacting" credentials to an email,
+      // the ingest assert_no_secrets gate must refuse rather than ingest secrets.
+      const recorder = new OcelRecorder(
+        "zcode_stream",
+        dir,
+        { workOrderIri: `https://example.com/?api_key=${fakeKey}` },
+        { replacement: "alice@example.com", redactPii: true }
+      );
+      expect(() =>
+        recorder.feed({
+          type: "session.created",
+          eventId: "e-refuse",
+          timestamp: 1700000000000,
+          sessionId: "sess-refuse",
+          apiKey: fakeKey
+        })
+      ).toThrow(/REDACTION_FAILURE|REFUSED:UNREDACTED/);
+      // Feed refuse must not have written anything yet.
+      expect(Bun.spawnSync(["ls", "-1", dir], { stdout: "pipe" }).stdout.toString().trim()).toBe("");
+      // Empty finish may land a blocked stub, but never a secretful husk.
+      const result = recorder.finish();
+      const ocel = readFileSync(result.ocelPath, "utf8");
+      const receipt = JSON.parse(readFileSync(result.receiptPath, "utf8")) as OcelTapReceipt;
+      expect(ocel.includes(fakeKey)).toBe(false);
+      expect(ocel.includes("alice@example.com")).toBe(false);
+      expect(containsUnredactedSecretsOrPii(ocel)).toBe(false);
+      expect(receipt.chain_intact).toBe(false);
+      expect(result.events).toBe(0);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

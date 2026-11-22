@@ -172,14 +172,6 @@ function computeBackwardMinVisibleDist(
   const dist = new Array<number>(numPlaces).fill(Number.POSITIVE_INFINITY);
   dist[sinkIdx] = 0;
 
-  // Build reverse index: postPlace -> transitions that produce into it
-  const producingTransitions: number[][] = Array.from({ length: numPlaces }, () => []);
-  for (let ti = 0; ti < transitions.length; ti++) {
-    for (const q of postIndices[ti]!) {
-      producingTransitions[q]!.push(ti);
-    }
-  }
-
   // Bellman-Ford / 0-1 relaxation over place distances
   let changed = true;
   let guard = 0;
@@ -581,54 +573,219 @@ interface InternalMoveRecord {
 
 interface SearchNode {
   marking: number[];
+  markingKey: string;
   traceIdx: number;
   parent: number;
   move: InternalMoveRecord | null;
 }
 
-function computeSingleTracePrecision(
-  net: NormalizedWorkflowNet,
-  internalMoves: readonly InternalMoveRecord[]
+/**
+ * Two-phase simplex solver for:
+ *   minimize   c^T x
+ *   subject to A x = b,  x >= 0
+ * Uses Bland's rule to guarantee termination without cycling.
+ * Returns:
+ *   - finite optimal value >= 0 when feasible & bounded
+ *   - Number.POSITIVE_INFINITY when infeasible (prunes dead-end markings)
+ *   - 0 as a safe admissible fallback if iteration limit is exceeded
+ */
+function solveMarkingEquationLP(
+  A: readonly (readonly number[])[],
+  b: readonly number[],
+  c: readonly number[]
 ): number {
-  const marking = new Array<number>(net.places.length).fill(0);
-  marking[net.sourceIdx] = 1;
+  const m = A.length;
+  const n = c.length;
+  if (m === 0 || n === 0) return 0;
 
-  let reflected = 0;
-  let totalOpportunities = 0;
+  const EPS = 1e-9;
+  const totalCols = n + m; // real vars [0..n-1], artificial vars [n..n+m-1]
+  // Tableau has (m + 1) rows and (totalCols + 1) columns; last column is RHS.
+  // Row m is the objective row: z - sum_j r_j x_j = objVal (so we pivot on r_j < -EPS).
+  const T: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(totalCols + 1).fill(0));
+  const basis = new Int32Array(m);
 
-  for (const mv of internalMoves) {
-    if (mv.kind === "log_move") continue;
-    const ti = mv.transitionIndex!;
-    const t = net.transitions[ti]!;
-    if (mv.kind === "silent") {
-      for (const p of net.preIndices[ti]!) marking[p]! -= 1;
-      for (const p of net.postIndices[ti]!) marking[p]! += 1;
-      continue;
+  for (let i = 0; i < m; i++) {
+    const row = T[i]!;
+    const aRow = A[i]!;
+    const sign = b[i]! < 0 ? -1 : 1;
+    for (let j = 0; j < n; j++) {
+      row[j] = sign * aRow[j]!;
     }
-
-    // Visible model transition: count conflict/XOR siblings enabled at current marking
-    const preSet = new Set(net.preIndices[ti]!);
-    let conflictSiblings = 0;
-    for (let otherIdx = 0; otherIdx < net.transitions.length; otherIdx++) {
-      const ot = net.transitions[otherIdx]!;
-      if (ot.silent) continue;
-      if (!isEnabled(marking, net.preIndices[otherIdx]!)) continue;
-      const sharesPre = net.preIndices[otherIdx]!.some((p) => preSet.has(p));
-      if (sharesPre) conflictSiblings += 1;
-    }
-
-    const opp = Math.max(1, conflictSiblings);
-    totalOpportunities += opp;
-    if (mv.kind === "sync") {
-      reflected += 1;
-    }
-
-    for (const p of net.preIndices[ti]!) marking[p]! -= 1;
-    for (const p of net.postIndices[ti]!) marking[p]! += 1;
+    row[n + i] = 1; // artificial variable
+    row[totalCols] = sign * b[i]!;
+    basis[i] = n + i;
   }
 
-  if (totalOpportunities === 0) return 1;
-  return Math.max(0, Math.min(1, reflected / totalOpportunities));
+  const pivot = (pRow: number, pCol: number): void => {
+    const row = T[pRow]!;
+    const pVal = row[pCol]!;
+    const inv = 1 / pVal;
+    for (let j = 0; j <= totalCols; j++) {
+      row[j] = row[j]! * inv;
+    }
+    row[pCol] = 1;
+    for (let i = 0; i <= m; i++) {
+      if (i === pRow) continue;
+      const r = T[i]!;
+      const factor = r[pCol]!;
+      if (Math.abs(factor) <= EPS) continue;
+      for (let j = 0; j <= totalCols; j++) {
+        r[j] = r[j]! - factor * row[j]!;
+      }
+      r[pCol] = 0;
+    }
+    basis[pRow] = pCol;
+  };
+
+  const runSimplex = (numCols: number, maxIter: number): boolean => {
+    const obj = T[m]!;
+    for (let iter = 0; iter < maxIter; iter++) {
+      // Bland's rule: first column with reduced cost < -EPS
+      let enter = -1;
+      for (let j = 0; j < numCols; j++) {
+        if (obj[j]! < -EPS) {
+          enter = j;
+          break;
+        }
+      }
+      if (enter === -1) return true; // optimal
+
+      // Minimum ratio test with Bland's tie-breaking (smallest row index)
+      let leave = -1;
+      let minRatio = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < m; i++) {
+        const aij = T[i]![enter]!;
+        if (aij > EPS) {
+          const ratio = T[i]![totalCols]! / aij;
+          if (ratio < minRatio - EPS) {
+            minRatio = ratio;
+            leave = i;
+          }
+        }
+      }
+      if (leave === -1) return false; // unbounded
+      pivot(leave, enter);
+    }
+    return false; // iteration cap reached
+  };
+
+  // Phase I: minimize sum of artificial variables
+  const objRow = T[m]!;
+  for (let i = 0; i < m; i++) {
+    const r = T[i]!;
+    for (let j = 0; j < n; j++) {
+      objRow[j] = objRow[j]! - r[j]!;
+    }
+    objRow[totalCols] = objRow[totalCols]! - r[totalCols]!;
+  }
+
+  const maxIter = Math.max(500, (m + n) * 20);
+  if (!runSimplex(totalCols, maxIter)) {
+    return 0; // safe admissible fallback
+  }
+
+  // Objective value of Phase I is -objRow[totalCols]
+  const phase1Obj = -objRow[totalCols]!;
+  if (phase1Obj > 1e-6) {
+    return Number.POSITIVE_INFINITY; // infeasible marking equation
+  }
+
+  // Drive any remaining artificial variables out of the basis
+  for (let i = 0; i < m; i++) {
+    if (basis[i]! >= n) {
+      const r = T[i]!;
+      let col = -1;
+      for (let j = 0; j < n; j++) {
+        if (Math.abs(r[j]!) > EPS) {
+          col = j;
+          break;
+        }
+      }
+      if (col !== -1) {
+        pivot(i, col);
+      }
+    }
+  }
+
+  // Phase II: minimize c^T x over real variables [0..n-1]
+  objRow.fill(0);
+  for (let j = 0; j < n; j++) {
+    objRow[j] = c[j]!;
+  }
+  for (let i = 0; i < m; i++) {
+    const bCol = basis[i]!;
+    if (bCol < n) {
+      const cb = c[bCol]!;
+      if (Math.abs(cb) > EPS) {
+        const r = T[i]!;
+        for (let j = 0; j < n; j++) {
+          objRow[j] = objRow[j]! - cb * r[j]!;
+        }
+        objRow[totalCols] = objRow[totalCols]! - cb * r[totalCols]!;
+      }
+    }
+  }
+
+  if (!runSimplex(n, maxIter)) {
+    return 0; // safe admissible fallback
+  }
+
+  const opt = -objRow[totalCols]!;
+  return opt <= EPS ? 0 : opt;
+}
+
+/**
+ * Compute tau*-closure of visible activities enabled from a marking:
+ * all visible activity names reachable via 0 or more silent transitions.
+ */
+function computeTauClosureEnabledActivities(
+  net: NormalizedWorkflowNet,
+  startMarking: readonly number[],
+  maxTokensPerPlace: number
+): Set<string> {
+  const enabledActivities = new Set<string>();
+  const visited = new Set<string>();
+  const queue: number[][] = [startMarking.slice()];
+  visited.add(startMarking.join(","));
+
+  const maxClosureStates = 2048;
+  while (queue.length > 0 && visited.size <= maxClosureStates) {
+    const m = queue.shift()!;
+    for (let ti = 0; ti < net.transitions.length; ti++) {
+      const pre = net.preIndices[ti]!;
+      if (!isEnabled(m, pre)) continue;
+      const t = net.transitions[ti]!;
+      if (t.silent) {
+        const next = applyTransition(m, pre, net.postIndices[ti]!, maxTokensPerPlace);
+        if (!next) continue;
+        const key = next.join(",");
+        if (!visited.has(key)) {
+          visited.add(key);
+          queue.push(next);
+        }
+      } else {
+        enabledActivities.add(transitionActivityName(t));
+      }
+    }
+  }
+  return enabledActivities;
+}
+
+function computeSingleTracePrecision(
+  net: NormalizedWorkflowNet,
+  internalMoves: readonly InternalMoveRecord[],
+  maxTokensPerPlace = 8
+): number {
+  return computePooledPrecision(net, [internalMoves], maxTokensPerPlace);
+}
+
+function markingSupportKey(marking: readonly number[]): string {
+  let out = "";
+  for (let i = 0; i < marking.length; i++) {
+    out += marking[i]! > 0 ? "1" : "0";
+  }
+  return out;
 }
 
 function runAStarCore(
@@ -645,64 +802,189 @@ function runAStarCore(
   const maxTokensPerPlace = options.maxTokensPerPlace ?? 8;
   const includeSilentMoves = options.includeSilentMoves ?? false;
 
+  // Cost-function admissibility guards
+  if (
+    !Number.isFinite(syncCost) || syncCost < 0 ||
+    !Number.isFinite(logMoveCost) || logMoveCost < 0 ||
+    !Number.isFinite(modelMoveCost) || modelMoveCost < 0 ||
+    !Number.isFinite(silentCost) || silentCost < 0
+  ) {
+    throw new Error(
+      `Invalid alignment cost function: all costs must be finite and non-negative (sync=${syncCost}, log=${logMoveCost}, model=${modelMoveCost}, silent=${silentCost})`
+    );
+  }
+  if (syncCost > logMoveCost + modelMoveCost) {
+    throw new Error(
+      `Inadmissible alignment cost function: syncCost (${syncCost}) must be <= logMoveCost + modelMoveCost (${logMoveCost + modelMoveCost})`
+    );
+  }
+
   const numPlaces = net.places.length;
+  const numTrans = net.transitions.length;
   const placeToTransitions: number[][] = Array.from({ length: numPlaces }, () => []);
-  for (let ti = 0; ti < net.transitions.length; ti++) {
+  for (let ti = 0; ti < numTrans; ti++) {
     for (const p of net.preIndices[ti]!) {
       placeToTransitions[p]!.push(ti);
     }
   }
 
+  // Build Petri-net incidence matrix N[p][ti] = post(p, ti) - pre(p, ti)
+  const incidence: number[][] = Array.from({ length: numPlaces }, () => new Array<number>(numTrans).fill(0));
+  for (let ti = 0; ti < numTrans; ti++) {
+    for (const p of net.preIndices[ti]!) {
+      incidence[p]![ti] = incidence[p]![ti]! - 1;
+    }
+    for (const p of net.postIndices[ti]!) {
+      incidence[p]![ti] = incidence[p]![ti]! + 1;
+    }
+  }
+
+  // Distinct trace activities and suffix multiset counts for the synchronous-product marking equation LP
+  const distinctActivities: string[] = [];
+  const activityToIdx = new Map<string, number>();
+  for (const ev of traceEvents) {
+    if (!activityToIdx.has(ev.activity)) {
+      activityToIdx.set(ev.activity, distinctActivities.length);
+      distinctActivities.push(ev.activity);
+    }
+  }
+  const numActs = distinctActivities.length;
+  const traceLen = traceEvents.length;
+  const suffixCounts: Int32Array[] = Array.from({ length: traceLen + 1 }, () => new Int32Array(numActs));
+  for (let i = traceLen - 1; i >= 0; i--) {
+    const prev = suffixCounts[i + 1]!;
+    const cur = suffixCounts[i]!;
+    cur.set(prev);
+    const aIdx = activityToIdx.get(traceEvents[i]!.activity)!;
+    cur[aIdx] = cur[aIdx]! + 1;
+  }
+
+  // Prebuild constant LP constraint matrix A and cost vector c:
+  // Columns: [x_model (0..numTrans-1), x_sync (numTrans..numTrans+syncCols-1), x_log (..+numActs-1)]
+  const syncCols: Array<{ ti: number; actIdx: number }> = [];
+  for (let ti = 0; ti < numTrans; ti++) {
+    const t = net.transitions[ti]!;
+    if (t.silent) continue;
+    for (let aIdx = 0; aIdx < numActs; aIdx++) {
+      if (transitionMatchesActivity(t, distinctActivities[aIdx]!)) {
+        syncCols.push({ ti, actIdx: aIdx });
+      }
+    }
+  }
+
+  const numLpRows = numPlaces + numActs;
+  const numLpCols = numTrans + syncCols.length + numActs;
+  const lpA: number[][] = Array.from({ length: numLpRows }, () => new Array<number>(numLpCols).fill(0));
+  const lpC: number[] = new Array<number>(numLpCols).fill(0);
+
+  for (let ti = 0; ti < numTrans; ti++) {
+    lpC[ti] = net.transitions[ti]!.silent ? silentCost : modelMoveCost;
+    for (let p = 0; p < numPlaces; p++) {
+      lpA[p]![ti] = incidence[p]![ti]!;
+    }
+  }
+  for (let s = 0; s < syncCols.length; s++) {
+    const { ti, actIdx } = syncCols[s]!;
+    const col = numTrans + s;
+    lpC[col] = syncCost;
+    for (let p = 0; p < numPlaces; p++) {
+      lpA[p]![col] = incidence[p]![ti]!;
+    }
+    lpA[numPlaces + actIdx]![col] = 1;
+  }
+  for (let aIdx = 0; aIdx < numActs; aIdx++) {
+    const col = numTrans + syncCols.length + aIdx;
+    lpC[col] = logMoveCost;
+    lpA[numPlaces + aIdx]![col] = 1;
+  }
+
+  const allIntegerCosts =
+    Number.isInteger(syncCost) &&
+    Number.isInteger(logMoveCost) &&
+    Number.isInteger(modelMoveCost) &&
+    Number.isInteger(silentCost);
+
   const reachableCache = new Map<string, Set<string>>();
-  const heuristic = (marking: readonly number[], traceIdx: number): number => {
+  const lpCache = new Map<string, number>();
+  const lpB = new Array<number>(numLpRows).fill(0);
+
+  const heuristic = (marking: readonly number[], markingKey: string, traceIdx: number): number => {
+    const cacheKey = `${traceIdx}|${markingKey}`;
+    const cached = lpCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
     let minModelToSink = 0;
     for (let p = 0; p < numPlaces; p++) {
       if (marking[p]! > 0) {
         const d = net.minVisibleDistToSink[p]!;
-        if (!Number.isFinite(d)) return Number.POSITIVE_INFINITY;
+        if (!Number.isFinite(d)) {
+          lpCache.set(cacheKey, Number.POSITIVE_INFINITY);
+          return Number.POSITIVE_INFINITY;
+        }
         if (d > minModelToSink) minModelToSink = d;
       }
     }
 
-    const remainingCount = traceEvents.length - traceIdx;
+    // Build RHS b = [m_f - m; suffixCounts[traceIdx]]
+    for (let p = 0; p < numPlaces; p++) {
+      lpB[p] = (p === net.sinkIdx ? 1 : 0) - marking[p]!;
+    }
+    const sc = suffixCounts[traceIdx]!;
+    for (let aIdx = 0; aIdx < numActs; aIdx++) {
+      lpB[numPlaces + aIdx] = sc[aIdx]!;
+    }
+
+    const rawLp = solveMarkingEquationLP(lpA, lpB, lpC);
+    if (!Number.isFinite(rawLp)) {
+      lpCache.set(cacheKey, Number.POSITIVE_INFINITY);
+      return Number.POSITIVE_INFINITY;
+    }
+    const lpH = allIntegerCosts ? Math.max(0, Math.ceil(rawLp - 1e-7)) : Math.max(0, rawLp - 1e-9);
+
+    // Fast support-keyed reachability lower bound (combined via max, both admissible)
+    let fallbackH: number;
+    const remainingCount = traceLen - traceIdx;
     if (remainingCount === 0) {
-      return minModelToSink * modelMoveCost;
-    }
-
-    const mKey = marking.join(",");
-    let reachable = reachableCache.get(mKey);
-    if (!reachable) {
-      reachable = computeReachableLabelsFromMarking(net, marking, placeToTransitions);
-      reachableCache.set(mKey, reachable);
-    }
-
-    let impossibleLog = 0;
-    let syncable = 0;
-    for (let i = traceIdx; i < traceEvents.length; i++) {
-      if (reachable.has(traceEvents[i]!.activity)) {
-        syncable += 1;
-      } else {
-        impossibleLog += 1;
+      fallbackH = minModelToSink * modelMoveCost;
+    } else {
+      const supKey = markingSupportKey(marking);
+      let reachable = reachableCache.get(supKey);
+      if (!reachable) {
+        reachable = computeReachableLabelsFromMarking(net, marking, placeToTransitions);
+        reachableCache.set(supKey, reachable);
       }
+      let impossibleLog = 0;
+      let syncable = 0;
+      for (let i = traceIdx; i < traceLen; i++) {
+        if (reachable.has(traceEvents[i]!.activity)) {
+          syncable += 1;
+        } else {
+          impossibleLog += 1;
+        }
+      }
+      const unavoidableModel = Math.max(0, minModelToSink - syncable);
+      fallbackH = impossibleLog * logMoveCost + unavoidableModel * modelMoveCost;
     }
 
-    const unavoidableModel = Math.max(0, minModelToSink - syncable);
-    return impossibleLog * logMoveCost + unavoidableModel * modelMoveCost;
+    const h = Math.max(lpH, fallbackH);
+    lpCache.set(cacheKey, h);
+    return h;
   };
 
   const initMarking = new Array<number>(numPlaces).fill(0);
   initMarking[net.sourceIdx] = 1;
+  const initMarkingKey = initMarking.join(",");
 
   const nodes: SearchNode[] = [
-    { marking: initMarking, traceIdx: 0, parent: -1, move: null }
+    { marking: initMarking, markingKey: initMarkingKey, traceIdx: 0, parent: -1, move: null }
   ];
   const bestG = new Map<string, number>();
-  const initKey = `0|${initMarking.join(",")}`;
+  const initKey = `0|${initMarkingKey}`;
   bestG.set(initKey, 0);
 
   const heap = new MinHeap();
   let seq = 0;
-  heap.push({ f: heuristic(initMarking, 0), g: 0, seq: seq++, stateIdx: 0 });
+  heap.push({ f: heuristic(initMarking, initMarkingKey, 0), g: 0, seq: seq++, stateIdx: 0 });
 
   let goalIdx = -1;
   let goalCost = Number.POSITIVE_INFINITY;
@@ -719,20 +1001,20 @@ function runAStarCore(
   while (heap.size > 0 && statesExplored < maxStates) {
     const cur = heap.pop()!;
     const node = nodes[cur.stateIdx]!;
-    const curKey = `${node.traceIdx}|${node.marking.join(",")}`;
+    const curKey = `${node.traceIdx}|${node.markingKey}`;
     const recordedG = bestG.get(curKey);
     if (recordedG !== undefined && cur.g > recordedG) continue;
 
     statesExplored += 1;
 
-    if (node.traceIdx === traceEvents.length && isGoalMarking(node.marking)) {
+    if (node.traceIdx === traceLen && isGoalMarking(node.marking)) {
       goalIdx = cur.stateIdx;
       goalCost = cur.g;
       break;
     }
 
     // 1. Model moves (silent & visible) enabled at current marking
-    for (let ti = 0; ti < net.transitions.length; ti++) {
+    for (let ti = 0; ti < numTrans; ti++) {
       const pre = net.preIndices[ti]!;
       if (!isEnabled(node.marking, pre)) continue;
       const t = net.transitions[ti]!;
@@ -745,12 +1027,13 @@ function runAStarCore(
         const nKey = `${node.traceIdx}|${nextMarkingKey}`;
         const prev = bestG.get(nKey);
         if (prev === undefined || ng < prev) {
-          const h = heuristic(nextMarking, node.traceIdx);
+          const h = heuristic(nextMarking, nextMarkingKey, node.traceIdx);
           if (Number.isFinite(h)) {
             bestG.set(nKey, ng);
             const sIdx = nodes.length;
             nodes.push({
               marking: nextMarking,
+              markingKey: nextMarkingKey,
               traceIdx: node.traceIdx,
               parent: cur.stateIdx,
               move: {
@@ -768,7 +1051,7 @@ function runAStarCore(
       }
 
       // Sync move if next trace event matches
-      if (node.traceIdx < traceEvents.length) {
+      if (node.traceIdx < traceLen) {
         const ev = traceEvents[node.traceIdx]!;
         if (transitionMatchesActivity(t, ev.activity)) {
           const ng = cur.g + syncCost;
@@ -776,12 +1059,13 @@ function runAStarCore(
           const nKey = `${nextTrace}|${nextMarkingKey}`;
           const prev = bestG.get(nKey);
           if (prev === undefined || ng < prev) {
-            const h = heuristic(nextMarking, nextTrace);
+            const h = heuristic(nextMarking, nextMarkingKey, nextTrace);
             if (Number.isFinite(h)) {
               bestG.set(nKey, ng);
               const sIdx = nodes.length;
               nodes.push({
                 marking: nextMarking,
+                markingKey: nextMarkingKey,
                 traceIdx: nextTrace,
                 parent: cur.stateIdx,
                 move: {
@@ -805,12 +1089,13 @@ function runAStarCore(
         const nKey = `${node.traceIdx}|${nextMarkingKey}`;
         const prev = bestG.get(nKey);
         if (prev === undefined || ng < prev) {
-          const h = heuristic(nextMarking, node.traceIdx);
+          const h = heuristic(nextMarking, nextMarkingKey, node.traceIdx);
           if (Number.isFinite(h)) {
             bestG.set(nKey, ng);
             const sIdx = nodes.length;
             nodes.push({
               marking: nextMarking,
+              markingKey: nextMarkingKey,
               traceIdx: node.traceIdx,
               parent: cur.stateIdx,
               move: {
@@ -828,19 +1113,20 @@ function runAStarCore(
     }
 
     // 2. Log-only move
-    if (node.traceIdx < traceEvents.length) {
+    if (node.traceIdx < traceLen) {
       const ev = traceEvents[node.traceIdx]!;
       const ng = cur.g + logMoveCost;
       const nextTrace = node.traceIdx + 1;
-      const nKey = `${nextTrace}|${node.marking.join(",")}`;
+      const nKey = `${nextTrace}|${node.markingKey}`;
       const prev = bestG.get(nKey);
       if (prev === undefined || ng < prev) {
-        const h = heuristic(node.marking, nextTrace);
+        const h = heuristic(node.marking, node.markingKey, nextTrace);
         if (Number.isFinite(h)) {
           bestG.set(nKey, ng);
           const sIdx = nodes.length;
           nodes.push({
             marking: node.marking,
+            markingKey: node.markingKey,
             traceIdx: nextTrace,
             parent: cur.stateIdx,
             move: {
@@ -904,21 +1190,21 @@ function runAStarCore(
 
   let emptyModelCost = worstCaseEmptyModelCost;
   if (emptyModelCost === undefined) {
-    if (traceEvents.length === 0) {
+    if (traceLen === 0) {
       emptyModelCost = goalCost;
     } else {
       emptyModelCost = runAStarCore(net, [], options, 0).result.alignmentCost;
     }
   }
 
-  const worstCaseCost = traceEvents.length * logMoveCost + emptyModelCost;
+  const worstCaseCost = traceLen * logMoveCost + emptyModelCost;
   const fitness = worstCaseCost === 0 ? 1 : Math.max(0, Math.min(1, 1 - goalCost / worstCaseCost));
-  const precision = computeSingleTracePrecision(net, internalMoves);
+  const precision = computeSingleTracePrecision(net, internalMoves, maxTokensPerPlace);
 
   return {
     result: {
       method: "a_star_alignment",
-      traceLength: traceEvents.length,
+      traceLength: traceLen,
       alignmentCost: goalCost,
       worstCaseCost,
       fitness,
@@ -950,18 +1236,42 @@ export function alignTraceAStar(
   return runAStarCore(net, traceEvents, options).result;
 }
 
+/**
+ * True tau*-closure Align-ETC escaping-edges precision over the aligned prefix automaton:
+ *   - en_M(state) = all visible activities reachable via 0+ silent transitions from the state's marking
+ *   - en_L(state) = all visible activities executed in the aligned model-projection at that state
+ *   - States are weighted by event frequency: sum_s freq(s) * |en_L(s)| / sum_s freq(s) * |en_M(s)|
+ *   - Orthogonal to fitness (no missedModelMoves penalty in denominator).
+ */
 function computePooledPrecision(
   net: NormalizedWorkflowNet,
-  allInternalMoves: readonly (readonly InternalMoveRecord[])[]
+  allInternalMoves: readonly (readonly InternalMoveRecord[])[],
+  maxTokensPerPlace = 8
 ): number {
   if (allInternalMoves.length === 0) return 1;
 
-  // Map markingKey -> { conflictUniverseSize, syncedTransitionIds }
-  const stateMap = new Map<string, { prePlaceKey: string; conflictSize: number; syncedTransitions: Set<number>; missedModelMoves: number }>();
+  const tauClosureCache = new Map<string, Set<string>>();
+  const getEnM = (marking: readonly number[], markingKey: string): Set<string> => {
+    let en = tauClosureCache.get(markingKey);
+    if (!en) {
+      en = computeTauClosureEnabledActivities(net, marking, maxTokensPerPlace);
+      tauClosureCache.set(markingKey, en);
+    }
+    return en;
+  };
+
+  // Aligned prefix automaton states keyed by visible activity prefix
+  const stateMap = new Map<
+    string,
+    { enM: Set<string>; enL: Set<string>; freq: number }
+  >();
 
   for (const traceMoves of allInternalMoves) {
     const marking = new Array<number>(net.places.length).fill(0);
     marking[net.sourceIdx] = 1;
+    let preSilentMarking = marking.slice();
+    let preSilentKey = preSilentMarking.join(",");
+    let prefix = "";
 
     for (const mv of traceMoves) {
       if (mv.kind === "log_move") continue;
@@ -972,47 +1282,38 @@ function computePooledPrecision(
         continue;
       }
 
-      const preSet = new Set(net.preIndices[ti]!);
-      let conflictSiblings = 0;
-      const conflictIds: number[] = [];
-      for (let otherIdx = 0; otherIdx < net.transitions.length; otherIdx++) {
-        const ot = net.transitions[otherIdx]!;
-        if (ot.silent) continue;
-        if (!isEnabled(marking, net.preIndices[otherIdx]!)) continue;
-        if (net.preIndices[otherIdx]!.some((p) => preSet.has(p))) {
-          conflictSiblings += 1;
-          conflictIds.push(otherIdx);
-        }
-      }
+      const actName = transitionActivityName(net.transitions[ti]!);
+      const enMAtState = getEnM(preSilentMarking, preSilentKey);
 
-      const stateKey = `${marking.join(",")}|${conflictIds.join(",")}`;
-      let rec = stateMap.get(stateKey);
+      let rec = stateMap.get(prefix);
       if (!rec) {
         rec = {
-          prePlaceKey: stateKey,
-          conflictSize: Math.max(1, conflictSiblings),
-          syncedTransitions: new Set<number>(),
-          missedModelMoves: 0
+          enM: new Set<string>(enMAtState),
+          enL: new Set<string>(),
+          freq: 0
         };
-        stateMap.set(stateKey, rec);
+        stateMap.set(prefix, rec);
+      } else {
+        for (const a of enMAtState) rec.enM.add(a);
       }
 
-      if (mv.kind === "sync") {
-        rec.syncedTransitions.add(ti);
-      } else {
-        rec.missedModelMoves += 1;
-      }
+      rec.enL.add(actName);
+      rec.freq += 1;
 
       for (const p of net.preIndices[ti]!) marking[p]! -= 1;
       for (const p of net.postIndices[ti]!) marking[p]! += 1;
+      preSilentMarking = marking.slice();
+      preSilentKey = preSilentMarking.join(",");
+      prefix = prefix.length === 0 ? actName : `${prefix}\0${actName}`;
     }
   }
 
   let numerator = 0;
   let denominator = 0;
   for (const rec of stateMap.values()) {
-    numerator += rec.syncedTransitions.size;
-    denominator += Math.max(rec.conflictSize, rec.syncedTransitions.size) + rec.missedModelMoves;
+    const modelEnabled = Math.max(rec.enM.size, rec.enL.size);
+    numerator += rec.freq * rec.enL.size;
+    denominator += rec.freq * modelEnabled;
   }
 
   if (denominator === 0) return 1;
@@ -1037,12 +1338,32 @@ export function computeAlignmentConformance(
     .map((x) => x.ev);
 
   const targetType = objectType ?? "session";
-  const matchingObjects = objectType
+  const matchingObjects = objectType !== undefined
     ? (doc.objects ?? []).filter((o) => o.type === targetType)
     : [];
 
+  // Fail closed: when an explicit objectType is requested and no matching objects exist,
+  // return an empty 0-case report instead of falling back to __full_log__.
+  if (objectType !== undefined && matchingObjects.length === 0) {
+    return {
+      method: "a_star_alignment",
+      objectType: targetType,
+      caseCount: 0,
+      alignmentCost: 0,
+      fitness: 1,
+      escapingEdgesPrecision: 1,
+      precision: 1,
+      syncMoves: 0,
+      logMoves: 0,
+      modelMoves: 0,
+      moves: [],
+      deviations: [],
+      cases: []
+    };
+  }
+
   const traces: Array<{ caseId: string; objectType: string; events: ConformanceOcelEventLike[] }> = [];
-  if (objectType && matchingObjects.length > 0) {
+  if (objectType !== undefined) {
     const objIds = new Set(matchingObjects.map((o) => o.id));
     const grouped = new Map<string, ConformanceOcelEventLike[]>();
     for (const o of matchingObjects) grouped.set(o.id, []);
@@ -1060,17 +1381,25 @@ export function computeAlignmentConformance(
     }
   } else {
     traces.push({
-      caseId: matchingObjects[0]?.id ?? "__full_log__",
+      caseId: "__full_log__",
       objectType: targetType,
       events: sortedEvents
     });
   }
 
   const emptyModelCost = runAStarCore(net, [], options, 0).result.alignmentCost;
+  const maxTokensPerPlace = options.maxTokensPerPlace ?? 8;
   const cases: CaseAlignmentSummary[] = [];
   const allInternalMoves: InternalMoveRecord[][] = [];
   const allMoves: AlignmentMove[] = [];
   const allDeviations: AlignmentDeviation[] = [];
+
+  // Deduplicate traces by activity-sequence variant: align each unique variant once
+  // and remap eventIds onto each case's moves and deviations.
+  const variantCache = new Map<
+    string,
+    { result: AlignmentResult; internalMoves: InternalMoveRecord[] }
+  >();
 
   let totalCost = 0;
   let totalWorstCase = 0;
@@ -1079,16 +1408,49 @@ export function computeAlignmentConformance(
   let modelMoves = 0;
 
   for (const tr of traces) {
-    const tracePayload = tr.events.map((e) => ({ activity: e.type, eventId: e.id }));
-    const { result, internalMoves } = runAStarCore(net, tracePayload, options, emptyModelCost);
+    const variantKey = JSON.stringify(tr.events.map((e) => e.type));
+    let aligned = variantCache.get(variantKey);
+    if (!aligned) {
+      const tracePayload = tr.events.map((e) => ({ activity: e.type, eventId: e.id }));
+      aligned = runAStarCore(net, tracePayload, options, emptyModelCost);
+      variantCache.set(variantKey, aligned);
+    }
+
+    const { result, internalMoves } = aligned;
+
+    // Remap eventIds for this specific case's events
+    let evCursor = 0;
+    const caseMoves: AlignmentMove[] = result.moves.map((m) => {
+      if (m.kind === "sync" || m.kind === "log_move") {
+        const evId = tr.events[evCursor]?.id;
+        evCursor += 1;
+        return evId !== undefined ? { ...m, eventId: evId } : { ...m };
+      }
+      return { ...m };
+    });
+
+    let devEvCursor = 0;
+    const caseDeviations: AlignmentDeviation[] = [];
+    for (const m of caseMoves) {
+      if (m.kind === "log_move") {
+        caseDeviations.push(classifyDeviation("log_move", m.activity, undefined, m.eventId));
+        devEvCursor += 1;
+      } else if (m.kind === "model_move") {
+        // Only classify visible model moves (matching result.deviations when includeSilentMoves is true)
+        if (devEvCursor < result.deviations.length || !options.includeSilentMoves) {
+          caseDeviations.push(classifyDeviation("model_move", m.activity, m.transitionId, undefined));
+        }
+      }
+    }
+
     allInternalMoves.push(internalMoves);
     totalCost += result.alignmentCost;
     totalWorstCase += result.worstCaseCost;
     syncMoves += result.syncMoves;
     logMoves += result.logMoves;
     modelMoves += result.modelMoves;
-    allMoves.push(...result.moves);
-    allDeviations.push(...result.deviations);
+    allMoves.push(...caseMoves);
+    allDeviations.push(...caseDeviations);
     cases.push({
       caseId: tr.caseId,
       objectType: tr.objectType,
@@ -1098,13 +1460,13 @@ export function computeAlignmentConformance(
       syncMoves: result.syncMoves,
       logMoves: result.logMoves,
       modelMoves: result.modelMoves,
-      moves: result.moves,
-      deviations: result.deviations
+      moves: caseMoves,
+      deviations: caseDeviations
     });
   }
 
   const fitness = totalWorstCase === 0 ? 1 : Math.max(0, Math.min(1, 1 - totalCost / totalWorstCase));
-  const precision = computePooledPrecision(net, allInternalMoves);
+  const precision = computePooledPrecision(net, allInternalMoves, maxTokensPerPlace);
 
   return {
     method: "a_star_alignment",

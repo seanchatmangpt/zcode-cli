@@ -23,6 +23,18 @@ export type PolicyCeiling = "SELECT" | "CONSTRUCT" | "DO";
 
 export const DEFAULT_AB_STREAK_THRESHOLD = 3;
 
+export const APPROVAL_DECISIONS: ReadonlySet<string> = new Set([
+  "allow",
+  "allow_always",
+  "modify",
+  "approve"
+]);
+
+export function isApprovalDecision(decision: string | undefined): boolean {
+  const normalized = (decision ?? "allow").trim().toLowerCase();
+  return APPROVAL_DECISIONS.has(normalized);
+}
+
 const PROFILE_RANK: Readonly<Record<ComplianceProfile, number>> = {
   standard: 0,
   "art50-only": 1,
@@ -665,11 +677,7 @@ export interface PermissionLatencyEvaluation {
 export function evaluatePermissionDecisionLatency(
   input: PermissionLatencyInput
 ): PermissionLatencyEvaluation {
-  const decisionNorm = (input.decision ?? "allow").trim().toLowerCase();
-  const isApproval =
-    decisionNorm === "allow" ||
-    decisionNorm === "allow_always" ||
-    decisionNorm === "modify";
+  const isApproval = isApprovalDecision(input.decision);
   const invalidMinReview =
     !Number.isFinite(input.minReviewMs) || input.minReviewMs < 0;
   const invalidLatency =
@@ -745,11 +753,7 @@ export class AutomationBiasMonitor {
     riskLevel?: string;
     timestampMs?: number;
   }): PermissionLatencyEvaluation {
-    const decisionNorm = (input.decision ?? "allow").trim().toLowerCase();
-    const isApproval =
-      decisionNorm === "allow" ||
-      decisionNorm === "allow_always" ||
-      decisionNorm === "modify";
+    const isApproval = isApprovalDecision(input.decision);
 
     const windowIntervalMs =
       isApproval &&

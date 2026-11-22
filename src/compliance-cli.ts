@@ -339,19 +339,46 @@ function verifyWorkspaceProvenanceSidecars(
       }
     }
 
-    // Verify modified_spans hashes on disk
+    // Verify modified_spans hashes on disk (confined to workspace via realpathSync, fail-closed on missing)
     if (Array.isArray(sidecar.modified_spans)) {
+      const cwdReal = realpathSync(cwd);
       for (const span of sidecar.modified_spans as Array<{ path?: string; file_path?: string; sha256?: string }>) {
         const spanPath = span.path ?? span.file_path;
         if (!spanPath || !span.sha256) continue;
         const target = resolve(cwd, spanPath);
-        if (existsSync(target) && statSync(target).isFile()) {
-          const actualSha = sha256FileHex(target);
-          if (actualSha !== span.sha256) {
-            errors.push(
-              `PROVENANCE_SEAL_FAILED: span '${spanPath}' SHA-256 mismatch in sidecar '${name}'.`
-            );
-          }
+        if (!existsSync(target)) {
+          errors.push(
+            `PROVENANCE_SEAL_FAILED: sealed span '${spanPath}' is missing on disk in sidecar '${name}'.`
+          );
+          continue;
+        }
+        let targetReal: string;
+        try {
+          targetReal = realpathSync(target);
+        } catch (err) {
+          errors.push(
+            `PROVENANCE_SEAL_FAILED: failed to canonicalize span '${spanPath}' in sidecar '${name}': ${(err as Error).message}`
+          );
+          continue;
+        }
+        const relTarget = relative(cwdReal, targetReal);
+        if (!relTarget || relTarget.startsWith("..") || isAbsolute(relTarget)) {
+          errors.push(
+            `PROVENANCE_SEAL_FAILED: span '${spanPath}' escapes workspace '${cwdReal}' in sidecar '${name}'.`
+          );
+          continue;
+        }
+        if (!statSync(targetReal).isFile()) {
+          errors.push(
+            `PROVENANCE_SEAL_FAILED: sealed span '${spanPath}' is not a regular file in sidecar '${name}'.`
+          );
+          continue;
+        }
+        const actualSha = sha256FileHex(targetReal);
+        if (actualSha !== span.sha256) {
+          errors.push(
+            `PROVENANCE_SEAL_FAILED: span '${spanPath}' SHA-256 mismatch in sidecar '${name}'.`
+          );
         }
       }
     }
@@ -674,7 +701,11 @@ async function handleOcelSubcommand(args: readonly string[]): Promise<number> {
         return 1;
       }
 
-      const val = validateOcel2(doc, { requireHashChain: true });
+      const val = validateOcel2(doc, {
+        requireHashChain: true,
+        requireAttrHash: true,
+        requireObjHash: true
+      });
       const errors = [...val.errors];
       const warnings = [...val.warnings];
       const flagsOut: string[] = [];
@@ -909,18 +940,18 @@ async function handleOcelSubcommand(args: readonly string[]): Promise<number> {
         throw new CliUsageError(`Invalid k_anonymity (${kVal}): k >= 2 is required for --rpm-safe export.`);
       }
 
-      let salt = "zcode-rpm-default-salt-v1";
+      let salt = "";
       if (rpmSafe) {
-        if (env.ZCODE_RPM_SALT !== undefined) {
-          if (!env.ZCODE_RPM_SALT.trim() || /^0+$/.test(env.ZCODE_RPM_SALT.trim())) {
-            throw new ComplianceRefusalError(
-              "REDACTION_FAILURE",
-              "ZCODE_RPM_SALT must be a non-empty, non-zero cryptographic salt for --rpm-safe pseudonymization.",
-              "R_missing_authority"
-            );
-          }
-          salt = env.ZCODE_RPM_SALT;
+        const rawSalt = env.ZCODE_RPM_SALT;
+        const trimmedSalt = rawSalt?.trim() ?? "";
+        if (!trimmedSalt || /^0+$/.test(trimmedSalt)) {
+          throw new ComplianceRefusalError(
+            "REDACTION_FAILURE",
+            "ZCODE_RPM_SALT must be a non-empty, non-zero cryptographic salt for --rpm-safe pseudonymization.",
+            "R_missing_authority"
+          );
         }
+        salt = rawSalt!;
       }
 
       const redactOpts = {

@@ -256,7 +256,23 @@ export function validateQmsManifest(pkgRoot: string): {
   };
 }
 
-function readAttr(
+export function atomicWriteText(targetPath: string, content: string): void {
+  mkdirSync(dirname(targetPath), { recursive: true });
+  const tmp = `${targetPath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, content, "utf8");
+    renameSync(tmp, targetPath);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+export function atomicWriteJson(targetPath: string, data: unknown): void {
+  atomicWriteText(targetPath, JSON.stringify(data, null, 2) + "\n");
+}
+
+export function readAttr(
   attrs: readonly { name: string; value: unknown }[] | Record<string, unknown> | undefined,
   key: string
 ): string | undefined {
@@ -271,6 +287,20 @@ function readAttr(
   }
   const rec = attrs as Record<string, unknown>;
   return Object.prototype.hasOwnProperty.call(rec, key) ? String(rec[key] ?? "") : undefined;
+}
+
+function resolveGitHeadSha(cwd: string): string | null {
+  try {
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    if (/^[0-9a-f]{40}$/u.test(head)) return head;
+  } catch {
+    // git rev-parse HEAD failed
+  }
+  return null;
 }
 
 function resolveGitDir(cwd: string): string | undefined {
@@ -343,6 +373,8 @@ export interface ConformityAssessmentResult {
   exitCode: 0 | 1 | 2;
   profile: ComplianceProfile;
   logsAnalyzed: number;
+  gitHeadSha: string | null;
+  qmsManifestSha256: string;
   qms: { ok: boolean; clauseCount: number; missingPaths: string[] };
   reasons: string[];
   warnings: string[];
@@ -369,6 +401,7 @@ export function runConformityAssessment(options: {
 
   enforceOversightArgs([], cfg, env);
   const qms = validateQmsManifest(pkgRoot);
+  const gitHeadSha = resolveGitHeadSha(pkgRoot);
 
   const reasons: string[] = [];
   const warnings: string[] = [];
@@ -399,6 +432,8 @@ export function runConformityAssessment(options: {
       exitCode: 1,
       profile: cfg.compliance.profile,
       logsAnalyzed: 0,
+      gitHeadSha,
+      qmsManifestSha256: qms.manifestSha256,
       qms: { ok: qms.ok, clauseCount: qms.clauseCount, missingPaths: qms.missingPaths },
       reasons: [...reasons, "UNVERIFIED: no logs directory supplied (--logs <dir>)."],
       warnings
@@ -416,6 +451,8 @@ export function runConformityAssessment(options: {
       exitCode: 1,
       profile: cfg.compliance.profile,
       logsAnalyzed: 0,
+      gitHeadSha,
+      qmsManifestSha256: qms.manifestSha256,
       qms: { ok: qms.ok, clauseCount: qms.clauseCount, missingPaths: qms.missingPaths },
       reasons: [...reasons, `UNVERIFIED: 0 logs found in '${logsDir}'.`],
       warnings
@@ -443,7 +480,9 @@ export function runConformityAssessment(options: {
     vacuous += dec.vacuousCount;
     violated += dec.violatedCount;
     if (!dec.allMandatorySatisfied) {
-      const failedRules = dec.results.filter((r) => r.mandatory && r.status === "VIOLATED").map((r) => r.id);
+      const failedRules = dec.results
+        .filter((r) => r.mandatory && (r.status === "VIOLATED" || (r.antiVacuityRequired && !r.antiVacuityPassed)))
+        .map((r) => (r.status === "VIOLATED" ? r.id : `${r.id}(vacuous)`));
       reasons.push(
         `Log '${item.filename}' violated mandatory Declare rule(s): ${failedRules.join(", ")}`
       );
@@ -556,6 +595,8 @@ export function runConformityAssessment(options: {
     exitCode: admitted ? 0 : 1,
     profile: cfg.compliance.profile,
     logsAnalyzed: loadedLogs.length,
+    gitHeadSha,
+    qmsManifestSha256: qms.manifestSha256,
     qms: { ok: qms.ok, clauseCount: qms.clauseCount, missingPaths: qms.missingPaths },
     reasons,
     warnings,
@@ -678,6 +719,15 @@ export function generateEuDeclarationOfConformity(options: {
     );
   }
 
+  const gitHeadSha = resolveGitHeadSha(pkgRoot);
+  if (!gitHeadSha) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `ANNEX_V_IDENTITY_REFUSED: cannot resolve git HEAD SHA in '${pkgRoot}'; refusing to emit EU Declaration of Conformity without exact subject identity.`,
+      "R_missing_identity"
+    );
+  }
+
   const assessment =
     options.conformityAssessment ??
     runConformityAssessment({
@@ -700,17 +750,21 @@ export function generateEuDeclarationOfConformity(options: {
       "admission_vacuous"
     );
   }
-
-  let gitHeadSha = "0".repeat(40);
-  try {
-    const head = execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: pkgRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    if (/^[0-9a-f]{40}$/u.test(head)) gitHeadSha = head;
-  } catch {
-    // keep zero sha fallback outside git
+  if (options.conformityAssessment) {
+    if (assessment.gitHeadSha !== gitHeadSha) {
+      throw new ComplianceRefusalError(
+        "INVALID_COMPLIANCE_CONFIG",
+        `ANNEX_V_IDENTITY_REFUSED: supplied conformityAssessment gitHeadSha (${assessment.gitHeadSha ?? "null"}) does not match live git HEAD (${gitHeadSha}).`,
+        "R_missing_identity"
+      );
+    }
+    if (assessment.qmsManifestSha256 !== qms.manifestSha256) {
+      throw new ComplianceRefusalError(
+        "INVALID_COMPLIANCE_CONFIG",
+        `ANNEX_V_IDENTITY_REFUSED: supplied conformityAssessment qmsManifestSha256 (${assessment.qmsManifestSha256 || "empty"}) does not match live QMS manifest digest (${qms.manifestSha256}).`,
+        "R_missing_identity"
+      );
+    }
   }
 
   const trailer = formatGitProvenanceTrailer({
@@ -784,15 +838,7 @@ export function generateEuDeclarationOfConformity(options: {
     issued_at: new Date().toISOString()
   };
 
-  mkdirSync(dirname(options.outPath), { recursive: true });
-  const tmp = `${options.outPath}.${process.pid}.tmp`;
-  try {
-    writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", "utf8");
-    renameSync(tmp, options.outPath);
-  } catch (err) {
-    rmSync(tmp, { force: true });
-    throw err;
-  }
+  atomicWriteJson(options.outPath, doc);
   return doc;
 }
 
@@ -800,6 +846,7 @@ export interface FriaReport {
   schema: "zcode.fria-report/1";
   regulation: "Regulation (EU) 2024/1689 Art. 27";
   article: "Article 27(1)(a)-(f)";
+  standing: "ALIVE" | "UNVERIFIED";
   profile: ComplianceProfile;
   overseer_id: string;
   deployer_processes_art27_1_a: Record<string, unknown>;
@@ -810,8 +857,8 @@ export interface FriaReport {
   governance_and_mitigation_art27_1_f: Record<string, unknown>;
   rpm_metrics: {
     k_anonymity: number;
-    confidentiality_passed: boolean;
-    fairness_passed: boolean;
+    confidentiality_passed: boolean | null;
+    fairness_passed: boolean | null;
     logs_evaluated: number;
     audit?: RpmFactAuditReport;
   };
@@ -857,6 +904,7 @@ export function exportFriaReport(options: {
     schema: "zcode.fria-report/1",
     regulation: "Regulation (EU) 2024/1689 Art. 27",
     article: "Article 27(1)(a)-(f)",
+    standing: rpmAudit ? "ALIVE" : "UNVERIFIED",
     profile: cfg.compliance.profile,
     overseer_id: cfg.deployer.overseer_id ?? "",
     deployer_processes_art27_1_a: {
@@ -895,8 +943,8 @@ export function exportFriaReport(options: {
     },
     rpm_metrics: {
       k_anonymity: cfg.pmm.k_anonymity,
-      confidentiality_passed: rpmAudit ? rpmAudit.confidentiality.passed : cfg.compliance.redact_pii,
-      fairness_passed: rpmAudit ? rpmAudit.fairness.passed : true,
+      confidentiality_passed: rpmAudit ? rpmAudit.confidentiality.passed : null,
+      fairness_passed: rpmAudit ? rpmAudit.fairness.passed : null,
       logs_evaluated: logsEvaluated,
       ...(rpmAudit ? { audit: rpmAudit } : {})
     }
@@ -907,6 +955,7 @@ export function exportFriaReport(options: {
       ? [
           "# Fundamental Rights Impact Assessment (EU AI Act Article 27)",
           "",
+          `- **Standing**: \`${report.standing}\``,
           `- **Profile**: \`${report.profile}\``,
           `- **Designated Overseer ID**: \`${report.overseer_id}\``,
           `- **Log Retention**: \`${cfg.deployer.log_retention_days} days\` | **Monitoring Enabled**: \`${String(cfg.deployer.monitoring_enabled)}\``,
@@ -929,15 +978,7 @@ export function exportFriaReport(options: {
         ].join("\n") + "\n"
       : JSON.stringify(report, null, 2) + "\n";
 
-  mkdirSync(dirname(options.outPath), { recursive: true });
-  const tmp = `${options.outPath}.${process.pid}.tmp`;
-  try {
-    writeFileSync(tmp, content, "utf8");
-    renameSync(tmp, options.outPath);
-  } catch (err) {
-    rmSync(tmp, { force: true });
-    throw err;
-  }
+  atomicWriteText(options.outPath, content);
 
   return { report, content };
 }

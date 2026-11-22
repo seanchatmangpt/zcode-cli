@@ -1,0 +1,297 @@
+# W3C SHACL Validation Shapes for zcode-cli EU AI Act & AIRO Ontology
+# Target data graph: ontology/eu-ai-act.ttl
+# Enforces structural & semantic invariants for airo:AISystem, airo:Risk,
+# euai:EuAiActArticle, euai:ComplianceO2ORelation, and euai:DeclareConstraint.
+
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix airo: <https://w3id.org/airo#> .
+@prefix eu-aiact: <https://w3id.org/dpv/legal/eu/aiact#> .
+@prefix euai: <https://zcode-cli.example/ontology/eu-ai-act#> .
+
+euai:Prefixes
+    sh:declare [
+        sh:prefix "euai" ;
+        sh:namespace "https://zcode-cli.example/ontology/eu-ai-act#"^^xsd:anyURI
+    ] ;
+    sh:declare [
+        sh:prefix "airo" ;
+        sh:namespace "https://w3id.org/airo#"^^xsd:anyURI
+    ] .
+
+# =====================================================================
+# 1. airo:AISystem Shape
+# =====================================================================
+
+euai:AISystemShape a sh:NodeShape ;
+    sh:targetClass airo:AISystem ;
+    sh:name "AIRO / EU AI Act AI System Shape" ;
+    sh:property [
+        sh:path airo:hasCapability ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "airo:AISystem must declare at least one airo:hasCapability IRI."
+    ] ;
+    sh:property [
+        sh:path airo:hasDomain ;
+        sh:minCount 1 ;
+        sh:class airo:Domain ;
+        sh:message "airo:AISystem must declare airo:hasDomain referencing an airo:Domain."
+    ] ;
+    sh:property [
+        sh:path airo:isProvidedBy ;
+        sh:minCount 1 ;
+        sh:class airo:AIProvider ;
+        sh:message "airo:AISystem must declare airo:isProvidedBy referencing an airo:AIProvider."
+    ] ;
+    sh:property [
+        sh:path airo:isDeployedBy ;
+        sh:minCount 1 ;
+        sh:class airo:AIDeployer ;
+        sh:message "airo:AISystem must declare airo:isDeployedBy referencing an airo:AIDeployer."
+    ] ;
+    sh:property [
+        sh:path airo:hasVersion ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:message "airo:AISystem must declare a non-empty xsd:string airo:hasVersion."
+    ] ;
+    sh:property [
+        sh:path eu-aiact:hasRiskLevel ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "airo:AISystem must declare an explicit eu-aiact:hasRiskLevel classification."
+    ] ;
+    sh:property [
+        sh:path airo:hasRisk ;
+        sh:minCount 7 ;
+        sh:class airo:Risk ;
+        sh:message "airo:AISystem must link to at least 7 airo:Risk nodes."
+    ] ;
+    sh:property [
+        sh:path airo:hasRiskControl ;
+        sh:minCount 7 ;
+        sh:class airo:RiskControl ;
+        sh:message "airo:AISystem must link to at least 7 airo:RiskControl nodes."
+    ] ;
+    sh:property [
+        sh:path euai:addressesArticle ;
+        sh:minCount 13 ;
+        sh:class euai:EuAiActArticle ;
+        sh:message "airo:AISystem must address all 13 required euai:EuAiActArticle nodes."
+    ] .
+
+# =====================================================================
+# 2. airo:Risk Shape (Full AIRO Closure + Quantitative Score Invariant)
+# =====================================================================
+
+euai:RiskShape a sh:NodeShape ;
+    sh:targetClass airo:Risk ;
+    sh:name "AIRO Operational Risk Shape" ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:message "airo:Risk must have an rdfs:label."
+    ] ;
+    sh:property [
+        sh:path euai:addressesArticle ;
+        sh:minCount 1 ;
+        sh:class euai:EuAiActArticle ;
+        sh:message "airo:Risk must reference at least one euai:EuAiActArticle."
+    ] ;
+    sh:property [
+        sh:path airo:hasConsequence ;
+        sh:minCount 1 ;
+        sh:class airo:Consequence ;
+        sh:message "airo:Risk must have at least one airo:Consequence."
+    ] ;
+    sh:property [
+        sh:path airo:hasLikelihood ;
+        sh:minCount 1 ;
+        sh:class airo:Likelihood ;
+        sh:message "airo:Risk must have an airo:Likelihood."
+    ] ;
+    sh:property [
+        sh:path airo:hasRiskControl ;
+        sh:minCount 1 ;
+        sh:class airo:RiskControl ;
+        sh:message "airo:Risk must have at least one airo:RiskControl."
+    ] ;
+    sh:property [
+        sh:path [ sh:inversePath airo:isRiskSourceFor ] ;
+        sh:minCount 1 ;
+        sh:class airo:RiskSource ;
+        sh:message "airo:Risk must have at least one airo:RiskSource via airo:isRiskSourceFor."
+    ] ;
+    sh:property [
+        sh:path [ sh:inversePath airo:mitigatesRiskConcept ] ;
+        sh:minCount 1 ;
+        sh:class airo:RiskControl ;
+        sh:message "airo:Risk must be mitigated by at least one airo:RiskControl via airo:mitigatesRiskConcept."
+    ] ;
+    sh:property [
+        sh:path euai:inherentRiskScore ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0.0 ;
+        sh:maxInclusive 1.0 ;
+        sh:message "airo:Risk must have a single xsd:decimal euai:inherentRiskScore in (0, 1]."
+    ] ;
+    sh:property [
+        sh:path euai:residualRiskScore ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0.0 ;
+        sh:maxInclusive 1.0 ;
+        sh:message "airo:Risk must have a single xsd:decimal euai:residualRiskScore in (0, 1]."
+    ] ;
+    sh:property [
+        sh:path euai:residualRiskThreshold ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0.0 ;
+        sh:maxInclusive 1.0 ;
+        sh:message "airo:Risk must have a single xsd:decimal euai:residualRiskThreshold in (0, 1]."
+    ] ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "airo:Risk must satisfy 0 < residualRiskScore <= residualRiskThreshold < inherentRiskScore <= 1." ;
+        sh:prefixes euai:Prefixes ;
+        sh:select """
+            SELECT $this ?res ?thr ?inh
+            WHERE {
+                $this euai:residualRiskScore ?res ;
+                      euai:residualRiskThreshold ?thr ;
+                      euai:inherentRiskScore ?inh .
+                FILTER (!(?res > 0 && ?res <= ?thr && ?thr < ?inh && ?inh <= 1))
+            }
+        """
+    ] .
+
+# =====================================================================
+# 3. euai:EuAiActArticle Shape
+# =====================================================================
+
+euai:EuAiActArticleShape a sh:NodeShape ;
+    sh:targetClass euai:EuAiActArticle ;
+    sh:name "EU AI Act Article Requirement Shape" ;
+    sh:property [
+        sh:path euai:articleNumber ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:pattern "^[0-9]+$" ;
+        sh:message "euai:EuAiActArticle must have a single numeric euai:articleNumber string."
+    ] ;
+    sh:property [
+        sh:path euai:legalBasis ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "euai:EuAiActArticle must declare an euai:legalBasis IRI."
+    ] ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:message "euai:EuAiActArticle must have an rdfs:label."
+    ] ;
+    sh:property [
+        sh:path dcterms:description ;
+        sh:minCount 1 ;
+        sh:message "euai:EuAiActArticle must have a dcterms:description."
+    ] ;
+    sh:property [
+        sh:path rdfs:seeAlso ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "euai:EuAiActArticle must cite at least one verified rdfs:seeAlso file/resource URI."
+    ] .
+
+# =====================================================================
+# 4. euai:ComplianceO2ORelation Shape
+# =====================================================================
+
+euai:ComplianceO2ORelationShape a sh:NodeShape ;
+    sh:targetClass euai:ComplianceO2ORelation ;
+    sh:name "IEEE OCEL 2.0 Compliance O2O Relation Shape" ;
+    sh:property [
+        sh:path euai:o2oQualifier ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:message "euai:ComplianceO2ORelation must declare a non-empty euai:o2oQualifier."
+    ] ;
+    sh:property [
+        sh:path euai:sourceObjectType ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class euai:ComplianceObjectType ;
+        sh:message "euai:ComplianceO2ORelation must declare a typed euai:sourceObjectType."
+    ] ;
+    sh:property [
+        sh:path euai:targetObjectType ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class euai:ComplianceObjectType ;
+        sh:message "euai:ComplianceO2ORelation must declare a typed euai:targetObjectType."
+    ] .
+
+# =====================================================================
+# 5. euai:DeclareConstraint Shape
+# =====================================================================
+
+euai:DeclareConstraintShape a sh:NodeShape ;
+    sh:targetClass euai:DeclareConstraint ;
+    sh:name "Declare / LTLf Safety Constraint Shape" ;
+    sh:property [
+        sh:path euai:declareTemplate ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "Init" "Existence" "Absence" "Response" "Precedence" "ChainResponse" "NotCoExistence" ) ;
+        sh:message "euai:DeclareConstraint must use one of the 7 canonical Declare templates."
+    ] ;
+    sh:property [
+        sh:path euai:declareActivator ;
+        sh:minCount 1 ;
+        sh:class euai:ComplianceEventType ;
+        sh:message "euai:DeclareConstraint must bind euai:declareActivator to a typed euai:ComplianceEventType IRI."
+    ] ;
+    sh:property [
+        sh:path euai:declareTarget ;
+        sh:class euai:ComplianceEventType ;
+        sh:message "euai:declareTarget, when present, must reference a typed euai:ComplianceEventType IRI."
+    ] ;
+    sh:property [
+        sh:path euai:antiVacuityRequired ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:hasValue true ;
+        sh:message "euai:DeclareConstraint must set euai:antiVacuityRequired to true."
+    ] ;
+    sh:property [
+        sh:path euai:addressesArticle ;
+        sh:minCount 1 ;
+        sh:class euai:EuAiActArticle ;
+        sh:message "euai:DeclareConstraint must reference at least one euai:EuAiActArticle."
+    ] ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Binary Declare templates (Response, Precedence, ChainResponse, NotCoExistence) require at least one euai:declareTarget." ;
+        sh:prefixes euai:Prefixes ;
+        sh:select """
+            SELECT $this ?tpl
+            WHERE {
+                $this euai:declareTemplate ?tpl .
+                FILTER (?tpl IN ("Response", "Precedence", "ChainResponse", "NotCoExistence"))
+                FILTER NOT EXISTS { $this euai:declareTarget ?target . }
+            }
+        """
+    ] .

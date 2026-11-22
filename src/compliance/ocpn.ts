@@ -47,9 +47,14 @@ export interface OcpnSoundnessResult {
       sinkPlace: string;
       unreachableFromSource: string[];
       deadEndsToSink: string[];
+      deadTransitions?: string[];
+      optionToComplete?: boolean;
+      properCompletion?: boolean;
+      stateSpaceTruncated?: boolean;
       issues: string[];
     }
   >;
+  synchronizationDeadlocks?: string[];
   issues: string[];
 }
 
@@ -115,33 +120,320 @@ function escapeMermaidLabel(raw: string): string {
     .replace(/\r?\n/g, " ");
 }
 
-class UnionFind {
-  private parent = new Map<string, string>();
+type ProcessTree =
+  | { kind: "leaf"; activity: string }
+  | { kind: "tau" }
+  | { kind: "seq"; children: ProcessTree[] }
+  | { kind: "xor"; children: ProcessTree[] }
+  | { kind: "and"; children: ProcessTree[] }
+  | { kind: "loop"; body: ProcessTree; redo: ProcessTree };
 
-  makeSet(x: string): void {
-    if (!this.parent.has(x)) this.parent.set(x, x);
-  }
+interface SubDfg {
+  nodes: string[];
+  edges: Map<string, Set<string>>;
+  starts: Set<string>;
+  ends: Set<string>;
+}
 
-  find(x: string): string {
-    this.makeSet(x);
-    let root = x;
-    while (this.parent.get(root) !== root) {
-      root = this.parent.get(root)!;
+function buildSubDfg(
+  nodes: string[],
+  parentEdges: Map<string, Set<string>>,
+  starts: Set<string>,
+  ends: Set<string>
+): SubDfg {
+  const nodeSet = new Set(nodes);
+  const edges = new Map<string, Set<string>>();
+  for (const u of nodes) {
+    const out = new Set<string>();
+    for (const v of parentEdges.get(u) ?? []) {
+      if (nodeSet.has(v)) out.add(v);
     }
-    let cur = x;
-    while (cur !== root) {
-      const nxt = this.parent.get(cur)!;
-      this.parent.set(cur, root);
-      cur = nxt;
+    edges.set(u, out);
+  }
+  const effStarts = new Set<string>([...starts].filter((s) => nodeSet.has(s)));
+  const effEnds = new Set<string>([...ends].filter((e) => nodeSet.has(e)));
+  if (effStarts.size === 0) {
+    for (const n of nodes) effStarts.add(n);
+  }
+  if (effEnds.size === 0) {
+    for (const n of nodes) effEnds.add(n);
+  }
+  return { nodes, edges, starts: effStarts, ends: effEnds };
+}
+
+function undirectedComponents(nodes: string[], hasEdge: (u: string, v: string) => boolean): string[][] {
+  const visited = new Set<string>();
+  const comps: string[][] = [];
+  for (const start of nodes) {
+    if (visited.has(start)) continue;
+    const comp: string[] = [];
+    const stack = [start];
+    visited.add(start);
+    while (stack.length > 0) {
+      const u = stack.pop()!;
+      comp.push(u);
+      for (const v of nodes) {
+        if (!visited.has(v) && (hasEdge(u, v) || hasEdge(v, u))) {
+          visited.add(v);
+          stack.push(v);
+        }
+      }
     }
-    return root;
+    comps.push(comp);
+  }
+  return comps;
+}
+
+function computeSccs(nodes: string[], edges: Map<string, Set<string>>): string[][] {
+  let index = 0;
+  const indices = new Map<string, number>();
+  const lowlink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const sccs: string[][] = [];
+
+  const strongconnect = (v: string) => {
+    indices.set(v, index);
+    lowlink.set(v, index);
+    index += 1;
+    stack.push(v);
+    onStack.add(v);
+
+    for (const w of edges.get(v) ?? []) {
+      if (!indices.has(w)) {
+        strongconnect(w);
+        lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
+      } else if (onStack.has(w)) {
+        lowlink.set(v, Math.min(lowlink.get(v)!, indices.get(w)!));
+      }
+    }
+
+    if (lowlink.get(v) === indices.get(v)) {
+      const scc: string[] = [];
+      while (true) {
+        const w = stack.pop()!;
+        onStack.delete(w);
+        scc.push(w);
+        if (w === v) break;
+      }
+      sccs.push(scc);
+    }
+  };
+
+  for (const v of nodes) {
+    if (!indices.has(v)) strongconnect(v);
+  }
+  // Tarjan outputs SCCs in reverse topological order
+  return sccs.reverse();
+}
+
+function findSequenceCut(dfg: SubDfg): string[][] | null {
+  const sccs = computeSccs(dfg.nodes, dfg.edges);
+  if (sccs.length <= 1) return null;
+
+  const sccOf = new Map<string, number>();
+  sccs.forEach((comp, idx) => {
+    for (const n of comp) sccOf.set(n, idx);
+  });
+
+  // Reachability between SCCs
+  const k = sccs.length;
+  const reach: boolean[][] = Array.from({ length: k }, (_, i) =>
+    Array.from({ length: k }, (_, j) => i === j)
+  );
+  for (const [u, outs] of dfg.edges.entries()) {
+    const su = sccOf.get(u)!;
+    for (const v of outs) {
+      const sv = sccOf.get(v)!;
+      if (su !== sv) reach[su]![sv] = true;
+    }
+  }
+  for (let m = 0; m < k; m++) {
+    for (let i = 0; i < k; i++) {
+      if (!reach[i]![m]) continue;
+      for (let j = 0; j < k; j++) {
+        if (reach[m]![j]) reach[i]![j] = true;
+      }
+    }
   }
 
-  union(a: string, b: string): void {
-    const ra = this.find(a);
-    const rb = this.find(b);
-    if (ra !== rb) this.parent.set(rb, ra);
+  // Merge pairwise-unreachable SCCs into the same sequence block
+  const parent = Array.from({ length: k }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]!]!;
+      x = parent[x]!;
+    }
+    return x;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  for (let i = 0; i < k; i++) {
+    for (let j = i + 1; j < k; j++) {
+      if (!reach[i]![j] && !reach[j]![i]) {
+        union(i, j);
+      }
+    }
   }
+
+  const blockMap = new Map<number, number[]>();
+  for (let i = 0; i < k; i++) {
+    const r = find(i);
+    if (!blockMap.has(r)) blockMap.set(r, []);
+    blockMap.get(r)!.push(i);
+  }
+  if (blockMap.size <= 1) return null;
+
+  const blockIds = [...blockMap.keys()];
+  // Topological sort of merged blocks
+  const blockInDeg = new Map<number, number>(blockIds.map((b) => [b, 0]));
+  const blockAdj = new Map<number, Set<number>>(blockIds.map((b) => [b, new Set()]));
+  for (let i = 0; i < k; i++) {
+    const bi = find(i);
+    for (let j = 0; j < k; j++) {
+      const bj = find(j);
+      if (bi !== bj && reach[i]![j] && !blockAdj.get(bi)!.has(bj)) {
+        blockAdj.get(bi)!.add(bj);
+        blockInDeg.set(bj, blockInDeg.get(bj)! + 1);
+      }
+    }
+  }
+
+  const queue = blockIds.filter((b) => blockInDeg.get(b) === 0);
+  const orderedBlocks: number[] = [];
+  while (queue.length > 0) {
+    const b = queue.shift()!;
+    orderedBlocks.push(b);
+    for (const nxt of blockAdj.get(b)!) {
+      const deg = blockInDeg.get(nxt)! - 1;
+      blockInDeg.set(nxt, deg);
+      if (deg === 0) queue.push(nxt);
+    }
+  }
+
+  if (orderedBlocks.length !== blockIds.length) return null;
+
+  return orderedBlocks.map((b) => {
+    const nodes: string[] = [];
+    for (const sccIdx of blockMap.get(b)!) {
+      nodes.push(...sccs[sccIdx]!);
+    }
+    return nodes;
+  });
+}
+
+function discoverProcessTree(dfg: SubDfg, depth = 0): ProcessTree {
+  const { nodes, edges, starts, ends } = dfg;
+  if (nodes.length === 0) return { kind: "tau" };
+  if (nodes.length === 1) {
+    const act = nodes[0]!;
+    const leaf: ProcessTree = { kind: "leaf", activity: act };
+    if (edges.get(act)?.has(act)) {
+      return { kind: "loop", body: leaf, redo: { kind: "tau" } };
+    }
+    return leaf;
+  }
+  if (depth > 64) {
+    return {
+      kind: "loop",
+      body: { kind: "xor", children: nodes.map((activity) => ({ kind: "leaf", activity })) },
+      redo: { kind: "tau" }
+    };
+  }
+
+  // 1. Exclusive-choice (XOR) cut: disconnected components in undirected DFG
+  const xorComps = undirectedComponents(nodes, (u, v) => Boolean(edges.get(u)?.has(v)));
+  if (xorComps.length > 1) {
+    return {
+      kind: "xor",
+      children: xorComps.map((comp) =>
+        discoverProcessTree(buildSubDfg(comp, edges, starts, ends), depth + 1)
+      )
+    };
+  }
+
+  // 2. Sequence (SEQ) cut: condensation DAG of SCCs with mutually-unreachable SCCs merged
+  const seqBlocks = findSequenceCut(dfg);
+  if (seqBlocks && seqBlocks.length > 1) {
+    return {
+      kind: "seq",
+      children: seqBlocks.map((block) => {
+        const blockSet = new Set(block);
+        const subStarts = new Set<string>([...starts].filter((s) => blockSet.has(s)));
+        const subEnds = new Set<string>([...ends].filter((e) => blockSet.has(e)));
+        for (const [u, outs] of edges.entries()) {
+          if (!blockSet.has(u)) {
+            for (const v of outs) {
+              if (blockSet.has(v)) subStarts.add(v);
+            }
+          } else {
+            for (const v of outs) {
+              if (!blockSet.has(v)) subEnds.add(u);
+            }
+          }
+        }
+        return discoverProcessTree(buildSubDfg(block, edges, subStarts, subEnds), depth + 1);
+      })
+    };
+  }
+
+  // 3. Parallel (AND) cut: connected components of non-concurrent graph
+  const andComps = undirectedComponents(
+    nodes,
+    (u, v) => u !== v && !(edges.get(u)?.has(v) && edges.get(v)?.has(u))
+  );
+  if (andComps.length > 1) {
+    const allHaveStartAndEnd = andComps.every(
+      (comp) => comp.some((n) => starts.has(n)) && comp.some((n) => ends.has(n))
+    );
+    if (allHaveStartAndEnd) {
+      return {
+        kind: "and",
+        children: andComps.map((comp) =>
+          discoverProcessTree(buildSubDfg(comp, edges, starts, ends), depth + 1)
+        )
+      };
+    }
+  }
+
+  // 4. Redo-loop (LOOP) cut: body = starts ∪ ends, redo = remaining nodes
+  const bodySet = new Set<string>([...starts, ...ends]);
+  const redoNodes = nodes.filter((n) => !bodySet.has(n));
+  if (redoNodes.length > 0 && bodySet.size > 0) {
+    let validLoop = true;
+    const redoStarts = new Set<string>();
+    const redoEnds = new Set<string>();
+    for (const [u, outs] of edges.entries()) {
+      for (const v of outs) {
+        if (bodySet.has(u) && !bodySet.has(v)) {
+          if (!ends.has(u)) validLoop = false;
+          redoStarts.add(v);
+        } else if (!bodySet.has(u) && bodySet.has(v)) {
+          if (!starts.has(v)) validLoop = false;
+          redoEnds.add(u);
+        }
+      }
+    }
+    if (validLoop && redoStarts.size > 0 && redoEnds.size > 0) {
+      const bodyNodes = nodes.filter((n) => bodySet.has(n));
+      return {
+        kind: "loop",
+        body: discoverProcessTree(buildSubDfg(bodyNodes, edges, starts, ends), depth + 1),
+        redo: discoverProcessTree(buildSubDfg(redoNodes, edges, redoStarts, redoEnds), depth + 1)
+      };
+    }
+  }
+
+  // 5. Flower fall-through (guaranteed sound WF-net)
+  return {
+    kind: "loop",
+    body: { kind: "xor", children: nodes.map((activity) => ({ kind: "leaf", activity })) },
+    redo: { kind: "tau" }
+  };
 }
 
 export function discoverOcpn(
@@ -217,98 +509,131 @@ export function discoverOcpn(
     places.push({ id: srcId, objectType: ot, role: "source" });
     places.push({ id: snkId, objectType: ot, role: "sink" });
 
-    const uf = new UnionFind();
     const activities = graph.nodes.map((n) => n.activity);
-    for (const act of activities) {
-      uf.makeSet(`pre:${act}`);
-      uf.makeSet(`post:${act}`);
-    }
+    const edgeMap = new Map<string, Set<string>>();
+    for (const act of activities) edgeMap.set(act, new Set());
     for (const edge of graph.edges) {
-      uf.union(`post:${edge.source}`, `pre:${edge.target}`);
+      if (!edgeMap.has(edge.source)) edgeMap.set(edge.source, new Set());
+      edgeMap.get(edge.source)!.add(edge.target);
     }
 
     const startActs = Object.keys(graph.startActivities);
     const endActs = Object.keys(graph.endActivities);
-    const effectiveStarts = startActs.length > 0 ? startActs : activities.slice(0, 1);
-    const effectiveEnds = endActs.length > 0 ? endActs : activities.slice(-1);
+    const effectiveStarts = new Set<string>(startActs.length > 0 ? startActs : activities.slice(0, 1));
+    const effectiveEnds = new Set<string>(endActs.length > 0 ? endActs : activities.slice(-1));
 
-    // Check which union-find classes serve as pre of starts or post of ends
-    const classesWithIncomingVisible = new Set<string>();
-    const classesWithOutgoingVisible = new Set<string>();
-    for (const act of activities) {
-      classesWithIncomingVisible.add(uf.find(`post:${act}`));
-      classesWithOutgoingVisible.add(uf.find(`pre:${act}`));
-    }
+    const tree = discoverProcessTree(buildSubDfg(activities, edgeMap, effectiveStarts, effectiveEnds));
 
-    // Group start classes & end classes
-    const startClasses = new Set(effectiveStarts.map((a) => uf.find(`pre:${a}`)));
-    const endClasses = new Set(effectiveEnds.map((a) => uf.find(`post:${a}`)));
-
-    // Map union-find root -> concrete place id
-    const classToPlaceId = new Map<string, string>();
     let internalSeq = 0;
+    let tauSeq = 0;
+    const otSafe = sanitizeId(ot);
 
-    // If exactly 1 start class and it has no incoming visible edges, map it directly to srcId
-    if (startClasses.size === 1) {
-      const onlyStart = [...startClasses][0]!;
-      if (!classesWithIncomingVisible.has(onlyStart)) {
-        classToPlaceId.set(onlyStart, srcId);
-      }
-    }
-    // If exactly 1 end class and it has no outgoing visible edges and wasn't mapped to srcId, map to snkId
-    if (endClasses.size === 1) {
-      const onlyEnd = [...endClasses][0]!;
-      if (!classesWithOutgoingVisible.has(onlyEnd) && !classToPlaceId.has(onlyEnd)) {
-        classToPlaceId.set(onlyEnd, snkId);
-      }
-    }
-
-    const getPlaceForClass = (cls: string): string => {
-      const existing = classToPlaceId.get(cls);
-      if (existing) return existing;
+    const newInternalPlace = (): string => {
       internalSeq += 1;
-      const pid = `p_${sanitizeId(ot)}_${internalSeq}`;
-      classToPlaceId.set(cls, pid);
+      const pid = `p_${otSafe}_${internalSeq}`;
       places.push({ id: pid, objectType: ot, role: "internal" });
       return pid;
     };
 
-    // Connect visible transitions
-    for (const act of activities) {
-      const tid = `t_${sanitizeId(act)}`;
-      ensureTransition(tid, act, false, ot);
-      const isVar = variableKeySet.has(`${act}::${ot}`);
-      const preP = getPlaceForClass(uf.find(`pre:${act}`));
-      const postP = getPlaceForClass(uf.find(`post:${act}`));
-      addArc(preP, tid, ot, "place_to_transition", isVar);
-      addArc(tid, postP, ot, "transition_to_place", isVar);
-    }
+    const newSilent = (kind: string): string => {
+      tauSeq += 1;
+      const tid = `tau_${kind}_${otSafe}_${tauSeq}`;
+      ensureTransition(tid, `tau_${kind}_${ot}`, true, ot);
+      return tid;
+    };
 
-    // Add silent tau_enter transitions from srcId to any start class not mapped directly to srcId
-    let enterIdx = 0;
-    for (const sc of startClasses) {
-      const pId = getPlaceForClass(sc);
-      if (pId !== srcId) {
-        enterIdx += 1;
-        const tid = `tau_enter_${sanitizeId(ot)}_${enterIdx}`;
-        ensureTransition(tid, `tau_enter_${ot}`, true, ot);
-        addArc(srcId, tid, ot, "place_to_transition", false);
-        addArc(tid, pId, ot, "transition_to_place", false);
+    const wireTree = (node: ProcessTree, inPlace: string, outPlace: string): void => {
+      switch (node.kind) {
+        case "leaf": {
+          const tid = `t_${sanitizeId(node.activity)}`;
+          ensureTransition(tid, node.activity, false, ot);
+          const isVar = variableKeySet.has(`${node.activity}::${ot}`);
+          addArc(inPlace, tid, ot, "place_to_transition", isVar);
+          addArc(tid, outPlace, ot, "transition_to_place", isVar);
+          return;
+        }
+        case "tau": {
+          const tid = newSilent("skip");
+          addArc(inPlace, tid, ot, "place_to_transition", false);
+          addArc(tid, outPlace, ot, "transition_to_place", false);
+          return;
+        }
+        case "seq": {
+          const children = node.children;
+          if (children.length === 0) {
+            wireTree({ kind: "tau" }, inPlace, outPlace);
+            return;
+          }
+          if (children.length === 1) {
+            wireTree(children[0]!, inPlace, outPlace);
+            return;
+          }
+          let curIn = inPlace;
+          for (let i = 0; i < children.length; i++) {
+            const curOut = i === children.length - 1 ? outPlace : newInternalPlace();
+            wireTree(children[i]!, curIn, curOut);
+            curIn = curOut;
+          }
+          return;
+        }
+        case "xor": {
+          const children = node.children;
+          if (children.length === 0) {
+            wireTree({ kind: "tau" }, inPlace, outPlace);
+            return;
+          }
+          for (const child of children) {
+            wireTree(child, inPlace, outPlace);
+          }
+          return;
+        }
+        case "and": {
+          const children = node.children;
+          if (children.length === 0) {
+            wireTree({ kind: "tau" }, inPlace, outPlace);
+            return;
+          }
+          if (children.length === 1) {
+            wireTree(children[0]!, inPlace, outPlace);
+            return;
+          }
+          const splitTid = newSilent("and_split");
+          const joinTid = newSilent("and_join");
+          addArc(inPlace, splitTid, ot, "place_to_transition", false);
+          addArc(joinTid, outPlace, ot, "transition_to_place", false);
+          for (const child of children) {
+            const branchIn = newInternalPlace();
+            const branchOut = newInternalPlace();
+            addArc(splitTid, branchIn, ot, "transition_to_place", false);
+            addArc(branchOut, joinTid, ot, "place_to_transition", false);
+            wireTree(child, branchIn, branchOut);
+          }
+          return;
+        }
+        case "loop": {
+          // Ensure source place never receives incoming arcs and sink place never has outgoing arcs
+          let loopIn = inPlace;
+          let loopOut = outPlace;
+          if (loopIn === srcId) {
+            loopIn = newInternalPlace();
+            const enterTid = newSilent("enter");
+            addArc(srcId, enterTid, ot, "place_to_transition", false);
+            addArc(enterTid, loopIn, ot, "transition_to_place", false);
+          }
+          if (loopOut === snkId) {
+            loopOut = newInternalPlace();
+            const exitTid = newSilent("exit");
+            addArc(loopOut, exitTid, ot, "place_to_transition", false);
+            addArc(exitTid, snkId, ot, "transition_to_place", false);
+          }
+          wireTree(node.body, loopIn, loopOut);
+          wireTree(node.redo, loopOut, loopIn);
+          return;
+        }
       }
-    }
+    };
 
-    // Add silent tau_exit transitions from any end class not mapped directly to snkId
-    let exitIdx = 0;
-    for (const ec of endClasses) {
-      const pId = getPlaceForClass(ec);
-      if (pId !== snkId) {
-        exitIdx += 1;
-        const tid = `tau_exit_${sanitizeId(ot)}_${exitIdx}`;
-        ensureTransition(tid, `tau_exit_${ot}`, true, ot);
-        addArc(pId, tid, ot, "place_to_transition", false);
-        addArc(tid, snkId, ot, "transition_to_place", false);
-      }
-    }
+    wireTree(tree, srcId, snkId);
   }
 
   const transitions = [...transitionsById.values()];
@@ -428,6 +753,163 @@ export function validateOcpnSoundness(ocpn: OcpnModel): OcpnSoundnessResult {
       otIssues.push(`Nodes unable to reach "${snk}": ${deadEndsToSink.join(", ")}`);
     }
 
+    // Bounded per-type marking-graph behavioral soundness verification:
+    // (1) option-to-complete, (2) proper completion, (3) no dead transitions
+    const deadTransitions: string[] = [];
+    let optionToComplete = true;
+    let properCompletion = true;
+    let stateSpaceTruncated = false;
+
+    const hasValidEndpoints =
+      Boolean(src) &&
+      Boolean(snk) &&
+      otPlaces.some((p) => p.id === src) &&
+      otPlaces.some((p) => p.id === snk);
+
+    if (hasValidEndpoints) {
+      const MAX_STATES = 512;
+      const MAX_TOKENS_PER_PLACE = 4;
+      const placeIds = otPlaces.map((p) => p.id);
+      const placeIdx = new Map<string, number>(placeIds.map((id, idx) => [id, idx]));
+      const srcIdx = placeIdx.get(src)!;
+      const snkIdx = placeIdx.get(snk)!;
+
+      const otTransitions = ocpn.transitions.filter((t) => t.objectTypes.includes(ot));
+      const transEffects = otTransitions.map((t) => {
+        const pre = new Map<number, number>();
+        const post = new Map<number, number>();
+        for (const a of otArcs) {
+          if (a.direction === "place_to_transition" && a.target === t.id) {
+            const idx = placeIdx.get(a.source);
+            if (idx !== undefined) pre.set(idx, (pre.get(idx) ?? 0) + 1);
+          } else if (a.direction === "transition_to_place" && a.source === t.id) {
+            const idx = placeIdx.get(a.target);
+            if (idx !== undefined) post.set(idx, (post.get(idx) ?? 0) + 1);
+          }
+        }
+        return { id: t.id, pre, post };
+      });
+
+      const encode = (m: number[]) => m.join(",");
+      const initMarking = new Array<number>(placeIds.length).fill(0);
+      initMarking[srcIdx] = 1;
+      const finalMarking = new Array<number>(placeIds.length).fill(0);
+      finalMarking[snkIdx] = 1;
+
+      const initKey = encode(initMarking);
+      const finalKey = encode(finalMarking);
+
+      const visited = new Map<string, number[]>([[initKey, initMarking]]);
+      const revEdges = new Map<string, string[]>();
+      const outDegree = new Map<string, number>();
+      const fired = new Set<string>();
+      const bfsQueue: string[] = [initKey];
+      let head = 0;
+
+      while (head < bfsQueue.length) {
+        const curKey = bfsQueue[head++]!;
+        const curM = visited.get(curKey)!;
+
+        // Proper completion: if sink is marked, no other tokens may remain and sink count must be 1
+        if (curM[snkIdx]! >= 1 && curKey !== finalKey) {
+          properCompletion = false;
+        }
+
+        let enabledCount = 0;
+        for (const tr of transEffects) {
+          if (tr.pre.size === 0 && tr.post.size === 0) continue;
+          let enabled = true;
+          for (const [pIdx, need] of tr.pre.entries()) {
+            if (curM[pIdx]! < need) {
+              enabled = false;
+              break;
+            }
+          }
+          if (!enabled) continue;
+          enabledCount += 1;
+          fired.add(tr.id);
+
+          const nextM = curM.slice();
+          for (const [pIdx, need] of tr.pre.entries()) nextM[pIdx]! -= need;
+          for (const [pIdx, add] of tr.post.entries()) nextM[pIdx]! += add;
+
+          if (nextM.some((v) => v > MAX_TOKENS_PER_PLACE)) {
+            properCompletion = false;
+            stateSpaceTruncated = true;
+            continue;
+          }
+
+          const nextKey = encode(nextM);
+          let revList = revEdges.get(nextKey);
+          if (!revList) {
+            revList = [];
+            revEdges.set(nextKey, revList);
+          }
+          revList.push(curKey);
+
+          if (!visited.has(nextKey)) {
+            if (visited.size >= MAX_STATES) {
+              stateSpaceTruncated = true;
+            } else {
+              visited.set(nextKey, nextM);
+              bfsQueue.push(nextKey);
+            }
+          }
+        }
+        outDegree.set(curKey, enabledCount);
+      }
+
+      if (!properCompletion) {
+        otIssues.push(
+          `Proper completion violated for "${ot}": reachable marking has extra tokens alongside "${snk}" or exceeds token bound`
+        );
+      }
+
+      // Option-to-complete: every reachable marking can reach finalKey
+      if (!visited.has(finalKey)) {
+        optionToComplete = false;
+        otIssues.push(`Option-to-complete violated for "${ot}": final marking [${snk}=1] is unreachable`);
+      } else {
+        const canComplete = new Set<string>([finalKey]);
+        const revQ: string[] = [finalKey];
+        let rHead = 0;
+        while (rHead < revQ.length) {
+          const cur = revQ[rHead++]!;
+          for (const prv of revEdges.get(cur) ?? []) {
+            if (!canComplete.has(prv)) {
+              canComplete.add(prv);
+              revQ.push(prv);
+            }
+          }
+        }
+        for (const k of visited.keys()) {
+          if (!canComplete.has(k)) {
+            if (!stateSpaceTruncated || (outDegree.get(k) ?? 0) === 0) {
+              optionToComplete = false;
+              break;
+            }
+          }
+        }
+        if (!optionToComplete) {
+          otIssues.push(
+            `Option-to-complete violated for "${ot}": deadlock or livelock marking cannot reach [${snk}=1]`
+          );
+        }
+      }
+
+      // No dead transitions
+      if (!stateSpaceTruncated) {
+        for (const tr of otTransitions) {
+          if (!fired.has(tr.id)) {
+            deadTransitions.push(tr.id);
+          }
+        }
+        if (deadTransitions.length > 0) {
+          otIssues.push(`Dead transitions for "${ot}": ${deadTransitions.join(", ")}`);
+        }
+      }
+    }
+
     const otSound = otIssues.length === 0;
     perObjectType[ot] = {
       sound: otSound,
@@ -435,14 +917,124 @@ export function validateOcpnSoundness(ocpn: OcpnModel): OcpnSoundnessResult {
       sinkPlace: snk,
       unreachableFromSource,
       deadEndsToSink,
+      deadTransitions,
+      optionToComplete,
+      properCompletion,
+      stateSpaceTruncated,
       issues: otIssues
     };
     globalIssues.push(...otIssues);
   }
 
+  // Cross-object-type synchronization deadlock check over shared transitions
+  const synchronizationDeadlocks: string[] = [];
+  const sharedTransitions = ocpn.transitions.filter((t) => t.objectTypes.length > 1);
+  if (sharedTransitions.length > 0) {
+    const syncOts = [...new Set(sharedTransitions.flatMap((t) => t.objectTypes))].filter(
+      (ot) => Boolean(perObjectType[ot]?.sourcePlace) && Boolean(perObjectType[ot]?.sinkPlace)
+    );
+    if (syncOts.length >= 2) {
+      const syncOtSet = new Set(syncOts);
+      const jointPlaces = ocpn.places.filter((p) => syncOtSet.has(p.objectType));
+      const jointPlaceIdx = new Map<string, number>(jointPlaces.map((p, i) => [p.id, i]));
+      const jointTransitions = ocpn.transitions.filter((t) =>
+        t.objectTypes.some((ot) => syncOtSet.has(ot))
+      );
+
+      const jointEffects = jointTransitions.map((t) => {
+        const pre = new Map<number, number>();
+        const post = new Map<number, number>();
+        for (const a of ocpn.arcs) {
+          if (!syncOtSet.has(a.objectType)) continue;
+          if (a.direction === "place_to_transition" && a.target === t.id) {
+            const idx = jointPlaceIdx.get(a.source);
+            if (idx !== undefined) pre.set(idx, (pre.get(idx) ?? 0) + 1);
+          } else if (a.direction === "transition_to_place" && a.source === t.id) {
+            const idx = jointPlaceIdx.get(a.target);
+            if (idx !== undefined) post.set(idx, (post.get(idx) ?? 0) + 1);
+          }
+        }
+        return { id: t.id, shared: t.objectTypes.length > 1, pre, post };
+      });
+
+      const initJoint = new Array<number>(jointPlaces.length).fill(0);
+      const finalJoint = new Array<number>(jointPlaces.length).fill(0);
+      for (const ot of syncOts) {
+        const sIdx = jointPlaceIdx.get(perObjectType[ot]!.sourcePlace);
+        const kIdx = jointPlaceIdx.get(perObjectType[ot]!.sinkPlace);
+        if (sIdx !== undefined) initJoint[sIdx] = 1;
+        if (kIdx !== undefined) finalJoint[kIdx] = 1;
+      }
+
+      const encode = (m: number[]) => m.join(",");
+      const initKey = encode(initJoint);
+      const finalKey = encode(finalJoint);
+      const visited = new Map<string, number[]>([[initKey, initJoint]]);
+      const firedJoint = new Set<string>();
+      const queue: string[] = [initKey];
+      let head = 0;
+      let jointTruncated = false;
+      const MAX_JOINT_STATES = 512;
+      const MAX_JOINT_TOKENS = 3;
+
+      while (head < queue.length) {
+        const curKey = queue[head++]!;
+        const curM = visited.get(curKey)!;
+
+        for (const tr of jointEffects) {
+          if (tr.pre.size === 0 && tr.post.size === 0) continue;
+          let enabled = true;
+          for (const [pIdx, need] of tr.pre.entries()) {
+            if (curM[pIdx]! < need) {
+              enabled = false;
+              break;
+            }
+          }
+          if (!enabled) continue;
+          firedJoint.add(tr.id);
+
+          const nextM = curM.slice();
+          for (const [pIdx, need] of tr.pre.entries()) nextM[pIdx]! -= need;
+          for (const [pIdx, add] of tr.post.entries()) nextM[pIdx]! += add;
+          if (nextM.some((v) => v > MAX_JOINT_TOKENS)) {
+            jointTruncated = true;
+            continue;
+          }
+          const nextKey = encode(nextM);
+          if (!visited.has(nextKey)) {
+            if (visited.size >= MAX_JOINT_STATES) {
+              jointTruncated = true;
+            } else {
+              visited.set(nextKey, nextM);
+              queue.push(nextKey);
+            }
+          }
+        }
+      }
+
+      if (!jointTruncated && !visited.has(finalKey)) {
+        const msg = `Cross-object-type synchronization deadlock across [${syncOts.join(", ")}]`;
+        synchronizationDeadlocks.push(msg);
+        globalIssues.push(msg);
+      }
+
+      if (!jointTruncated) {
+        const deadShared = jointEffects
+          .filter((tr) => tr.shared && !firedJoint.has(tr.id))
+          .map((tr) => tr.id);
+        if (deadShared.length > 0) {
+          const msg = `Shared transitions dead under cross-object-type synchronization: ${deadShared.join(", ")}`;
+          synchronizationDeadlocks.push(msg);
+          globalIssues.push(msg);
+        }
+      }
+    }
+  }
+
   return {
     sound: globalIssues.length === 0,
     perObjectType,
+    synchronizationDeadlocks,
     issues: globalIssues
   };
 }
@@ -546,28 +1138,54 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
     }
   }
 
+  // Precompute per-objectType place-to-place reachability sets (standard & sink-blocked)
+  // so canReachPlace is an O(1) lookup inside drainSilentForObject.
+  const reachAllByOt = new Map<string, Map<string, Set<string>>>();
+  const reachNoSinkByOt = new Map<string, Map<string, Set<string>>>();
+
+  const computeReachSets = (
+    adj: Map<string, string[]>,
+    placesForOt: string[],
+    blockedPlace?: string
+  ): Map<string, Set<string>> => {
+    const out = new Map<string, Set<string>>();
+    for (const start of placesForOt) {
+      const visited = new Set<string>([start]);
+      const queue: string[] = [start];
+      let head = 0;
+      while (head < queue.length) {
+        const cur = queue[head++]!;
+        if (blockedPlace && cur === blockedPlace) continue;
+        for (const nxt of adj.get(cur) ?? []) {
+          if (blockedPlace && nxt === blockedPlace) continue;
+          if (!visited.has(nxt)) {
+            visited.add(nxt);
+            queue.push(nxt);
+          }
+        }
+      }
+      out.set(start, visited);
+    }
+    return out;
+  };
+
+  for (const ot of Object.keys(ocpn.sourcePlaces)) {
+    const adj = placeNextByOt.get(ot) ?? new Map<string, string[]>();
+    const otPlaceIds = ocpn.places.filter((p) => p.objectType === ot).map((p) => p.id);
+    const snk = ocpn.sinkPlaces[ot];
+    reachAllByOt.set(ot, computeReachSets(adj, otPlaceIds));
+    reachNoSinkByOt.set(ot, computeReachSets(adj, otPlaceIds, snk));
+  }
+
   const canReachPlace = (
     ot: string,
     startPlaces: readonly string[],
     targetPlace: string,
-    blockPlace?: string
+    blockSink = false
   ): boolean => {
-    if (startPlaces.includes(targetPlace)) return true;
-    const adj = placeNextByOt.get(ot);
-    if (!adj) return false;
-    const visited = new Set<string>(startPlaces);
-    const queue = [...startPlaces];
-    while (queue.length > 0) {
-      const cur = queue.shift()!;
-      if (blockPlace && cur === blockPlace && cur !== targetPlace) continue;
-      for (const nxt of adj.get(cur) ?? []) {
-        if (nxt === targetPlace) return true;
-        if (blockPlace && nxt === blockPlace) continue;
-        if (!visited.has(nxt)) {
-          visited.add(nxt);
-          queue.push(nxt);
-        }
-      }
+    const reachMap = blockSink ? reachNoSinkByOt.get(ot) : reachAllByOt.get(ot);
+    for (const sp of startPlaces) {
+      if (sp === targetPlace || reachMap?.get(sp)?.has(targetPlace)) return true;
     }
     return false;
   };
@@ -602,7 +1220,7 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
             directCandidate = { st, pres, posts };
             break;
           }
-          if (!reachableCandidate && canReachPlace(ot, posts, neededPlaceId, snk)) {
+          if (!reachableCandidate && canReachPlace(ot, posts, neededPlaceId, true)) {
             reachableCandidate = { st, pres, posts };
           }
         } else if (neededPlaceId === snk) {
@@ -725,10 +1343,10 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
       const cur = snkMap.get(oid) ?? 0;
       if (cur >= 1) {
         snkMap.set(oid, cur - 1);
-        ctr.consumed += 1;
       } else {
         ctr.missing += 1;
       }
+      ctr.consumed += 1;
     }
 
     let rem = 0;
@@ -740,9 +1358,10 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
     }
     ctr.remaining = rem;
 
-    const fitness =
+    const rawFitness =
       0.5 * (1 - (ctr.consumed > 0 ? ctr.missing / ctr.consumed : 0)) +
       0.5 * (1 - (ctr.produced > 0 ? ctr.remaining / ctr.produced : 0));
+    const fitness = Math.max(0, Math.min(1, rawFitness));
 
     perObjectType[ot] = {
       objectType: ot,
@@ -761,8 +1380,10 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
     totalRemaining += ctr.remaining;
   }
 
+  const effectiveMissing = totalMissing + unobservedEvents.length;
+  const effectiveConsumed = totalConsumed + unobservedEvents.length;
   const overallFitness =
-    0.5 * (1 - (totalConsumed > 0 ? totalMissing / totalConsumed : 0)) +
+    0.5 * (1 - (effectiveConsumed > 0 ? effectiveMissing / effectiveConsumed : 0)) +
     0.5 * (1 - (totalProduced > 0 ? totalRemaining / totalProduced : 0));
 
   return {

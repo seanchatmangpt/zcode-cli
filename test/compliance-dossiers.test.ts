@@ -51,9 +51,11 @@ function buildHighRiskSessionDoc(
   const turnId = `${sessionId}_t1`;
   const reqId = `${sessionId}_r1`;
   const permId = `${sessionId}_p1`;
+  const workOrderId = `${sessionId}_wo1`;
 
   builder.upsertObject(sessionId, "session", { compliance_profile: "high-risk-annex-iii" }, iso(0));
   builder.upsertObject(turnId, "turn", { standing: "ALIVE" }, iso(100));
+  builder.upsertObject(workOrderId, "work_order", { status: "claimed" }, iso(150));
   builder.upsertObject(
     reqId,
     "model_request",
@@ -170,6 +172,26 @@ function buildHighRiskSessionDoc(
     relationships: [
       { objectId: sessionId, qualifier: "in_session" },
       { objectId: turnId, qualifier: "in_turn" }
+    ]
+  });
+  builder.recordEvent({
+    id: `${sessionId}_e9`,
+    type: "worker_claim",
+    time: iso(200 + (opts.latencyMs ?? 1300) + 500),
+    attributes: { worker_id: "worker-eu-1" },
+    relationships: [
+      { objectId: sessionId, qualifier: "in_session" },
+      { objectId: workOrderId, qualifier: "in_work_order" }
+    ]
+  });
+  builder.recordEvent({
+    id: `${sessionId}_e10`,
+    type: "receipt_persist",
+    time: iso(200 + (opts.latencyMs ?? 1300) + 600),
+    attributes: { receipt_status: "persisted" },
+    relationships: [
+      { objectId: sessionId, qualifier: "in_session" },
+      { objectId: workOrderId, qualifier: "in_work_order" }
     ]
   });
   return builder.build();
@@ -835,6 +857,199 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
         function: "Head of AI Compliance",
         signature: "sig:ed25519:verified"
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ERRC-17: FRIA zero-log UNVERIFIED standing, Annex V identity binding & no zero-SHA fallback, deduplicated Art. 73 slice SHA-256, SLA deadlines, and root-cause POWL", () => {
+    const dir = makeTempDir("zcode-errc17-");
+    try {
+      const cfgPath = join(dir, "zcode-cli.toml");
+      writeFileSync(
+        cfgPath,
+        '[compliance]\nprofile = "high-risk-annex-iii"\nallow_yolo = false\n[deployer]\noverseer_id = "ov-eu"\nlog_retention_days = 180\nmonitoring_enabled = true\n[pmm]\nmin_window = 20\n',
+        "utf8"
+      );
+
+      // 1. ELIMINATE: Zero-log FRIA must not assert confidentiality_passed=true or fairness_passed=true
+      const friaZeroPath = join(dir, "fria-zero.json");
+      const zeroFria = exportFriaReport({
+        outPath: friaZeroPath,
+        format: "json",
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath,
+        env: {}
+      });
+      expect(zeroFria.report.standing).toBe("UNVERIFIED");
+      expect(zeroFria.report.rpm_metrics.logs_evaluated).toBe(0);
+      expect(zeroFria.report.rpm_metrics.confidentiality_passed).toBeNull();
+      expect(zeroFria.report.rpm_metrics.fairness_passed).toBeNull();
+
+      // With real OCEL logs, FRIA transitions to ALIVE with boolean metrics
+      const goodLogs = join(dir, "good-logs");
+      mkdirSync(goodLogs, { recursive: true });
+      writeFileSync(join(goodLogs, "s1.ocel.json"), JSON.stringify(buildHighRiskSessionDoc("s_fria")), "utf8");
+      const friaLivePath = join(dir, "fria-live.json");
+      const liveFria = exportFriaReport({
+        outPath: friaLivePath,
+        format: "json",
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath,
+        env: { ZCODE_OCEL_DIR: goodLogs }
+      });
+      expect(liveFria.report.standing).toBe("ALIVE");
+      expect(liveFria.report.rpm_metrics.logs_evaluated).toBe(1);
+      expect(typeof liveFria.report.rpm_metrics.confidentiality_passed).toBe("boolean");
+      expect(typeof liveFria.report.rpm_metrics.fairness_passed).toBe("boolean");
+
+      // 2. RAISE: ConformityAssessmentResult binds gitHeadSha & qmsManifestSha256; Annex V verifies parity and refuses outside git
+      const assess = runConformityAssessment({
+        logsDir: goodLogs,
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath
+      });
+      expect(assess.verdict).toBe("CONFORMITY_ADMITTED");
+      expect(assess.gitHeadSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(assess.qmsManifestSha256).toMatch(/^[0-9a-f]{64}$/);
+
+      const mismatchedShaOut = join(dir, "doc-bad-sha.json");
+      expect(() =>
+        generateEuDeclarationOfConformity({
+          outPath: mismatchedShaOut,
+          packageRoot: REPO_ROOT,
+          cwd: dir,
+          configPath: cfgPath,
+          conformityAssessment: { ...assess, gitHeadSha: "a".repeat(40) }
+        })
+      ).toThrow(/ANNEX_V_IDENTITY_REFUSED/);
+      expect(existsSync(mismatchedShaOut)).toBe(false);
+
+      const mismatchedQmsOut = join(dir, "doc-bad-qms.json");
+      expect(() =>
+        generateEuDeclarationOfConformity({
+          outPath: mismatchedQmsOut,
+          packageRoot: REPO_ROOT,
+          cwd: dir,
+          configPath: cfgPath,
+          conformityAssessment: { ...assess, qmsManifestSha256: "b".repeat(64) }
+        })
+      ).toThrow(/ANNEX_V_IDENTITY_REFUSED/);
+      expect(existsSync(mismatchedQmsOut)).toBe(false);
+
+      // Matching handoff succeeds
+      const matchingOut = join(dir, "doc-match.json");
+      const matchedDoc = generateEuDeclarationOfConformity({
+        outPath: matchingOut,
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath,
+        conformityAssessment: assess
+      });
+      expect(matchedDoc.git_head_sha).toBe(assess.gitHeadSha!);
+      expect(matchedDoc.qms_manifest_sha256).toBe(assess.qmsManifestSha256);
+
+      // Non-git packageRoot refuses with R_missing_identity (no 40-zero fallback)
+      const nonGitPkg = join(dir, "non-git-pkg");
+      mkdirSync(join(nonGitPkg, "compliance"), { recursive: true });
+      writeFileSync(
+        join(nonGitPkg, "package.json"),
+        JSON.stringify({ name: "zcode-app-cli", version: "3.14.4-1", author: "Test", license: "MIT" }),
+        "utf8"
+      );
+      writeFileSync(
+        join(nonGitPkg, "zcode-runtime.lock.json"),
+        readFileSync(join(REPO_ROOT, "zcode-runtime.lock.json"), "utf8"),
+        "utf8"
+      );
+      writeFileSync(join(nonGitPkg, "README.md"), "ok\n", "utf8");
+      const minimalClauses = Array.from({ length: 13 }, (_, idx) => ({
+        id: `c${idx + 1}`,
+        files: ["README.md"]
+      }));
+      writeFileSync(
+        join(nonGitPkg, "compliance", "qms-manifest.json"),
+        JSON.stringify({ clauses: minimalClauses }),
+        "utf8"
+      );
+      const nonGitOut = join(dir, "doc-non-git.json");
+      expect(() =>
+        generateEuDeclarationOfConformity({
+          outPath: nonGitOut,
+          packageRoot: nonGitPkg,
+          cwd: dir,
+          configPath: cfgPath,
+          logsDir: goodLogs
+        })
+      ).toThrow(/ANNEX_V_IDENTITY_REFUSED/);
+      expect(existsSync(nonGitOut)).toBe(false);
+
+      // 3 & 4. REDUCE & CREATE: Art. 73 packet omits duplicate ocel_slice, emits ocel_slice_sha256,
+      // computes first_failing_event_at + reporting_deadline_at, and synthesizes incident-class POWL.
+      // Case A: 2d secret breach
+      const b2d = new Ocel2ComplianceBuilder({ allowCustomTypes: true });
+      b2d.upsertObject("sess_2d", "session", { compliance_profile: "high-risk-annex-iii" }, "2026-08-10T12:00:00.000Z");
+      b2d.recordEvent({
+        id: "e2d_1",
+        type: "session_created",
+        time: "2026-08-10T12:00:00.000Z",
+        attributes: {},
+        relationships: [{ objectId: "sess_2d", qualifier: "in_session" }]
+      });
+      b2d.recordEvent({
+        id: "e2d_2",
+        type: "unredacted_secret_detected",
+        time: "2026-08-10T12:05:00.000Z",
+        attributes: { reason: "API_KEY_LEAK" },
+        relationships: [{ objectId: "sess_2d", qualifier: "in_session" }]
+      });
+      const in2d = join(dir, "inc-2d.ocel.json");
+      writeFileSync(in2d, JSON.stringify(b2d.build()), "utf8");
+      const pkt2d = generateIncidentReportPacket({
+        inPath: in2d,
+        outPath: join(dir, "pkt-2d.json"),
+        sessionId: "sess_2d",
+        cwd: dir
+      });
+      expect(pkt2d.deadline_class).toBe("2d");
+      expect(pkt2d.first_failing_event_at).toBe("2026-08-10T12:05:00.000Z");
+      expect(pkt2d.reporting_deadline_at).toBe("2026-08-12T12:05:00.000Z");
+      expect(pkt2d.ocel_slice_sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect("ocel_slice" in pkt2d).toBe(false);
+      expect(pkt2d.remediation_powl.id).toBe("powl_incident_2d_secret_remediation");
+
+      // Case B: 10d drift incident
+      const b10d = new Ocel2ComplianceBuilder({ allowCustomTypes: true });
+      b10d.upsertObject("sess_10d", "session", { compliance_profile: "high-risk-annex-iii" }, "2026-08-10T08:00:00.000Z");
+      b10d.recordEvent({
+        id: "e10d_1",
+        type: "session_created",
+        time: "2026-08-10T08:00:00.000Z",
+        attributes: {},
+        relationships: [{ objectId: "sess_10d", qualifier: "in_session" }]
+      });
+      b10d.recordEvent({
+        id: "e10d_2",
+        type: "drift_detected",
+        time: "2026-08-10T08:30:00.000Z",
+        attributes: { reason: "ADWIN_DRIFT" },
+        relationships: [{ objectId: "sess_10d", qualifier: "in_session" }]
+      });
+      const in10d = join(dir, "inc-10d.ocel.json");
+      writeFileSync(in10d, JSON.stringify(b10d.build()), "utf8");
+      const pkt10d = generateIncidentReportPacket({
+        inPath: in10d,
+        outPath: join(dir, "pkt-10d.json"),
+        sessionId: "sess_10d",
+        cwd: dir
+      });
+      expect(pkt10d.deadline_class).toBe("10d");
+      expect(pkt10d.first_failing_event_at).toBe("2026-08-10T08:30:00.000Z");
+      expect(pkt10d.reporting_deadline_at).toBe("2026-08-20T08:30:00.000Z");
+      expect(pkt10d.remediation_powl.id).toBe("powl_incident_10d_drift_declare_remediation");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

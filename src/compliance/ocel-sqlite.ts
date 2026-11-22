@@ -2,12 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   accessSync,
   appendFileSync,
+  closeSync,
   constants,
-  copyFileSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   statSync,
@@ -316,6 +318,9 @@ function ensureObjectTypeTable(
   `);
   db.exec(
     `CREATE INDEX IF NOT EXISTS ${quoteIdent(`idx_${tableName}_id_time`)} ON ${quoteIdent(tableName)} (ocel_id, ocel_time);`
+  );
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ${quoteIdent(`idx_${tableName}_id_time_field`)} ON ${quoteIdent(tableName)} (ocel_id, ocel_time, ocel_changed_field);`
   );
   const attrToSql = ensureTypeTableColumns(
     db,
@@ -810,7 +815,7 @@ export class AppendableOcel2SqliteSink {
         const sqlCol = attrToSql.get(attr.name) ?? attr.name;
         this.db
           .prepare(
-            `INSERT INTO ${quoteIdent(tableName)} (ocel_id, ocel_time, ocel_changed_field, ${quoteIdent(sqlCol)}) VALUES (?, ?, ?, ?)`
+            `INSERT OR IGNORE INTO ${quoteIdent(tableName)} (ocel_id, ocel_time, ocel_changed_field, ${quoteIdent(sqlCol)}) VALUES (?, ?, ?, ?)`
           )
           .run(obj.id, attr.time, attr.name, attr.value);
       }
@@ -988,8 +993,6 @@ export function writeOcel2Sqlite(
 
   const journalMode = options.journalMode ?? "WAL";
   const tmpPath = join(dir, `.zcode-ocel2-${process.pid}-${randomUUID()}.sqlite.tmp`);
-  const walKeep = `${dbPath}-wal.keep`;
-  const shmKeep = `${dbPath}-shm.keep`;
 
   try {
     const sink = new AppendableOcel2SqliteSink(tmpPath, { journalMode: "DELETE" });
@@ -999,7 +1002,7 @@ export function writeOcel2Sqlite(
       sink.close();
     }
 
-    for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`, walKeep, shmKeep]) {
+    for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`]) {
       if (existsSync(sidecar)) {
         rmSync(sidecar, { force: true });
       }
@@ -1008,36 +1011,20 @@ export function writeOcel2Sqlite(
 
     if (journalMode === "WAL") {
       const walDb = new DatabaseSync(dbPath);
-      let hasWalKeep = false;
-      let hasShmKeep = false;
       try {
         walDb.exec("PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);");
-        if (existsSync(`${dbPath}-wal`)) {
-          copyFileSync(`${dbPath}-wal`, walKeep);
-          hasWalKeep = true;
-        }
-        if (existsSync(`${dbPath}-shm`)) {
-          copyFileSync(`${dbPath}-shm`, shmKeep);
-          hasShmKeep = true;
-        }
       } finally {
         walDb.close();
       }
-      if (hasWalKeep && existsSync(walKeep)) {
-        renameSync(walKeep, `${dbPath}-wal`);
-      }
-      if (hasShmKeep && existsSync(shmKeep)) {
-        renameSync(shmKeep, `${dbPath}-shm`);
-      }
     }
 
-    for (const tmpSidecar of [`${tmpPath}-wal`, `${tmpPath}-shm`, walKeep, shmKeep]) {
+    for (const tmpSidecar of [`${tmpPath}-wal`, `${tmpPath}-shm`]) {
       if (existsSync(tmpSidecar)) {
         rmSync(tmpSidecar, { force: true });
       }
     }
   } catch (err) {
-    for (const tmpFile of [tmpPath, `${tmpPath}-wal`, `${tmpPath}-shm`, walKeep, shmKeep]) {
+    for (const tmpFile of [tmpPath, `${tmpPath}-wal`, `${tmpPath}-shm`]) {
       if (existsSync(tmpFile)) {
         rmSync(tmpFile, { force: true });
       }
@@ -1073,13 +1060,14 @@ function hasNonEmptyWalSidecar(dbPath: string): boolean {
   }
 }
 
-function openAndReadDocument(
+function openAndRun<T>(
   location: string,
+  fn: (db: DatabaseSync) => T,
   options?: { readOnly?: boolean }
-): Ocel2Document {
+): T {
   const db = options ? new DatabaseSync(location, options) : new DatabaseSync(location);
   try {
-    return readDocumentFromDb(db);
+    return fn(db);
   } finally {
     try {
       db.close();
@@ -1089,7 +1077,7 @@ function openAndReadDocument(
   }
 }
 
-export function readOcel2Sqlite(dbPath: string): Ocel2Document {
+function withReadOnlySqlite<T>(dbPath: string, fn: (db: DatabaseSync) => T): T {
   if (!existsSync(dbPath)) {
     throw new ComplianceRefusalError(
       "LOGGING_UNAVAILABLE",
@@ -1099,7 +1087,7 @@ export function readOcel2Sqlite(dbPath: string): Ocel2Document {
   }
 
   try {
-    return openAndReadDocument(dbPath, { readOnly: true });
+    return openAndRun(dbPath, fn, { readOnly: true });
   } catch (roErr) {
     if (!isWalOpenFallbackError(roErr)) {
       throw asLoggingUnavailable(`Failed reading OCEL 2.0 SQLite file '${dbPath}'`, roErr);
@@ -1109,7 +1097,7 @@ export function readOcel2Sqlite(dbPath: string): Ocel2Document {
     // and on 0444/0555 in Node (SQLITE_READONLY_DIRECTORY). Retry RW first when writable so
     // any uncheckpointed -wal is recovered rather than bypassed.
     try {
-      return openAndReadDocument(dbPath);
+      return openAndRun(dbPath, fn);
     } catch (rwErr) {
       if (!isWalOpenFallbackError(rwErr) || hasNonEmptyWalSidecar(dbPath)) {
         throw asLoggingUnavailable(`Failed reading OCEL 2.0 SQLite file '${dbPath}'`, rwErr);
@@ -1118,12 +1106,16 @@ export function readOcel2Sqlite(dbPath: string): Ocel2Document {
       // Safe to open immutable=1 only when unwritable AND no non-empty -wal sidecar exists.
       const immutableUri = `${pathToFileURL(resolve(dbPath)).href}?immutable=1`;
       try {
-        return openAndReadDocument(immutableUri, { readOnly: true });
+        return openAndRun(immutableUri, fn, { readOnly: true });
       } catch (immErr) {
         throw asLoggingUnavailable(`Failed reading OCEL 2.0 SQLite file '${dbPath}'`, immErr);
       }
     }
   }
+}
+
+export function readOcel2Sqlite(dbPath: string): Ocel2Document {
+  return withReadOnlySqlite(dbPath, readDocumentFromDb);
 }
 
 export const RETENTION_PURGE_LEDGER_FILENAME = "retention-purge-ledger.ndjson";
@@ -1214,14 +1206,132 @@ function extractLatestTimeFromOcelDoc(doc: Ocel2Document): {
   return { latestEventTimeMs: latest, eventCount: doc.events.length, headHash };
 }
 
+function hasSqliteMagicHeader(fullPath: string): boolean {
+  const fd = openSync(fullPath, "r");
+  try {
+    const header = Buffer.allocUnsafe(16);
+    const bytesRead = readSync(fd, header, 0, 16, 0);
+    return bytesRead === 16 && header.toString("utf8") === "SQLite format 3\0";
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function inspectOcel2SqliteMetadata(db: DatabaseSync): {
+  latestEventTimeMs: number | null;
+  eventCount: number;
+  headHash: string | null;
+} {
+  const tableRows = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all() as Array<Record<string, unknown>>;
+  const existingTables = new Set<string>();
+  for (const row of tableRows) {
+    const name = row["name"];
+    if (typeof name === "string") existingTables.add(name);
+  }
+
+  const countRow = db.prepare("SELECT COUNT(*) AS cnt FROM event").get() as
+    | Record<string, unknown>
+    | undefined;
+  const eventCount = Number(countRow?.["cnt"] ?? 0);
+
+  let latest: number | null = null;
+  const considerMaxTime = (tableName: string): void => {
+    if (!existingTables.has(tableName)) return;
+    const row = db
+      .prepare(`SELECT MAX(ocel_time) AS max_time FROM ${quoteIdent(tableName)}`)
+      .get() as Record<string, unknown> | undefined;
+    const maxTime = row?.["max_time"];
+    if (typeof maxTime === "string" && maxTime.length > 0) {
+      const ms = Date.parse(maxTime);
+      if (Number.isFinite(ms) && (latest === null || ms > latest)) {
+        latest = ms;
+      }
+    }
+  };
+
+  const evtTypeToMap = new Map<string, string>();
+  const evtMapRows = db
+    .prepare("SELECT ocel_type, ocel_type_map FROM event_map_type")
+    .all() as Array<Record<string, unknown>>;
+  for (const r of evtMapRows) {
+    const t = String(r["ocel_type"]);
+    const m = String(r["ocel_type_map"]);
+    evtTypeToMap.set(t, m);
+    considerMaxTime(`event_${m}`);
+  }
+
+  const objMapRows = db
+    .prepare("SELECT ocel_type_map FROM object_map_type")
+    .all() as Array<Record<string, unknown>>;
+  for (const r of objMapRows) {
+    considerMaxTime(`object_${String(r["ocel_type_map"])}`);
+  }
+
+  let headHash: string | null = null;
+  if (eventCount > 0) {
+    const lastEvt = db
+      .prepare("SELECT ocel_id, ocel_type FROM event ORDER BY rowid DESC LIMIT 1")
+      .get() as Record<string, unknown> | undefined;
+    if (lastEvt) {
+      const lastId = String(lastEvt["ocel_id"]);
+      const lastType = String(lastEvt["ocel_type"]);
+      if (existingTables.has("zcode_ocel_event_attr_multi")) {
+        const multiRow = db
+          .prepare(
+            "SELECT attr_value FROM zcode_ocel_event_attr_multi WHERE ocel_event_id = ? AND attr_name = 'pi_hash' ORDER BY attr_seq ASC LIMIT 1"
+          )
+          .get(lastId) as Record<string, unknown> | undefined;
+        if (typeof multiRow?.["attr_value"] === "string" && multiRow["attr_value"].length > 0) {
+          headHash = multiRow["attr_value"];
+        }
+      }
+      if (headHash === null) {
+        const typeMap = evtTypeToMap.get(lastType);
+        const tableName = typeMap ? `event_${typeMap}` : undefined;
+        if (tableName && existingTables.has(tableName)) {
+          let piHashCol: string | undefined;
+          if (existingTables.has("zcode_ocel_attr_meta")) {
+            const metaRow = db
+              .prepare(
+                "SELECT sql_col FROM zcode_ocel_attr_meta WHERE kind = 'event' AND ocel_type = ? AND attr_name = 'pi_hash' LIMIT 1"
+              )
+              .get(lastType) as Record<string, unknown> | undefined;
+            if (typeof metaRow?.["sql_col"] === "string" && metaRow["sql_col"].length > 0) {
+              piHashCol = metaRow["sql_col"];
+            }
+          }
+          const cols = getTableColumns(db, tableName);
+          if (!piHashCol && cols.has("pi_hash")) {
+            piHashCol = "pi_hash";
+          }
+          if (piHashCol && cols.has(piHashCol)) {
+            const hashRow = db
+              .prepare(
+                `SELECT ${quoteIdent(piHashCol)} AS pi_hash FROM ${quoteIdent(tableName)} WHERE ocel_id = ? LIMIT 1`
+              )
+              .get(lastId) as Record<string, unknown> | undefined;
+            if (typeof hashRow?.["pi_hash"] === "string" && hashRow["pi_hash"].length > 0) {
+              headHash = hashRow["pi_hash"];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { latestEventTimeMs: latest, eventCount, headHash };
+}
+
 function inspectArtifactForRetention(
   fullPath: string,
   name: string
 ): ArtifactRetentionInspection {
   if (name.endsWith(".sqlite")) {
-    let header: Buffer;
+    let isSqliteMagic: boolean;
     try {
-      header = readFileSync(fullPath).subarray(0, 16);
+      isSqliteMagic = hasSqliteMagicHeader(fullPath);
     } catch {
       return {
         latestEventTimeMs: null,
@@ -1230,7 +1340,6 @@ function inspectArtifactForRetention(
         unreadableProtected: true
       };
     }
-    const isSqliteMagic = header.length === 16 && header.toString("utf8") === "SQLite format 3\0";
     if (!isSqliteMagic) {
       return {
         latestEventTimeMs: null,
@@ -1240,8 +1349,7 @@ function inspectArtifactForRetention(
       };
     }
     try {
-      const doc = readOcel2Sqlite(fullPath);
-      const info = extractLatestTimeFromOcelDoc(doc);
+      const info = withReadOnlySqlite(fullPath, inspectOcel2SqliteMetadata);
       return { ...info, unreadableProtected: false };
     } catch {
       // Fail closed: never purge a real SQLite compliance DB whose event times cannot be read.
@@ -1338,25 +1446,103 @@ function inspectArtifactForRetention(
   };
 }
 
-function readLastPurgeLedgerHash(ledgerPath: string): string {
-  if (!existsSync(ledgerPath)) return "GENESIS";
-  const content = readFileSync(ledgerPath, "utf8").trim();
-  if (!content) return "GENESIS";
-  const lines = content.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (!line) continue;
-    const parsed = JSON.parse(line) as { entryHash?: unknown };
-    if (typeof parsed.entryHash === "string" && /^[a-f0-9]{64}$/.test(parsed.entryHash)) {
-      return parsed.entryHash;
-    }
-    throw new ComplianceRefusalError(
-      "LOGGING_UNAVAILABLE",
-      `Retention purge ledger '${ledgerPath}' has malformed entryHash.`,
-      "R_missing_consequence"
-    );
+export interface RetentionPurgeLedgerVerificationResult {
+  ok: boolean;
+  entryCount: number;
+  headHash: string;
+  errors: string[];
+}
+
+export function verifyRetentionPurgeLedger(
+  ledgerPath: string
+): RetentionPurgeLedgerVerificationResult {
+  if (!existsSync(ledgerPath)) {
+    return { ok: true, entryCount: 0, headHash: "GENESIS", errors: [] };
   }
-  return "GENESIS";
+
+  const errors: string[] = [];
+  let expectedPrevHash = "GENESIS";
+  let entryCount = 0;
+  let lineNo = 0;
+
+  const processLine = (rawLine: string): void => {
+    lineNo++;
+    const line = rawLine.trim();
+    if (!line) return;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch (err) {
+      errors.push(
+        `Line ${lineNo}: invalid JSON (${err instanceof Error ? err.message : String(err)})`
+      );
+      return;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      errors.push(`Line ${lineNo}: expected JSON object.`);
+      return;
+    }
+
+    const rec = parsed as Record<string, unknown>;
+    const entryHash = rec["entryHash"];
+    const prevHash = rec["prevHash"];
+
+    if (typeof entryHash !== "string" || !/^[a-f0-9]{64}$/.test(entryHash)) {
+      errors.push(`Line ${lineNo}: malformed or missing entryHash.`);
+      return;
+    }
+
+    if (prevHash !== expectedPrevHash) {
+      errors.push(
+        `Line ${lineNo}: prevHash mismatch (expected '${expectedPrevHash}', got '${String(prevHash)}').`
+      );
+    }
+
+    const payload: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      if (k === "entryHash") continue;
+      payload[k] = v;
+    }
+    const recomputed = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    if (recomputed !== entryHash) {
+      errors.push(
+        `Line ${lineNo}: entryHash mismatch (expected '${recomputed}', got '${entryHash}').`
+      );
+    }
+
+    expectedPrevHash = entryHash;
+    entryCount++;
+  };
+
+  const fd = openSync(ledgerPath, "r");
+  try {
+    const chunkBuf = Buffer.allocUnsafe(64 * 1024);
+    let remainder = "";
+    while (true) {
+      const bytesRead = readSync(fd, chunkBuf, 0, chunkBuf.length, null);
+      if (bytesRead === 0) break;
+      const chunk = remainder + chunkBuf.toString("utf8", 0, bytesRead);
+      const parts = chunk.split("\n");
+      remainder = parts.pop() ?? "";
+      for (const part of parts) {
+        processLine(part);
+      }
+    }
+    if (remainder.length > 0) {
+      processLine(remainder);
+    }
+  } finally {
+    closeSync(fd);
+  }
+
+  return {
+    ok: errors.length === 0,
+    entryCount,
+    headHash: expectedPrevHash,
+    errors
+  };
 }
 
 export function enforceRetentionPolicy(
@@ -1446,7 +1632,15 @@ export function enforceRetentionPolicy(
           const artifactSha256 = createHash("sha256")
             .update(readFileSync(fullPath))
             .digest("hex");
-          const prevHash = readLastPurgeLedgerHash(ledgerPath);
+          const ledgerCheck = verifyRetentionPurgeLedger(ledgerPath);
+          if (!ledgerCheck.ok) {
+            throw new ComplianceRefusalError(
+              "LOGGING_UNAVAILABLE",
+              `Retention purge ledger '${ledgerPath}' failed integrity verification: ${ledgerCheck.errors.join("; ")}`,
+              "R_missing_consequence"
+            );
+          }
+          const prevHash = ledgerCheck.headHash;
           const payload: Omit<RetentionPurgeReceipt, "entryHash"> = {
             schemaVersion: "1.0",
             kind: "ocel_retention_purge_tombstone",

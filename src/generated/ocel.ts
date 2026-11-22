@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 
 export const EVENT_TYPES: string[] = ["checkpoint_created", "execution_crash", "falsifier_run", "message_removed", "message_upserted", "model_streaming", "part_removed", "part_started", "part_upserted", "permission_requested", "permission_resolved", "provider_replace", "provider_select", "receipt_persist", "reobserve", "rewind_triggered", "session_closed", "session_created", "session_resumed", "session_title_updated", "session_updated", "stream_recovery_updated", "tool_updated", "turn_completed", "turn_failed", "turn_started", "turn_steer_drained", "turn_steer_queued", "user_input_requested", "user_input_resolved", "worker_claim"];
-export const OBJECT_TYPES: string[] = ["authority", "base", "epoch", "lease", "model_request", "permission", "provider", "receipt", "session", "subagent", "subject", "tool_call", "turn", "work_order", "worker"];
+export const OBJECT_TYPES: string[] = ["authority", "base", "epoch", "lease", "model_request", "permission", "provider", "receipt", "session", "subagent", "subject", "tool_call", "turn", "user_input", "work_order", "worker"];
 export const SUPPORTED_HASHES: string[] = ["sha256"];
 export type SourceSpec = { id: string; kind: string; nameField: string; idField: string; timeField: string; hash: string };
 export type RuleSpec = { rule: string; source: string; name: string; event: string; object: string; qualifier: string; path: string };
@@ -120,6 +120,7 @@ export const RULES: RuleSpec[] = [
   { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "session", qualifier: "in_session", path: "params.sessionId" },
   { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "subject", qualifier: "about_subject", path: "params.subject" },
   { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "tool_call", qualifier: "about_tool_call", path: "params.payload.toolCallId" },
+  { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "tool_call", qualifier: "about_tool_call", path: "params.payload.toolCallIds" },
   { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "turn", qualifier: "in_turn", path: "params.turnId" },
   { rule: "app-tool_updated", source: "zcode_app_server", name: "tool.updated", event: "tool_updated", object: "work_order", qualifier: "subject", path: "params.work_order_iri" },
   { rule: "app-turn_completed", source: "zcode_app_server", name: "turn.completed", event: "turn_completed", object: "base", qualifier: "about_base", path: "params.base" },
@@ -154,17 +155,17 @@ export const RULES: RuleSpec[] = [
   { rule: "app-turn_steer_queued", source: "zcode_app_server", name: "turn.steerQueued", event: "turn_steer_queued", object: "work_order", qualifier: "subject", path: "params.work_order_iri" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "base", qualifier: "about_base", path: "params.base" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "epoch", qualifier: "on_epoch", path: "params.epoch" },
-  { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "permission", qualifier: "about_permission", path: "params.payload.requestId" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "session", qualifier: "in_session", path: "params.sessionId" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "subject", qualifier: "about_subject", path: "params.subject" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "turn", qualifier: "in_turn", path: "params.turnId" },
+  { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "user_input", qualifier: "about_user_input", path: "params.payload.requestId" },
   { rule: "app-user_input_requested", source: "zcode_app_server", name: "userInput.requested", event: "user_input_requested", object: "work_order", qualifier: "subject", path: "params.work_order_iri" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "base", qualifier: "about_base", path: "params.base" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "epoch", qualifier: "on_epoch", path: "params.epoch" },
-  { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "permission", qualifier: "about_permission", path: "params.payload.requestId" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "session", qualifier: "in_session", path: "params.sessionId" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "subject", qualifier: "about_subject", path: "params.subject" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "turn", qualifier: "in_turn", path: "params.turnId" },
+  { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "user_input", qualifier: "about_user_input", path: "params.payload.requestId" },
   { rule: "app-user_input_resolved", source: "zcode_app_server", name: "userInput.resolved", event: "user_input_resolved", object: "work_order", qualifier: "subject", path: "params.work_order_iri" },
   { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "base", qualifier: "about_base", path: "base" },
   { rule: "gall-execution_crash", source: "gall_work", name: "execution.crash", event: "execution_crash", object: "epoch", qualifier: "on_epoch", path: "epoch" },
@@ -321,6 +322,7 @@ export const RULES: RuleSpec[] = [
   { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "session", qualifier: "in_session", path: "sessionId" },
   { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "subject", qualifier: "about_subject", path: "subject" },
   { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "tool_call", qualifier: "about_tool_call", path: "payload.toolCallId" },
+  { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "tool_call", qualifier: "about_tool_call", path: "payload.toolCallIds" },
   { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "turn", qualifier: "in_turn", path: "turnId" },
   { rule: "stream-tool_updated", source: "zcode_stream", name: "tool.updated", event: "tool_updated", object: "work_order", qualifier: "subject", path: "work_order_iri" },
   { rule: "stream-turn_completed", source: "zcode_stream", name: "turn.completed", event: "turn_completed", object: "base", qualifier: "about_base", path: "base" },
@@ -355,17 +357,17 @@ export const RULES: RuleSpec[] = [
   { rule: "stream-turn_steer_queued", source: "zcode_stream", name: "turn.steerQueued", event: "turn_steer_queued", object: "work_order", qualifier: "subject", path: "work_order_iri" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "base", qualifier: "about_base", path: "base" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "epoch", qualifier: "on_epoch", path: "epoch" },
-  { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "permission", qualifier: "about_permission", path: "payload.requestId" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "session", qualifier: "in_session", path: "sessionId" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "subject", qualifier: "about_subject", path: "subject" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "turn", qualifier: "in_turn", path: "turnId" },
+  { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "user_input", qualifier: "about_user_input", path: "payload.requestId" },
   { rule: "stream-user_input_requested", source: "zcode_stream", name: "userInput.requested", event: "user_input_requested", object: "work_order", qualifier: "subject", path: "work_order_iri" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "base", qualifier: "about_base", path: "base" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "epoch", qualifier: "on_epoch", path: "epoch" },
-  { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "permission", qualifier: "about_permission", path: "payload.requestId" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "session", qualifier: "in_session", path: "sessionId" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "subject", qualifier: "about_subject", path: "subject" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "turn", qualifier: "in_turn", path: "turnId" },
+  { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "user_input", qualifier: "about_user_input", path: "payload.requestId" },
   { rule: "stream-user_input_resolved", source: "zcode_stream", name: "userInput.resolved", event: "user_input_resolved", object: "work_order", qualifier: "subject", path: "work_order_iri" },
 ];
 export const PHASE_OPEN = "pending";

@@ -13,6 +13,7 @@ import {
   type TransitionReceipt,
   type WorkOrderSourceAdapter
 } from "../src/adapters/index.ts";
+import { frontierActivitySignature } from "../src/adapters/foundry-loop.ts";
 
 function initTempGitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "zcode-hitl-free-"));
@@ -449,4 +450,176 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("ERRC ELIMINATE: fails closed with REFUSED/exitCode 2 when captureWorkspaceSnapshot throws, recording diagnostic and halting re-entry", async () => {
+    const repo = initTempGitRepo();
+    const missingWorkspace = join(repo, "nonexistent-workspace-dir");
+    const priorDiagnostics = new Map<string, string>();
+    let ingestCount = 0;
+    const executedIds: string[] = [];
+
+    try {
+      const source: WorkOrderSourceAdapter = {
+        name: "rollback-fail-closed-source",
+        async preflightVerify() {
+          return { ok: true, exitCode: 0, detail: "ok" };
+        },
+        async ingestFrontier() {
+          ingestCount += 1;
+          return {
+            kind: "partial_order",
+            id: `po-${ingestCount}`,
+            children: [
+              {
+                kind: "activity",
+                id: "WO-1",
+                label: "First transition",
+                objectType: "WorkOrder",
+                targetFile: "state.txt"
+              },
+              {
+                kind: "activity",
+                id: "WO-2",
+                label: "Second transition",
+                objectType: "WorkOrder",
+                targetFile: "state.txt"
+              }
+            ],
+            order: [["WO-1", "WO-2"]]
+          };
+        },
+        async recordOutcome() {
+          // no-op
+        }
+      };
+
+      const result = await runFoundryLoop({
+        source,
+        courts: [],
+        workspaceDir: missingWorkspace,
+        dryRun: false,
+        maxCycles: 3,
+        transactionalRollback: true,
+        priorDiagnostics,
+        executor: async (t) => {
+          executedIds.push(t.activityId ?? t.id);
+          return { ok: true, exitCode: 0, detail: "should-not-run" };
+        }
+      });
+
+      expect(result.converged).toBe(false);
+      expect(result.aggregateStanding).toBe("REFUSED");
+      expect(result.exitCode).toBe(2);
+      expect(result.cycles.length).toBe(1);
+      expect(ingestCount).toBe(1);
+      expect(executedIds).toEqual([]);
+      expect(priorDiagnostics.get("WO-1")).toContain("snapshot-capture failed");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  test("ERRC CREATE: frontierActivitySignature detects structural edge/scope deltas and binds git baseSha on TransitionReceipt", async () => {
+    const repo = initMultiWoGitRepo();
+    const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repo,
+      encoding: "utf8"
+    }).trim();
+
+    // Direct structural signature checks: same activity IDs/labels, different edges or scopes.
+    const sigBase = frontierActivitySignature({
+      kind: "partial_order",
+      id: "po",
+      children: [
+        { kind: "activity", id: "WO-1", label: "Work", objectType: "WorkOrder", targetFile: "a.txt" },
+        { kind: "activity", id: "WO-2", label: "Work", objectType: "WorkOrder", targetFile: "b.txt" }
+      ],
+      order: []
+    });
+    const sigWithEdge = frontierActivitySignature({
+      kind: "partial_order",
+      id: "po",
+      children: [
+        { kind: "activity", id: "WO-1", label: "Work", objectType: "WorkOrder", targetFile: "a.txt" },
+        { kind: "activity", id: "WO-2", label: "Work", objectType: "WorkOrder", targetFile: "b.txt" }
+      ],
+      order: [["WO-1", "WO-2"]]
+    });
+    const sigWithScope = frontierActivitySignature({
+      kind: "partial_order",
+      id: "po",
+      children: [
+        { kind: "activity", id: "WO-1", label: "Work", objectType: "WorkOrder", targetFile: "c.txt" },
+        { kind: "activity", id: "WO-2", label: "Work", objectType: "WorkOrder", targetFile: "b.txt" }
+      ],
+      order: []
+    });
+    expect(sigBase).not.toBe(sigWithEdge);
+    expect(sigBase).not.toBe(sigWithScope);
+
+    try {
+      let ingestCount = 0;
+      const recorded: TransitionReceipt[] = [];
+      const seenTargets: string[] = [];
+
+      const source: WorkOrderSourceAdapter = {
+        name: "structural-delta-source",
+        async preflightVerify() {
+          return { ok: true, exitCode: 0, detail: "ok" };
+        },
+        async ingestFrontier() {
+          ingestCount += 1;
+          // Same activity id + label on both passes, but targetFile changes from a.txt -> b.txt on pass 2.
+          return {
+            kind: "partial_order",
+            id: "po-same-id",
+            children: [
+              {
+                kind: "activity",
+                id: "WO-SAME",
+                label: "Same label",
+                objectType: "WorkOrder",
+                targetFile: ingestCount === 1 ? "a.txt" : "b.txt"
+              }
+            ],
+            order: []
+          };
+        },
+        async recordOutcome(receipt: TransitionReceipt) {
+          recorded.push(receipt);
+        }
+      };
+
+      const result = await runFoundryLoop({
+        source,
+        courts: [],
+        workspaceDir: repo,
+        dryRun: false,
+        maxCycles: 2,
+        untilDrained: true,
+        transactionalRollback: true,
+        autoCommitAlive: true,
+        executor: async (t) => {
+          seenTargets.push(t.targetFile ?? "");
+          if (seenTargets.length === 1) {
+            return { ok: false, exitCode: 1, detail: "force-cycle-2-reingest" };
+          }
+          writeFileSync(join(repo, "b.txt"), "updated-ok\n");
+          return { ok: true, exitCode: 0, detail: "cycle-2-ok" };
+        }
+      });
+
+      expect(ingestCount).toBe(2);
+      expect(seenTargets).toEqual(["a.txt", "b.txt"]);
+      expect(result.converged).toBe(true);
+      expect(result.commitsCreated.length).toBe(1);
+      expect(recorded.length).toBeGreaterThanOrEqual(2);
+      for (const r of recorded) {
+        expect(r.baseSha).toBe(initialHead);
+      }
+      expect(result.commitsCreated[0]).not.toBe(initialHead);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

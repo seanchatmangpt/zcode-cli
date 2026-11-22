@@ -226,6 +226,14 @@ export function findAskQueries(gatesDir: string): string[] {
   return hits;
 }
 
+const ALLOWED_URI_PREFIXES = PUBLIC_ONTOLOGY_PREFIXES.filter(
+  (pre) => pre.startsWith("http://") || pre.startsWith("https://") || pre.startsWith("urn:")
+);
+
+function isAllowedPublicIri(iri: string): boolean {
+  return ALLOWED_URI_PREFIXES.some((pre) => iri.startsWith(pre));
+}
+
 export function structuralPrivateNamespaceScan(
   packDir: string,
   _rqPath: string
@@ -233,20 +241,36 @@ export function structuralPrivateNamespaceScan(
   const ontologyDir = join(packDir, "ontology");
   if (!existsSync(ontologyDir)) return { status: 0, stdout: "no-ontology", stderr: "" };
   const violations: string[] = [];
+  const seen = new Set<string>();
+  const record = (p: string, detail: string) => {
+    const key = `${p}: ${detail}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      violations.push(key);
+    }
+  };
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) walk(p);
       else if (name.endsWith(".ttl") || name.endsWith(".rq")) {
-        const text = readFileSync(p, "utf8");
-        // Heuristic: angle-bracket IRIs that look private (http(s) not in allowlist prefixes).
-        for (const m of text.matchAll(/<((?:https?:\/\/)[^>]+)>/g)) {
-          const iri = m[1]!;
-          if (!PUBLIC_ONTOLOGY_PREFIXES.some((pre) => iri.startsWith(pre.replace(/:$/, "://")) || iri.includes(pre))) {
-            // Allow w3.org / schema.org already in list; flag clearly local/private hosts.
-            if (/localhost|127\.0\.0\.1|\.internal\b|fnox\.io|castle\.local/i.test(iri)) {
-              violations.push(`${p}: ${iri}`);
-            }
+        const lines = readFileSync(p, "utf8")
+          .split(/\r?\n/)
+          .filter((l) => !/^\s*#/.test(l));
+        const text = lines.join("\n");
+        // Parse @prefix (Turtle) and PREFIX (SPARQL) declarations fail-closed against allowlist.
+        for (const m of text.matchAll(/(?:@prefix|(?<![A-Za-z0-9_@])PREFIX)\s+([A-Za-z0-9_-]*:)\s*<([^>]+)>/gi)) {
+          const prefixName = m[1]!;
+          const iri = m[2]!.trim();
+          if (!isAllowedPublicIri(iri)) {
+            record(p, `private prefix ${prefixName} <${iri}>`);
+          }
+        }
+        // Fail-closed allowlist check on all angle-bracket URI/URN IRIs (canonical startsWith, no includes()).
+        for (const m of text.matchAll(/<((?:https?:\/\/|urn:)[^>]+)>/gi)) {
+          const iri = m[1]!.trim();
+          if (!isAllowedPublicIri(iri)) {
+            record(p, iri);
           }
         }
       }

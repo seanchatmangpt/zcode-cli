@@ -47,6 +47,7 @@ export interface SojournStats {
 export interface OcDfgNode {
   activity: string;
   frequency: number;
+  objectCount: number;
   medianSojournMs: number;
   p95SojournMs: number;
   meanSojournMs: number;
@@ -58,6 +59,7 @@ export interface OcDfgEdge {
   target: string;
   objectType: string;
   frequency: number;
+  objectCount: number;
   meanMs: number;
   medianMs: number;
   p95Ms: number;
@@ -75,15 +77,31 @@ export interface OcDfgPerTypeGraph {
 
 export interface ConvergencePattern {
   activity: string;
-  objectTypes: string[];
+  objectType: string;
+  maxObjectsPerEvent: number;
   count: number;
 }
 
 export interface DivergencePattern {
   activity: string;
   objectType: string;
-  maxObjectsPerEvent: number;
+  maxEventsPerObject: number;
   count: number;
+  differingOtherTypes?: string[];
+}
+
+export interface SynchronizationPattern {
+  activity: string;
+  objectTypes: string[];
+  count: number;
+}
+
+export interface DiscoverOcDfgOptions {
+  minReviewMs?: number;
+  slowOversightMs?: number;
+  minActivityFrequency?: number;
+  minEdgeFrequency?: number;
+  noiseThreshold?: number;
 }
 
 export interface ReworkCycleFinding {
@@ -118,6 +136,7 @@ export interface OcDfgModel {
   byObjectType: Record<string, OcDfgPerTypeGraph>;
   convergence: ConvergencePattern[];
   divergence: DivergencePattern[];
+  synchronization: SynchronizationPattern[];
   reworkCycles: ReworkCycleFinding[];
   fileCollisions: FileCollisionFinding[];
   oversightBottlenecks: OversightBottleneckFinding[];
@@ -199,89 +218,207 @@ export function computeSummaryStats(samples: readonly number[]): SojournStats {
   return { count: n, minMs, medianMs, meanMs, p95Ms, maxMs, varianceMs2, cs2 };
 }
 
-function detectSccs(nodes: readonly string[], edges: readonly { source: string; target: string }[]): string[][] {
-  const adj = new Map<string, string[]>();
-  for (const n of nodes) adj.set(n, []);
-  for (const e of edges) {
-    if (!adj.has(e.source)) adj.set(e.source, []);
-    adj.get(e.source)!.push(e.target);
+function filterPerTypeGraph(
+  nodes: OcDfgNode[],
+  edges: OcDfgEdge[],
+  startActivities: Record<string, number>,
+  endActivities: Record<string, number>,
+  options: { minActivityFrequency: number; minEdgeFrequency: number; noiseThreshold: number }
+): {
+  nodes: OcDfgNode[];
+  edges: OcDfgEdge[];
+  startActivities: Record<string, number>;
+  endActivities: Record<string, number>;
+} {
+  const { minActivityFrequency, minEdgeFrequency, noiseThreshold } = options;
+  if (minActivityFrequency <= 0 && minEdgeFrequency <= 0 && noiseThreshold <= 0) {
+    return { nodes, edges, startActivities, endActivities };
+  }
+  if (nodes.length === 0) {
+    return { nodes, edges, startActivities, endActivities };
   }
 
-  let index = 0;
-  const indices = new Map<string, number>();
-  const lowlink = new Map<string, number>();
-  const stack: string[] = [];
-  const onStack = new Set<string>();
-  const sccs: string[][] = [];
+  const maxNodeFreq = nodes.reduce((m, n) => Math.max(m, n.frequency), 0);
+  const maxEdgeFreq = edges.reduce((m, e) => Math.max(m, e.frequency), 0);
+  const nodeThresh = Math.max(
+    minActivityFrequency,
+    noiseThreshold > 0 ? Math.ceil(noiseThreshold * maxNodeFreq) : 0
+  );
+  const edgeThresh = Math.max(
+    minEdgeFrequency,
+    noiseThreshold > 0 ? Math.ceil(noiseThreshold * maxEdgeFreq) : 0
+  );
 
-  const strongConnect = (v: string) => {
-    indices.set(v, index);
-    lowlink.set(v, index);
-    index += 1;
-    stack.push(v);
-    onStack.add(v);
+  const nodeByAct = new Map<string, OcDfgNode>(nodes.map((n) => [n.activity, n]));
+  const keptNodeSet = new Set<string>(
+    nodes.filter((n) => n.frequency >= nodeThresh).map((n) => n.activity)
+  );
 
-    for (const w of adj.get(v) ?? []) {
-      if (!indices.has(w)) {
-        strongConnect(w);
-        lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
-      } else if (onStack.has(w)) {
-        lowlink.set(v, Math.min(lowlink.get(v)!, indices.get(w)!));
-      }
+  // Always retain the top start and top end activity if present
+  const startEntries = Object.entries(startActivities).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const endEntries = Object.entries(endActivities).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const topStart = startEntries[0]?.[0];
+  const topEnd = endEntries[0]?.[0];
+  if (topStart && nodeByAct.has(topStart)) keptNodeSet.add(topStart);
+  if (topEnd && nodeByAct.has(topEnd)) keptNodeSet.add(topEnd);
+
+  const keptEdgeKeys = new Set<string>();
+  const edgeByKey = new Map<string, OcDfgEdge>();
+  for (const e of edges) {
+    const k = `${e.source}\0${e.target}`;
+    edgeByKey.set(k, e);
+    if (e.frequency >= edgeThresh && keptNodeSet.has(e.source) && keptNodeSet.has(e.target)) {
+      keptEdgeKeys.add(k);
     }
+  }
 
-    if (lowlink.get(v) === indices.get(v)) {
-      const comp: string[] = [];
-      while (true) {
-        const w = stack.pop()!;
-        onStack.delete(w);
-        comp.push(w);
-        if (w === v) break;
+  // Check if any kept start activity can reach any kept end activity via kept edges
+  const keptStarts = startEntries.map(([a]) => a).filter((a) => keptNodeSet.has(a));
+  const keptEnds = new Set(endEntries.map(([a]) => a).filter((a) => keptNodeSet.has(a)));
+
+  const hasStartToEndPath = (): boolean => {
+    if (keptStarts.length === 0 || keptEnds.size === 0) return true;
+    const adj = new Map<string, string[]>();
+    for (const k of keptEdgeKeys) {
+      const e = edgeByKey.get(k)!;
+      let list = adj.get(e.source);
+      if (!list) {
+        list = [];
+        adj.set(e.source, list);
       }
-      if (comp.length > 1) {
-        sccs.push(comp.reverse());
-      } else if (comp.length === 1) {
-        const only = comp[0]!;
-        if ((adj.get(only) ?? []).includes(only)) {
-          sccs.push(comp);
+      list.push(e.target);
+    }
+    const visited = new Set<string>(keptStarts);
+    const queue = [...keptStarts];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (keptEnds.has(cur)) return true;
+      for (const nxt of adj.get(cur) ?? []) {
+        if (!visited.has(nxt)) {
+          visited.add(nxt);
+          queue.push(nxt);
         }
       }
     }
+    return false;
   };
 
-  for (const n of nodes) {
-    if (!indices.has(n)) strongConnect(n);
+  // If filtering broke start-to-end connectivity, restore the widest (highest min-edge-frequency) path
+  if (!hasStartToEndPath() && keptStarts.length > 0 && keptEnds.size > 0) {
+    const fullAdj = new Map<string, OcDfgEdge[]>();
+    for (const e of edges) {
+      let list = fullAdj.get(e.source);
+      if (!list) {
+        list = [];
+        fullAdj.set(e.source, list);
+      }
+      list.push(e);
+    }
+
+    const bestCap = new Map<string, number>();
+    const prevEdge = new Map<string, OcDfgEdge>();
+    const unvisited = new Set<string>(nodes.map((n) => n.activity));
+    for (const s of keptStarts) {
+      bestCap.set(s, Number.POSITIVE_INFINITY);
+    }
+
+    let reachedEnd: string | undefined;
+    while (unvisited.size > 0) {
+      let u: string | undefined;
+      let uCap = -1;
+      for (const cand of unvisited) {
+        const c = bestCap.get(cand) ?? -1;
+        if (c > uCap) {
+          uCap = c;
+          u = cand;
+        }
+      }
+      if (u === undefined || uCap <= 0) break;
+      unvisited.delete(u);
+      if (keptEnds.has(u)) {
+        reachedEnd = u;
+        break;
+      }
+      for (const e of fullAdj.get(u) ?? []) {
+        if (!unvisited.has(e.target)) continue;
+        const candCap = Math.min(uCap, e.frequency);
+        if (candCap > (bestCap.get(e.target) ?? -1)) {
+          bestCap.set(e.target, candCap);
+          prevEdge.set(e.target, e);
+        }
+      }
+    }
+
+    if (reachedEnd !== undefined) {
+      let cur = reachedEnd;
+      keptNodeSet.add(cur);
+      const guard = new Set<string>();
+      while (prevEdge.has(cur) && !guard.has(cur)) {
+        guard.add(cur);
+        const e = prevEdge.get(cur)!;
+        keptNodeSet.add(e.source);
+        keptNodeSet.add(e.target);
+        keptEdgeKeys.add(`${e.source}\0${e.target}`);
+        cur = e.source;
+      }
+    }
   }
-  return sccs;
+
+  const filteredNodes = nodes.filter((n) => keptNodeSet.has(n.activity));
+  const filteredEdges = edges.filter((e) => keptEdgeKeys.has(`${e.source}\0${e.target}`));
+  const filteredStarts: Record<string, number> = {};
+  for (const [act, cnt] of Object.entries(startActivities)) {
+    if (keptNodeSet.has(act)) filteredStarts[act] = cnt;
+  }
+  const filteredEnds: Record<string, number> = {};
+  for (const [act, cnt] of Object.entries(endActivities)) {
+    if (keptNodeSet.has(act)) filteredEnds[act] = cnt;
+  }
+
+  return {
+    nodes: filteredNodes,
+    edges: filteredEdges,
+    startActivities: filteredStarts,
+    endActivities: filteredEnds
+  };
 }
 
 export function discoverOcDfg(
   logs: DiscoverDocLike | readonly DiscoverDocLike[],
-  options: { minReviewMs?: number; slowOversightMs?: number } = {}
+  options: DiscoverOcDfgOptions = {}
 ): OcDfgModel {
   const docs = Array.isArray(logs) ? logs : [logs];
   const minReviewMs = options.minReviewMs ?? 1000;
   const slowOversightMs = options.slowOversightMs ?? 30_000;
+  const minActivityFrequency = Math.max(0, options.minActivityFrequency ?? 0);
+  const minEdgeFrequency = Math.max(0, options.minEdgeFrequency ?? 0);
+  const noiseThreshold = Math.min(1, Math.max(0, options.noiseThreshold ?? 0));
 
   const allObjectTypes = new Set<string>();
   const allEventTypes = new Set<string>();
-  let totalEvents = 0;
-  let totalObjects = 0;
 
   // Per object type accumulators
   const traceCountByOt = new Map<string, number>();
   const nodeFreqByOt = new Map<string, Map<string, number>>();
+  const nodeObjectsByOt = new Map<string, Map<string, Set<string>>>();
   const nodeSojournByOt = new Map<string, Map<string, number[]>>();
   const startActByOt = new Map<string, Map<string, number>>();
   const endActByOt = new Map<string, Map<string, number>>();
   const edgeDurationsByOt = new Map<string, Map<string, number[]>>();
+  const edgeObjectsByOt = new Map<string, Map<string, Set<string>>>();
   const objSojournByOt = new Map<string, number[]>();
 
-  // Convergence & Divergence
-  const convergenceMap = new Map<string, { activity: string; objectTypes: string[]; count: number }>();
-  const divergenceMap = new Map<string, { activity: string; objectType: string; maxObjectsPerEvent: number; count: number }>();
+  // Convergence (same-type multiplicity >= 2 on one event),
+  // Divergence (same object participating in >= 2 events of the same activity),
+  // Synchronization (>= 2 distinct objectTypes on one event)
+  const convergenceMap = new Map<string, { activity: string; objectType: string; maxObjectsPerEvent: number; count: number }>();
+  const divergenceMap = new Map<
+    string,
+    { activity: string; objectType: string; maxEventsPerObject: number; count: number; differingOtherTypes: Set<string> }
+  >();
+  const synchronizationMap = new Map<string, { activity: string; objectTypes: string[]; count: number }>();
 
-  // Rework cycles (trace-level + SCCs)
+  // Trace-level rework cycles (witnessed repetitions with real sampleEventIds)
   const traceCycleMap = new Map<string, { objectType: string; cycle: string[]; count: number; sampleEventIds: string[] }>();
 
   // File collisions
@@ -290,7 +427,7 @@ export function discoverOcDfg(
     { fileObjectId: string; filePath?: string; actors: Set<string>; eventIds: Set<string> }
   >();
 
-  // Oversight pairs
+  // Oversight pairs (keyed globally by permission objectId across rotated docs)
   const permEventsById = new Map<
     string,
     { reqTime?: number; resTime?: number; explicitLatency?: number; decision?: string; eventIds: string[] }
@@ -299,255 +436,357 @@ export function discoverOcDfg(
   const ensureOtAcc = (ot: string) => {
     allObjectTypes.add(ot);
     if (!nodeFreqByOt.has(ot)) nodeFreqByOt.set(ot, new Map());
+    if (!nodeObjectsByOt.has(ot)) nodeObjectsByOt.set(ot, new Map());
     if (!nodeSojournByOt.has(ot)) nodeSojournByOt.set(ot, new Map());
     if (!startActByOt.has(ot)) startActByOt.set(ot, new Map());
     if (!endActByOt.has(ot)) endActByOt.set(ot, new Map());
     if (!edgeDurationsByOt.has(ot)) edgeDurationsByOt.set(ot, new Map());
+    if (!edgeObjectsByOt.has(ot)) edgeObjectsByOt.set(ot, new Map());
     if (!objSojournByOt.has(ot)) objSojournByOt.set(ot, []);
     if (!traceCountByOt.has(ot)) traceCountByOt.set(ot, 0);
   };
 
+  // Merge objects and deduplicate events globally across all input documents
+  const objById = new Map<string, DiscoverObjectLike>();
+  const seenEventIds = new Set<string>();
+  const mergedEvents: Array<{ ev: DiscoverEventLike; idx: number; ms: number }> = [];
+  let globalIdx = 0;
+
   for (let docIdx = 0; docIdx < docs.length; docIdx++) {
     const doc = docs[docIdx]!;
-    const objById = new Map<string, DiscoverObjectLike>();
     for (const obj of doc.objects ?? []) {
-      objById.set(obj.id, obj);
-      totalObjects += 1;
+      const existing = objById.get(obj.id);
+      if (!existing) {
+        objById.set(obj.id, obj);
+      } else if (
+        Array.isArray(existing.attributes) &&
+        existing.attributes.length === 0 &&
+        Array.isArray(obj.attributes) &&
+        obj.attributes.length > 0
+      ) {
+        objById.set(obj.id, obj);
+      }
       ensureOtAcc(obj.type);
     }
 
-    const sortedEvents = [...(doc.events ?? [])]
-      .map((ev, idx) => ({ ev, idx, ms: Date.parse(ev.time) }))
-      .sort((a, b) => {
-        const am = Number.isFinite(a.ms) ? a.ms : 0;
-        const bm = Number.isFinite(b.ms) ? b.ms : 0;
-        return am !== bm ? am - bm : a.idx - b.idx;
-      })
-      .map((x) => x.ev);
+    for (const ev of doc.events ?? []) {
+      if (seenEventIds.has(ev.id)) continue;
+      seenEventIds.add(ev.id);
+      mergedEvents.push({ ev, idx: globalIdx++, ms: Date.parse(ev.time) });
+    }
+  }
 
-    // Map objectId -> sorted events in this doc
-    const eventsByObjectId = new Map<string, Array<{ ev: DiscoverEventLike; ms: number; ot: string }>>();
+  const totalObjects = objById.size;
 
-    for (const ev of sortedEvents) {
-      totalEvents += 1;
-      allEventTypes.add(ev.type);
-      const evMs = Date.parse(ev.time);
-      const safeMs = Number.isFinite(evMs) ? evMs : 0;
+  const sortedEvents = mergedEvents
+    .sort((a, b) => {
+      const am = Number.isFinite(a.ms) ? a.ms : 0;
+      const bm = Number.isFinite(b.ms) ? b.ms : 0;
+      return am !== bm ? am - bm : a.idx - b.idx;
+    })
+    .map((x) => x.ev);
 
-      const otCounts = new Map<string, number>();
-      const seenPairs = new Set<string>();
-      const actorIdsForEvent: string[] = [];
-      const fileTargetsForEvent: Array<{ id: string; path?: string }> = [];
+  const totalEvents = sortedEvents.length;
 
-      for (const rel of ev.relationships ?? []) {
-        const obj = objById.get(rel.objectId);
-        const ot = obj?.type ?? QUALIFIER_OBJECT_TYPE[rel.qualifier] ?? "unknown";
-        ensureOtAcc(ot);
+  // Map objectId -> globally time-sorted events across all documents
+  const eventsByObjectId = new Map<
+    string,
+    Array<{ ev: DiscoverEventLike; ms: number; ot: string; objectsByOt: Map<string, string[]> }>
+  >();
 
-        const pairKey = `${ot}::${rel.objectId}`;
-        if (!seenPairs.has(pairKey)) {
-          seenPairs.add(pairKey);
-          otCounts.set(ot, (otCounts.get(ot) ?? 0) + 1);
+  for (const ev of sortedEvents) {
+    allEventTypes.add(ev.type);
+    const evMs = Date.parse(ev.time);
+    const safeMs = Number.isFinite(evMs) ? evMs : 0;
 
-          let list = eventsByObjectId.get(rel.objectId);
-          if (!list) {
-            list = [];
-            eventsByObjectId.set(rel.objectId, list);
-          }
-          list.push({ ev, ms: safeMs, ot });
+    const otCounts = new Map<string, number>();
+    const objectsByOt = new Map<string, string[]>();
+    const seenPairs = new Set<string>();
+    const actorIdsForEvent: string[] = [];
+    const fileTargetsForEvent: Array<{ id: string; path?: string }> = [];
+
+    for (const rel of ev.relationships ?? []) {
+      const obj = objById.get(rel.objectId);
+      const ot = obj?.type ?? QUALIFIER_OBJECT_TYPE[rel.qualifier] ?? "unknown";
+      ensureOtAcc(ot);
+
+      const pairKey = `${ot}::${rel.objectId}`;
+      if (!seenPairs.has(pairKey)) {
+        seenPairs.add(pairKey);
+        otCounts.set(ot, (otCounts.get(ot) ?? 0) + 1);
+
+        let otObjs = objectsByOt.get(ot);
+        if (!otObjs) {
+          otObjs = [];
+          objectsByOt.set(ot, otObjs);
         }
+        otObjs.push(rel.objectId);
 
-        if (ot === "turn" || ot === "subagent" || ot === "worker") {
-          actorIdsForEvent.push(rel.objectId);
+        let list = eventsByObjectId.get(rel.objectId);
+        if (!list) {
+          list = [];
+          eventsByObjectId.set(rel.objectId, list);
         }
-        if (rel.qualifier === "mutated_in" || ot === "workspace_file") {
-          const pathAttr = obj ? readAttrStr(obj.attributes, "path") : undefined;
-          fileTargetsForEvent.push({ id: rel.objectId, path: pathAttr });
-        }
-        if (ot === "permission") {
-          const permKey = `${docIdx}:${rel.objectId}`;
-          let prec = permEventsById.get(permKey);
-          if (!prec) {
-            prec = { eventIds: [] };
-            permEventsById.set(permKey, prec);
-          }
-          prec.eventIds.push(ev.id);
-          if (ev.type === "permission_requested") prec.reqTime = safeMs;
-          if (ev.type === "permission_resolved") {
-            prec.resTime = safeMs;
-            prec.decision = readAttrStr(ev.attributes, "decision") ?? "resolved";
-            const lat = readAttrNum(ev.attributes, "decision_latency_ms");
-            if (lat !== undefined) prec.explicitLatency = lat;
-          }
-        }
+        list.push({ ev, ms: safeMs, ot, objectsByOt });
       }
 
-      // Check file collision from explicit file path attribute when mutated_in isn't present
-      if (ev.type === "tool_updated" && fileTargetsForEvent.length === 0) {
-        const fp = readAttrStr(ev.attributes, "path") ?? readAttrStr(ev.attributes, "targetFile");
-        if (fp) {
-          fileTargetsForEvent.push({ id: `path:${fp}`, path: fp });
-        }
+      if (ot === "turn" || ot === "subagent" || ot === "worker") {
+        actorIdsForEvent.push(rel.objectId);
       }
-
-      if (fileTargetsForEvent.length > 0) {
-        const actors =
-          actorIdsForEvent.length > 0
-            ? actorIdsForEvent
-            : [readAttrStr(ev.attributes, "actor") ?? readAttrStr(ev.attributes, "turn_id") ?? ev.id];
-        for (const ft of fileTargetsForEvent) {
-          const canonicalKey = ft.path ?? ft.id;
-          let rec = fileMutationMap.get(canonicalKey);
-          if (!rec) {
-            rec = { fileObjectId: ft.id, filePath: ft.path, actors: new Set(), eventIds: new Set() };
-            fileMutationMap.set(canonicalKey, rec);
-          }
-          if (!rec.filePath && ft.path) rec.filePath = ft.path;
-          for (const a of actors) rec.actors.add(a);
-          rec.eventIds.add(ev.id);
-        }
+      if (rel.qualifier === "mutated_in" || ot === "workspace_file") {
+        const pathAttr = obj ? readAttrStr(obj.attributes, "path") : undefined;
+        fileTargetsForEvent.push({ id: rel.objectId, path: pathAttr });
       }
-
-      // Divergence (>= 2 objects of same objectType on one event)
-      for (const [ot, cnt] of otCounts.entries()) {
-        if (cnt >= 2) {
-          const dKey = `${ev.type}::${ot}`;
-          const prev = divergenceMap.get(dKey);
-          if (!prev) {
-            divergenceMap.set(dKey, { activity: ev.type, objectType: ot, maxObjectsPerEvent: cnt, count: 1 });
-          } else {
-            prev.count += 1;
-            if (cnt > prev.maxObjectsPerEvent) prev.maxObjectsPerEvent = cnt;
-          }
+      if (ot === "permission") {
+        let prec = permEventsById.get(rel.objectId);
+        if (!prec) {
+          prec = { eventIds: [] };
+          permEventsById.set(rel.objectId, prec);
         }
-      }
-
-      // Convergence (>= 2 distinct objectTypes on one event)
-      if (otCounts.size >= 2) {
-        const sortedOts = [...otCounts.keys()].sort();
-        const cKey = `${ev.type}::${sortedOts.join(",")}`;
-        const prev = convergenceMap.get(cKey);
-        if (!prev) {
-          convergenceMap.set(cKey, { activity: ev.type, objectTypes: sortedOts, count: 1 });
-        } else {
-          prev.count += 1;
+        prec.eventIds.push(ev.id);
+        if (ev.type === "permission_requested") prec.reqTime = safeMs;
+        if (ev.type === "permission_resolved") {
+          prec.resTime = safeMs;
+          prec.decision = readAttrStr(ev.attributes, "decision") ?? "resolved";
+          const lat = readAttrNum(ev.attributes, "decision_latency_ms");
+          if (lat !== undefined) prec.explicitLatency = lat;
         }
       }
     }
 
-    // Extract per-object traces & sojourn durations
-    for (const [objId, entries] of eventsByObjectId.entries()) {
-      if (entries.length === 0) continue;
-      const ot = entries[0]!.ot;
-      ensureOtAcc(ot);
-      traceCountByOt.set(ot, (traceCountByOt.get(ot) ?? 0) + 1);
+    // Check file collision from explicit file path attribute when mutated_in isn't present
+    if (ev.type === "tool_updated" && fileTargetsForEvent.length === 0) {
+      const fp = readAttrStr(ev.attributes, "path") ?? readAttrStr(ev.attributes, "targetFile");
+      if (fp) {
+        fileTargetsForEvent.push({ id: `path:${fp}`, path: fp });
+      }
+    }
 
-      const nodeFreq = nodeFreqByOt.get(ot)!;
-      const nodeSoj = nodeSojournByOt.get(ot)!;
-      const startMap = startActByOt.get(ot)!;
-      const endMap = endActByOt.get(ot)!;
-      const edgeDur = edgeDurationsByOt.get(ot)!;
-
-      const firstAct = entries[0]!.ev.type;
-      const lastAct = entries[entries.length - 1]!.ev.type;
-      startMap.set(firstAct, (startMap.get(firstAct) ?? 0) + 1);
-      endMap.set(lastAct, (endMap.get(lastAct) ?? 0) + 1);
-
-      // Node frequencies & per-event service/sojourn sampling
-      for (let i = 0; i < entries.length; i++) {
-        const cur = entries[i]!;
-        nodeFreq.set(cur.ev.type, (nodeFreq.get(cur.ev.type) ?? 0) + 1);
-
-        const svcMs =
-          readAttrNum(cur.ev.attributes, "service_ms") ??
-          readAttrNum(cur.ev.attributes, "decision_latency_ms");
-        const stepMs =
-          svcMs !== undefined
-            ? svcMs
-            : i + 1 < entries.length
-              ? Math.max(0, entries[i + 1]!.ms - cur.ms)
-              : undefined;
-        if (stepMs !== undefined) {
-          let arr = nodeSoj.get(cur.ev.type);
-          if (!arr) {
-            arr = [];
-            nodeSoj.set(cur.ev.type, arr);
-          }
-          arr.push(stepMs);
+    if (fileTargetsForEvent.length > 0) {
+      const actors =
+        actorIdsForEvent.length > 0
+          ? actorIdsForEvent
+          : [readAttrStr(ev.attributes, "actor") ?? readAttrStr(ev.attributes, "turn_id") ?? ev.id];
+      for (const ft of fileTargetsForEvent) {
+        const canonicalKey = ft.path ?? ft.id;
+        let rec = fileMutationMap.get(canonicalKey);
+        if (!rec) {
+          rec = { fileObjectId: ft.id, filePath: ft.path, actors: new Set(), eventIds: new Set() };
+          fileMutationMap.set(canonicalKey, rec);
         }
+        if (!rec.filePath && ft.path) rec.filePath = ft.path;
+        for (const a of actors) rec.actors.add(a);
+        rec.eventIds.add(ev.id);
+      }
+    }
 
-        if (i + 1 < entries.length) {
-          const nxt = entries[i + 1]!;
-          const eKey = `${cur.ev.type}\0${nxt.ev.type}`;
-          const delta = Math.max(0, nxt.ms - cur.ms);
-          let arr = edgeDur.get(eKey);
-          if (!arr) {
-            arr = [];
-            edgeDur.set(eKey, arr);
-          }
-          arr.push(delta);
+    // Convergence (van der Aalst OCEL 2.0): >= 2 objects of same objectType on one event
+    for (const [ot, cnt] of otCounts.entries()) {
+      if (cnt >= 2) {
+        const cKey = `${ev.type}::${ot}`;
+        const prev = convergenceMap.get(cKey);
+        if (!prev) {
+          convergenceMap.set(cKey, { activity: ev.type, objectType: ot, maxObjectsPerEvent: cnt, count: 1 });
+        } else {
+          prev.count += 1;
+          if (cnt > prev.maxObjectsPerEvent) prev.maxObjectsPerEvent = cnt;
         }
       }
+    }
 
-      // Object-level sojourn
-      const obj = objById.get(objId);
-      const objSvc =
-        (obj ? readAttrNum(obj.attributes, "service_ms") ?? readAttrNum(obj.attributes, "decision_latency_ms") : undefined) ??
-        (entries.length === 1
-          ? readAttrNum(entries[0]!.ev.attributes, "service_ms") ??
-            readAttrNum(entries[0]!.ev.attributes, "decision_latency_ms")
-          : undefined);
-      const objSojourn =
-        entries.length >= 2
-          ? Math.max(0, entries[entries.length - 1]!.ms - entries[0]!.ms)
-          : objSvc;
-      if (objSojourn !== undefined) {
-        objSojournByOt.get(ot)!.push(objSojourn);
-      }
-
-      // Trace-level rework cycle detection (repeated activity A -> ... -> A)
-      const lastIndexByAct = new Map<string, number>();
-      for (let i = 0; i < entries.length; i++) {
-        const act = entries[i]!.ev.type;
-        const prevIdx = lastIndexByAct.get(act);
-        if (prevIdx !== undefined) {
-          const cycleActs = entries.slice(prevIdx, i + 1).map((x) => x.ev.type);
-          const cycKey = `${ot}::${cycleActs.join("->")}`;
-          const existing = traceCycleMap.get(cycKey);
-          const evIds = entries.slice(prevIdx, i + 1).map((x) => x.ev.id);
-          if (!existing) {
-            traceCycleMap.set(cycKey, { objectType: ot, cycle: cycleActs, count: 1, sampleEventIds: evIds });
-          } else {
-            existing.count += 1;
-          }
-        }
-        lastIndexByAct.set(act, i);
+    // Synchronization / multi-object interaction: >= 2 distinct objectTypes on one event
+    if (otCounts.size >= 2) {
+      const sortedOts = [...otCounts.keys()].sort();
+      const sKey = `${ev.type}::${sortedOts.join(",")}`;
+      const prev = synchronizationMap.get(sKey);
+      if (!prev) {
+        synchronizationMap.set(sKey, { activity: ev.type, objectTypes: sortedOts, count: 1 });
+      } else {
+        prev.count += 1;
       }
     }
   }
 
-  // Finalize per-object-type graphs & SCC rework detection
-  const byObjectType: Record<string, OcDfgPerTypeGraph> = {};
-  const sojournByObjectType: Record<string, SojournStats> = {};
-  const reworkCycles: ReworkCycleFinding[] = [...traceCycleMap.values()];
-  const seenNodeSets = new Set<string>(
-    reworkCycles.map((r) => `${r.objectType}::${[...new Set(r.cycle)].sort().join(",")}`)
-  );
+  // Extract per-object traces, divergence, sojourn durations, and trace-witnessed rework
+  for (const [objId, entries] of eventsByObjectId.entries()) {
+    if (entries.length === 0) continue;
+    const ot = entries[0]!.ot;
+    ensureOtAcc(ot);
+    traceCountByOt.set(ot, (traceCountByOt.get(ot) ?? 0) + 1);
 
-  for (const ot of [...allObjectTypes].sort()) {
     const nodeFreq = nodeFreqByOt.get(ot)!;
+    const nodeObjs = nodeObjectsByOt.get(ot)!;
     const nodeSoj = nodeSojournByOt.get(ot)!;
     const startMap = startActByOt.get(ot)!;
     const endMap = endActByOt.get(ot)!;
     const edgeDur = edgeDurationsByOt.get(ot)!;
+    const edgeObjs = edgeObjectsByOt.get(ot)!;
 
-    const nodes: OcDfgNode[] = [...nodeFreq.entries()]
+    const firstAct = entries[0]!.ev.type;
+    const lastAct = entries[entries.length - 1]!.ev.type;
+    startMap.set(firstAct, (startMap.get(firstAct) ?? 0) + 1);
+    endMap.set(lastAct, (endMap.get(lastAct) ?? 0) + 1);
+
+    // Group events by activity for this object to detect true OCEL 2.0 divergence
+    const entriesByActivity = new Map<string, typeof entries>();
+
+    // Node frequencies, distinct object counts, & per-event service/sojourn sampling
+    for (let i = 0; i < entries.length; i++) {
+      const cur = entries[i]!;
+      const act = cur.ev.type;
+      nodeFreq.set(act, (nodeFreq.get(act) ?? 0) + 1);
+
+      let nObjSet = nodeObjs.get(act);
+      if (!nObjSet) {
+        nObjSet = new Set();
+        nodeObjs.set(act, nObjSet);
+      }
+      nObjSet.add(objId);
+
+      let actList = entriesByActivity.get(act);
+      if (!actList) {
+        actList = [];
+        entriesByActivity.set(act, actList);
+      }
+      actList.push(cur);
+
+      const svcMs =
+        readAttrNum(cur.ev.attributes, "service_ms") ??
+        readAttrNum(cur.ev.attributes, "decision_latency_ms");
+      const stepMs =
+        svcMs !== undefined
+          ? svcMs
+          : i + 1 < entries.length
+            ? Math.max(0, entries[i + 1]!.ms - cur.ms)
+            : undefined;
+      if (stepMs !== undefined) {
+        let arr = nodeSoj.get(act);
+        if (!arr) {
+          arr = [];
+          nodeSoj.set(act, arr);
+        }
+        arr.push(stepMs);
+      }
+
+      if (i + 1 < entries.length) {
+        const nxt = entries[i + 1]!;
+        const eKey = `${act}\0${nxt.ev.type}`;
+        const delta = Math.max(0, nxt.ms - cur.ms);
+        let arr = edgeDur.get(eKey);
+        if (!arr) {
+          arr = [];
+          edgeDur.set(eKey, arr);
+        }
+        arr.push(delta);
+
+        let eObjSet = edgeObjs.get(eKey);
+        if (!eObjSet) {
+          eObjSet = new Set();
+          edgeObjs.set(eKey, eObjSet);
+        }
+        eObjSet.add(objId);
+      }
+    }
+
+    // Divergence (van der Aalst OCEL 2.0): same object participating in >= 2 events of same activity
+    for (const [act, actEntries] of entriesByActivity.entries()) {
+      if (actEntries.length >= 2) {
+        const dKey = `${act}::${ot}`;
+        let prev = divergenceMap.get(dKey);
+        if (!prev) {
+          prev = {
+            activity: act,
+            objectType: ot,
+            maxEventsPerObject: actEntries.length,
+            count: 1,
+            differingOtherTypes: new Set<string>()
+          };
+          divergenceMap.set(dKey, prev);
+        } else {
+          prev.count += 1;
+          if (actEntries.length > prev.maxEventsPerObject) {
+            prev.maxEventsPerObject = actEntries.length;
+          }
+        }
+
+        // Check whether other object types vary across these same-activity events
+        const otherTypes = new Set<string>();
+        for (const ae of actEntries) {
+          for (const otherOt of ae.objectsByOt.keys()) {
+            if (otherOt !== ot) otherTypes.add(otherOt);
+          }
+        }
+        for (const otherOt of otherTypes) {
+          const signatures = new Set<string>();
+          for (const ae of actEntries) {
+            const ids = [...(ae.objectsByOt.get(otherOt) ?? [])].sort().join(",");
+            signatures.add(ids);
+          }
+          if (signatures.size >= 2) {
+            prev.differingOtherTypes.add(otherOt);
+          }
+        }
+      }
+    }
+
+    // Object-level sojourn
+    const obj = objById.get(objId);
+    const objSvc =
+      (obj ? readAttrNum(obj.attributes, "service_ms") ?? readAttrNum(obj.attributes, "decision_latency_ms") : undefined) ??
+      (entries.length === 1
+        ? readAttrNum(entries[0]!.ev.attributes, "service_ms") ??
+          readAttrNum(entries[0]!.ev.attributes, "decision_latency_ms")
+        : undefined);
+    const objSojourn =
+      entries.length >= 2
+        ? Math.max(0, entries[entries.length - 1]!.ms - entries[0]!.ms)
+        : objSvc;
+    if (objSojourn !== undefined) {
+      objSojournByOt.get(ot)!.push(objSojourn);
+    }
+
+    // Trace-level rework cycle detection (repeated activity A -> ... -> A)
+    const lastIndexByAct = new Map<string, number>();
+    for (let i = 0; i < entries.length; i++) {
+      const act = entries[i]!.ev.type;
+      const prevIdx = lastIndexByAct.get(act);
+      if (prevIdx !== undefined) {
+        const cycleActs = entries.slice(prevIdx, i + 1).map((x) => x.ev.type);
+        const cycKey = `${ot}::${cycleActs.join("->")}`;
+        const existing = traceCycleMap.get(cycKey);
+        const evIds = entries.slice(prevIdx, i + 1).map((x) => x.ev.id);
+        if (!existing) {
+          traceCycleMap.set(cycKey, { objectType: ot, cycle: cycleActs, count: 1, sampleEventIds: evIds });
+        } else {
+          existing.count += 1;
+        }
+      }
+      lastIndexByAct.set(act, i);
+    }
+  }
+
+  // Finalize per-object-type graphs (trace-witnessed rework only; no SCC fabrication)
+  const byObjectType: Record<string, OcDfgPerTypeGraph> = {};
+  const sojournByObjectType: Record<string, SojournStats> = {};
+  const reworkCycles: ReworkCycleFinding[] = [...traceCycleMap.values()];
+
+  for (const ot of [...allObjectTypes].sort()) {
+    const nodeFreq = nodeFreqByOt.get(ot)!;
+    const nodeObjs = nodeObjectsByOt.get(ot)!;
+    const nodeSoj = nodeSojournByOt.get(ot)!;
+    const startMap = startActByOt.get(ot)!;
+    const endMap = endActByOt.get(ot)!;
+    const edgeDur = edgeDurationsByOt.get(ot)!;
+    const edgeObjs = edgeObjectsByOt.get(ot)!;
+
+    const rawNodes: OcDfgNode[] = [...nodeFreq.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([activity, frequency]) => {
         const st = computeSummaryStats(nodeSoj.get(activity) ?? []);
         return {
           activity,
           frequency,
+          objectCount: nodeObjs.get(activity)?.size ?? 0,
           medianSojournMs: st.medianMs,
           p95SojournMs: st.p95Ms,
           meanSojournMs: st.meanMs,
@@ -555,7 +794,7 @@ export function discoverOcDfg(
         };
       });
 
-    const edges: OcDfgEdge[] = [...edgeDur.entries()]
+    const rawEdges: OcDfgEdge[] = [...edgeDur.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, durs]) => {
         const sep = key.indexOf("\0");
@@ -567,6 +806,7 @@ export function discoverOcDfg(
           target,
           objectType: ot,
           frequency: durs.length,
+          objectCount: edgeObjs.get(key)?.size ?? 0,
           meanMs: st.meanMs,
           medianMs: st.medianMs,
           p95Ms: st.p95Ms,
@@ -574,25 +814,22 @@ export function discoverOcDfg(
         };
       });
 
-    const sccs = detectSccs(
-      nodes.map((n) => n.activity),
-      edges
-    );
-    for (const scc of sccs) {
-      const k = `${ot}::${[...new Set(scc)].sort().join(",")}`;
-      if (!seenNodeSets.has(k)) {
-        seenNodeSets.add(k);
-        reworkCycles.push({ objectType: ot, cycle: scc, count: 1, sampleEventIds: [] });
-      }
-    }
+    const rawStarts = Object.fromEntries([...startMap.entries()].sort(([a], [b]) => a.localeCompare(b)));
+    const rawEnds = Object.fromEntries([...endMap.entries()].sort(([a], [b]) => a.localeCompare(b)));
+
+    const filtered = filterPerTypeGraph(rawNodes, rawEdges, rawStarts, rawEnds, {
+      minActivityFrequency,
+      minEdgeFrequency,
+      noiseThreshold
+    });
 
     byObjectType[ot] = {
       objectType: ot,
       traceCount: traceCountByOt.get(ot) ?? 0,
-      nodes,
-      edges,
-      startActivities: Object.fromEntries([...startMap.entries()].sort(([a], [b]) => a.localeCompare(b))),
-      endActivities: Object.fromEntries([...endMap.entries()].sort(([a], [b]) => a.localeCompare(b)))
+      nodes: filtered.nodes,
+      edges: filtered.edges,
+      startActivities: filtered.startActivities,
+      endActivities: filtered.endActivities
     };
 
     sojournByObjectType[ot] = computeSummaryStats(objSojournByOt.get(ot) ?? []);
@@ -613,13 +850,13 @@ export function discoverOcDfg(
 
   // Oversight bottlenecks (slow > p95 or > 5000ms, and fast rubber stamps < minReviewMs)
   const permLatencies: Array<{ id: string; latencyMs: number; decision: string; eventIds: string[] }> = [];
-  for (const [permKey, rec] of permEventsById.entries()) {
+  for (const [permId, rec] of permEventsById.entries()) {
     const lat =
       rec.explicitLatency ??
       (rec.reqTime !== undefined && rec.resTime !== undefined ? Math.max(0, rec.resTime - rec.reqTime) : undefined);
     if (lat !== undefined) {
       permLatencies.push({
-        id: permKey.replace(/^\d+:/, ""),
+        id: permId,
         latencyMs: lat,
         decision: rec.decision ?? "unknown",
         eventIds: rec.eventIds
@@ -652,6 +889,19 @@ export function discoverOcDfg(
     }
   }
 
+  const divergence: DivergencePattern[] = [...divergenceMap.values()]
+    .map((d) => {
+      const diff = [...d.differingOtherTypes].sort();
+      return {
+        activity: d.activity,
+        objectType: d.objectType,
+        maxEventsPerObject: d.maxEventsPerObject,
+        count: d.count,
+        ...(diff.length > 0 ? { differingOtherTypes: diff } : {})
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
   return {
     schema: "zcode.oc-dfg/1",
     objectTypes: [...allObjectTypes].sort(),
@@ -660,7 +910,8 @@ export function discoverOcDfg(
     totalObjects,
     byObjectType,
     convergence: [...convergenceMap.values()].sort((a, b) => b.count - a.count),
-    divergence: [...divergenceMap.values()].sort((a, b) => b.count - a.count),
+    divergence,
+    synchronization: [...synchronizationMap.values()].sort((a, b) => b.count - a.count),
     reworkCycles,
     fileCollisions,
     oversightBottlenecks,

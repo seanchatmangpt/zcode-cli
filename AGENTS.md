@@ -7,7 +7,7 @@ Orientation for agents working in this repo. Every claim below was checked again
 `zcode-app-cli` is a thin CLI/TUI wrapper around the official ZCode agent runtime
 (unofficial terminal client; see README "Architecture"). Release *docs* use calendar
 versioning (`v<year>.<month>.<day>`; sjira waves through `v26.11.20`, receipts under
-`v26.9.22` / `v26.9.23`). `package.json` may still carry a legacy `<appVersion>-<build>`
+`v26.9.22`, `v26.9.23`, and `v26.11.20`). `package.json` may still carry a legacy `<appVersion>-<build>`
 id (currently `3.14.4-1`) until the next calver cut. The locked vendored runtime is
 Desktop `3.14.4` per `zcode-runtime.lock.json` (re-check `vendor/extraction.json` after
 `sync:locked` / `sync:local`):
@@ -37,7 +37,7 @@ Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0,
 
 - `bun run test:unit` — unit tests (`bun test test/*.test.ts`); `bun run test` and `test:fast` alias it
 - `bun run test:runtime` — tests that exercise the real bundle (`test/runtime/`); needs `vendor/` populated first
-- `bun run test:tui` — TUI scenario tests, component + e2e (`test/tui/`); `bun run test:all` runs unit + tui + runtime
+- `bun run test:tui` — TUI scenario tests, component + e2e (`test/tui/`); `bun run test:all` runs unit + tui + runtime + node
 - `bun run sync:locked` — build + extract/patch the locked runtime, then gates:
   `test/sync-runtime-anchor-drift.test.ts` and `test/sync-runtime-loop-gaps.test.ts` under `ZCODE_REQUIRE_BUNDLE=1`
 - `bun run typecheck` — `tsc --noEmit`
@@ -45,27 +45,49 @@ Toolchain: bun (`packageManager: bun@1.4.1` in `package.json`), Node >= 22.19.0,
 
 ## Layout
 
-- `src/` — launcher code: `launcher.ts` (runtime spawn + stdio), `config-paths.ts`,
-  `runtime-config-bridge.ts` (legacy provider migration into the shared registry),
-  `builtin-provider-families.ts`, `ocel-tap.ts` (OCEL event tap), `gall-work.ts`
-  (xaas claim → close lease lifecycle), `generated/`
+- `src/` — launcher & runtime-adjacent modules: `launcher.ts` (runtime spawn + stdio),
+  `config-paths.ts`, `runtime-config-bridge.ts` (legacy provider migration into the shared registry),
+  `builtin-provider-families.ts`, `ocel-tap.ts` (OCEL 2.0 event tap), `gall-work.ts`
+  (xaas claim → close lease lifecycle), `powl-ocel-orchestrator.ts` (POWL v2 recursive write-scope
+  validation, Hasse transitive reduction, Murata WF-net reductions), `foundry-cli.ts`
+  (closed-loop `zcode foundry` `R_t -> O*_{t+1}` + Chatman-5 DFCM receipts),
+  `compliance-cli.ts`, `compliance/`, `generated/`
+- `src/compliance/` — EU AI Act (8/1/26) compliance suite across Articles 9, 10, 11, 12, 13, 14,
+  15, 17, 26, 27, 43, 47, 50, 72, 73 and van der Aalst et al. process-mining engines:
+  `ocel2.ts` (IEEE OCEL 2.0 strict attribute validation, XML round-trip, event-time 180-day
+  retention + SHA-256 `retention-purge-ledger.ndjson`), `ocel-sqlite.ts` (SQLite round-trip),
+  `ocel-discover.ts` (OC-DFG convergence/divergence/synchronization, UO `objectCount`, noise
+  filtering), `ocpn.ts` (Inductive Miner OCPN discovery, variable-arc/synchronization replay,
+  bounded marking-graph soundness), `conformance.ts` (optimal A* alignment with marking-equation
+  LP heuristic + tau*-closure Align-ETC precision), `declare-conformance.ts`, `kingman-scheduler.ts`
+  (multi-server G/G/c Sakasegawa/Allen-Cunneen scheduler), `transactional-net.ts` (bounded
+  transactional nets, silent-cycle detection, Saga LIFO compensation), `oversight.ts` (Art. 14
+  TUI `PermissionPreview` + `min_review_ms` dwell guard + `AutomationBiasMonitor`),
+  `disclosure.ts` (Art. 50(2) runtime Markdown provenance header + `.zcode-provenance/` sidecar
+  sealing), `annex-iv-report.ts`, `concept-drift.ts`, `config.ts`, `pmm-incident.ts`,
+  `qms-conformity.ts`, `redactor.ts`, `risk-ledger.ts`, `rpm-fact.ts`
 - `src/generated/` — `loop.ts`, `ocel.ts`, `receipt.ts`, `schemas.json`, `zod/`, `py/`: projections of
   `ontology/zcode-loop.ttl` via `bun scripts/gen-ocel.ts`. Never edited by hand; `bun scripts/gen-ocel.ts --check` fails on drift
+- `ontology/` — `zcode-loop.ttl` (OCEL/loop ontology), `eu-ai-act.ttl`, `eu-ai-act.shapes.ttl`,
+  `airo_risk_description.ttl`
 - `test/` — unit tests at the top level; `test/runtime/` for real-bundle tests; `test/tui/` scenarios;
   `test/fixtures/` (incl. `gall-work.contract.json`), `test/support/`, `test/node/`, `test/py/`
 - `scripts/` — `sync-runtime.ts` (extract + patch pipeline), `gen-ocel.ts` / `gen-zcode-loop.ts` /
   `zcode-events.ts` (ontology ↔ runtime enums), `ocel-verify.ts`, `validate-receipts.ts`,
   `check-runtime.ts`, plus `smoke-*`, `bench-*`, `release-*`
 - `docs/` — `CONFIGURATION.md` (+ `.zh-CN.md`), `PROVIDER_CONFIG.md` (+ `.zh-CN.md`),
-  `HOST_INTEGRATION.md`, `RELEASING.md`, `DEVELOPMENT.md`, `TUI_SCENARIO_TESTING.md`,
-  `SQLITE_CONCURRENCY.md`, `THIRD_PARTY_CONTENT.md`, `c4-zcode-cli-xaas.md`, `sjira/`, `jira/`
-- `receipts/<milestone>/` — session receipts (JSON), validated by `scripts/validate-receipts.ts`; present waves: `receipts/v26.9.22/`, `receipts/v26.9.23/` (Explore Exp-4 reports under `receipts/v26.11.20/` are SPEC-gated, not yet filed)
+  `HOST_INTEGRATION.md`, `INSTRUCTIONS_FOR_USE.md`, `RELEASING.md`, `DEVELOPMENT.md`,
+  `TUI_SCENARIO_TESTING.md`, `SQLITE_CONCURRENCY.md`, `THIRD_PARTY_CONTENT.md`,
+  `c4-zcode-cli-xaas.md`, `c4-sovereign-ecosystem.md`, `sjira/`, `jira/`
+- `receipts/<milestone>/` — session receipts (JSON), validated by `scripts/validate-receipts.ts`;
+  present waves: `receipts/v26.9.22/`, `receipts/v26.9.23/`, `receipts/v26.11.20/` (incl. `exp4/`
+  and `golden-aloop-v2-admit.json`), plus `receipts/ocel/`
 - `docs/sjira/<milestone>/` — work orders; normative Explore/Exploit ARD at `docs/sjira/v26.11.20/`
-  (older ZOCEL waves: `v26.9.21`–`v26.9.23`). `work-orders.ttl` is the canonical graph where present;
+  (older ZOCEL waves: `v26.9.21`–`v26.9.23`, `v26.10.8`). `work-orders.ttl` is the canonical graph where present;
   `jira/` holds ticket projections; `plan/` HDDL plans; plus `receipts/`, `execution/`, `ard/`
 - `HANDWRITTEN.md` (repo root) — the handwritten-residue ledger
-- Root: `bin/zcode.ts` (bin entry is `bin/zcode.js`, built), `ontology/zcode-loop.ttl`,
-  `packages/zcode-tui`, `provider.example.json`, `setting.example.json`
+- Root: `bin/zcode.ts` (bin entry is `bin/zcode.js`, built), `packages/zcode-tui`,
+  `provider.example.json`, `setting.example.json`
 
 ## Rules of the house
 
@@ -96,7 +118,9 @@ forwarding the newer contract to the xaas side; both now hash `9f722813…e979`)
 enabled with `ZCODE_OCEL=1`, output dir `ZCODE_OCEL_DIR`, default `~/.zcode/ocel`) feeds process
 mining on the xaas side. Every recorded event is credential-redacted at ingest (secret-shaped keys
 and embedded/Bearer token values become `REDACTED` before the hash chain is computed —
-`test/ocel-redaction.test.ts`), and under `XAAS_WORKER=1` the receipt binds the exact lease
-identity (`subject_sha`, `work_order_iri`, `epoch_id`, `base_sha`). The capability
-snapshot/restore tool (redacted, fail-closed) is documented in
+`test/ocel-redaction.test.ts`); `OcelRecorder.finish` fail-closes like capability-snapshot
+(`containsUnredactedSecretsOrPii` → stub + `redaction_refused` / standing blocked; lease
+identity fields are redact-or-refuse before bind/receipt). Under `XAAS_WORKER=1` the receipt
+binds the scrubbed lease identity (`subject_sha`, `work_order_iri`, `epoch_id`, `base_sha`).
+The capability snapshot/restore tool (redacted, fail-closed) is documented in
 `docs/CAPABILITY_SNAPSHOT.md`. The xaas-side ticket tree lives at `~/xaas/docs/sjira/`.

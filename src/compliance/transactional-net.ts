@@ -44,7 +44,8 @@ export type TransactionalErrorCode =
   | "ROLLBACK_FAILED"
   | "RETRY_BUDGET_EXHAUSTED"
   | "STEP_TIMEOUT"
-  | "LIFECYCLE_TIMEOUT";
+  | "LIFECYCLE_TIMEOUT"
+  | "SILENT_CYCLE_DETECTED";
 
 export class TransactionalRollbackError extends Error {
   readonly code: TransactionalErrorCode;
@@ -148,6 +149,77 @@ export class SignatureRetryLimiter {
 
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
+export interface WorkspaceSnapshotOptions {
+  ignorePatterns?: readonly string[];
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let re = "^";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i]!;
+    if (ch === "*") {
+      if (pattern[i + 1] === "*") {
+        re += ".*";
+        i += 1;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (ch === "?") {
+      re += "[^/]";
+    } else if ("\\^$+?.()|[]{}".includes(ch)) {
+      re += `\\${ch}`;
+    } else {
+      re += ch;
+    }
+  }
+  re += "$";
+  return new RegExp(re);
+}
+
+function compileIgnoreMatcher(
+  ignorePatterns?: readonly string[]
+): (relPath: string, name: string) => boolean {
+  const exactNames = new Set<string>(SKIP_DIRS);
+  const exactPaths: string[] = [];
+  const nameRegexes: RegExp[] = [];
+  const pathRegexes: RegExp[] = [];
+
+  if (ignorePatterns) {
+    for (const raw of ignorePatterns) {
+      const normalized = raw.trim().replace(/^\.\//, "").replace(/\/+$/, "");
+      if (!normalized) continue;
+      const hasGlob = normalized.includes("*") || normalized.includes("?");
+      const hasSlash = normalized.includes("/");
+      if (hasGlob) {
+        if (hasSlash) {
+          pathRegexes.push(globToRegExp(normalized));
+        } else {
+          nameRegexes.push(globToRegExp(normalized));
+        }
+      } else if (hasSlash) {
+        exactPaths.push(normalized);
+      } else {
+        exactNames.add(normalized);
+      }
+    }
+  }
+
+  return (relPath: string, name: string): boolean => {
+    if (exactNames.has(name)) return true;
+    const posixRel = relPath.replace(/\\/g, "/");
+    for (const p of exactPaths) {
+      if (posixRel === p || posixRel.startsWith(`${p}/`)) return true;
+    }
+    for (const rx of nameRegexes) {
+      if (rx.test(name)) return true;
+    }
+    for (const rx of pathRegexes) {
+      if (rx.test(posixRel)) return true;
+    }
+    return false;
+  };
+}
+
 interface WalkedWorkspaceEntry {
   absPath: string;
   sha256: string;
@@ -156,15 +228,18 @@ interface WalkedWorkspaceEntry {
   linkTarget?: string;
 }
 
-function walkWorkspaceFiles(rootDir: string): Map<string, WalkedWorkspaceEntry> {
+function walkWorkspaceFiles(
+  rootDir: string,
+  shouldIgnore: (relPath: string, name: string) => boolean = (_rel, name) => SKIP_DIRS.has(name)
+): Map<string, WalkedWorkspaceEntry> {
   const out = new Map<string, WalkedWorkspaceEntry>();
   const walk = (dir: string) => {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const ent of entries) {
-      if (SKIP_DIRS.has(ent.name)) continue;
       const abs = join(dir, ent.name);
-      const st = lstatSync(abs);
       const rel = relative(rootDir, abs);
+      if (shouldIgnore(rel, ent.name)) continue;
+      const st = lstatSync(abs);
       if (st.isSymbolicLink()) {
         const linkTarget = readlinkSync(abs);
         const h = createHash("sha256");
@@ -276,7 +351,10 @@ export interface RollbackReceipt {
   event: TxOcelEventLike;
 }
 
-export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapshotHandle {
+export function captureWorkspaceSnapshot(
+  workspaceDir: string,
+  options?: WorkspaceSnapshotOptions
+): WorkspaceSnapshotHandle {
   const absWorkspace = resolve(workspaceDir);
   if (!existsSync(absWorkspace) || !statSync(absWorkspace).isDirectory()) {
     throw new TransactionalRollbackError(
@@ -295,18 +373,20 @@ export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapsho
     );
   }
 
+  const shouldIgnore = compileIgnoreMatcher(options?.ignorePatterns);
   const isGit = isGitRepository(absWorkspace);
   const headSha = isGit ? gitHeadSha(absWorkspace) : null;
   const wasCleanBefore = isGit ? gitStatusPorcelain(absWorkspace).length === 0 : false;
+  const useGitCleanRollback = isGit && wasCleanBefore && headSha !== null;
 
-  const backupDir = mkdtempSync(join(tmpdir(), "zcode-tx-snap-"));
-  const files = walkWorkspaceFiles(absWorkspace);
+  const backupDir = useGitCleanRollback ? "" : mkdtempSync(join(tmpdir(), "zcode-tx-snap-"));
+  const files = walkWorkspaceFiles(absWorkspace, shouldIgnore);
   const manifest = new Map<string, WorkspaceManifestEntry>();
 
   const sortedEntries = [...files.entries()].sort(([a], [b]) => a.localeCompare(b));
   const aggHash = createHash("sha256");
   for (const [rel, info] of sortedEntries) {
-    if (!info.isSymlink) {
+    if (!useGitCleanRollback && !info.isSymlink) {
       const dest = join(backupDir, rel);
       mkdirSync(dirname(dest), { recursive: true });
       copyFileSync(info.absPath, dest);
@@ -322,7 +402,7 @@ export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapsho
   const snapshotSha256 = aggHash.digest("hex");
 
   const isDirty = (): boolean => {
-    const current = walkWorkspaceFiles(absWorkspace);
+    const current = walkWorkspaceFiles(absWorkspace, shouldIgnore);
     if (current.size !== manifest.size) return true;
     for (const [rel, info] of manifest.entries()) {
       const cur = current.get(rel);
@@ -337,7 +417,9 @@ export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapsho
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
-    rmSync(backupDir, { recursive: true, force: true });
+    if (backupDir) {
+      rmSync(backupDir, { recursive: true, force: true });
+    }
   };
 
   const removePathSafely = (targetPath: string): void => {
@@ -363,17 +445,8 @@ export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapsho
       );
     }
 
-    const dirty = isDirty();
-    if (dirty && !rollbackOnDirty) {
-      throw new TransactionalRollbackError(
-        "DIRTY_TIMEOUT_REFUSED",
-        `Workspace "${absWorkspace}" became dirty during "${stepId}" (${reason}) and rollbackOnDirty is false`,
-        1
-      );
-    }
-
-    // Count changed/added paths against pre-step manifest BEFORE git reset/clean
-    const preResetCurrent = walkWorkspaceFiles(absWorkspace);
+    // Single pre-rollback walk: derive both dirty status and expected change counts
+    const preResetCurrent = walkWorkspaceFiles(absWorkspace, shouldIgnore);
     let expectedFilesRemoved = 0;
     for (const rel of preResetCurrent.keys()) {
       if (!manifest.has(rel)) {
@@ -388,90 +461,115 @@ export function captureWorkspaceSnapshot(workspaceDir: string): WorkspaceSnapsho
       }
     }
 
-    if (isGit && wasCleanBefore && headSha) {
-      try {
-        execFileSync("git", ["reset", "--hard", headSha], {
-          cwd: absWorkspace,
-          stdio: ["ignore", "pipe", "pipe"]
-        });
-        execFileSync("git", ["clean", "-fd"], {
-          cwd: absWorkspace,
-          stdio: ["ignore", "pipe", "pipe"]
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new TransactionalRollbackError("ROLLBACK_FAILED", `git rollback failed: ${msg}`, 1);
-      }
+    const dirty = expectedFilesRemoved > 0 || expectedFilesRestored > 0;
+    if (dirty && !rollbackOnDirty) {
+      throw new TransactionalRollbackError(
+        "DIRTY_TIMEOUT_REFUSED",
+        `Workspace "${absWorkspace}" became dirty during "${stepId}" (${reason}) and rollbackOnDirty is false`,
+        1
+      );
     }
 
-    // Remove newly created files & symlinks not in snapshot manifest
-    const current = walkWorkspaceFiles(absWorkspace);
-    let fsRemoved = 0;
-    for (const [rel, info] of current.entries()) {
-      if (!manifest.has(rel)) {
-        removePathSafely(info.absPath);
-        fsRemoved += 1;
-      }
-    }
+    let filesRemoved = 0;
+    let filesRestored = 0;
 
-    // Restore modified or deleted files/symlinks from backup (unlink symlinks before restoring!)
-    let fsRestored = 0;
-    for (const [rel, info] of manifest.entries()) {
-      const cur = current.get(rel);
-      if (!cur || Boolean(cur.isSymlink) !== Boolean(info.isSymlink) || cur.sha256 !== info.sha256) {
-        const dst = join(absWorkspace, rel);
-        mkdirSync(dirname(dst), { recursive: true });
-        // Always unlink any symlink (or directory) at dst before restoring regular file/symlink
-        removePathSafely(dst);
-        if (info.isSymlink && info.linkTarget !== undefined) {
-          symlinkSync(info.linkTarget, dst);
-        } else {
-          const src = join(backupDir, rel);
-          copyFileSync(src, dst);
-          try {
-            chmodSync(dst, info.mode);
-          } catch {
-            // best-effort permission restoration
+    if (dirty) {
+      if (useGitCleanRollback && headSha) {
+        try {
+          execFileSync("git", ["reset", "--hard", headSha], {
+            cwd: absWorkspace,
+            stdio: ["ignore", "pipe", "pipe"]
+          });
+          execFileSync("git", ["clean", "-fd"], {
+            cwd: absWorkspace,
+            stdio: ["ignore", "pipe", "pipe"]
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new TransactionalRollbackError("ROLLBACK_FAILED", `git rollback failed: ${msg}`, 1);
+        }
+      }
+
+      // Reuse preResetCurrent when git reset did not run; otherwise re-walk to check residual diffs
+      const current = useGitCleanRollback
+        ? walkWorkspaceFiles(absWorkspace, shouldIgnore)
+        : preResetCurrent;
+
+      let fsRemoved = 0;
+      for (const [rel, info] of current.entries()) {
+        if (!manifest.has(rel)) {
+          removePathSafely(info.absPath);
+          fsRemoved += 1;
+        }
+      }
+
+      // Restore modified or deleted files/symlinks from backup (unlink symlinks before restoring!)
+      let fsRestored = 0;
+      for (const [rel, info] of manifest.entries()) {
+        const cur = current.get(rel);
+        if (!cur || Boolean(cur.isSymlink) !== Boolean(info.isSymlink) || cur.sha256 !== info.sha256) {
+          const dst = join(absWorkspace, rel);
+          mkdirSync(dirname(dst), { recursive: true });
+          // Always unlink any symlink (or directory) at dst before restoring regular file/symlink
+          removePathSafely(dst);
+          if (info.isSymlink && info.linkTarget !== undefined) {
+            symlinkSync(info.linkTarget, dst);
+          } else {
+            if (!backupDir) {
+              throw new TransactionalRollbackError(
+                "ROLLBACK_FAILED",
+                `Clean-git rollback did not restore "${rel}" and no temp backup was created`,
+                1
+              );
+            }
+            const src = join(backupDir, rel);
+            copyFileSync(src, dst);
+            try {
+              chmodSync(dst, info.mode);
+            } catch {
+              // best-effort permission restoration
+            }
           }
+          fsRestored += 1;
         }
-        fsRestored += 1;
       }
-    }
 
-    const filesRemoved = Math.max(expectedFilesRemoved, fsRemoved);
-    const filesRestored = Math.max(expectedFilesRestored, fsRestored);
+      filesRemoved = Math.max(expectedFilesRemoved, fsRemoved);
+      filesRestored = Math.max(expectedFilesRestored, fsRestored);
 
-    // Prune empty directories left behind by deleted files
-    const pruneEmptyDirs = (dir: string): boolean => {
-      const entries = readdirSync(dir, { withFileTypes: true });
-      let hasContent = false;
-      for (const ent of entries) {
-        if (SKIP_DIRS.has(ent.name)) {
-          hasContent = true;
-          continue;
-        }
-        const abs = join(dir, ent.name);
-        if (ent.isDirectory() && !ent.isSymbolicLink()) {
-          if (!pruneEmptyDirs(abs)) {
-            rmSync(abs, { recursive: true, force: true });
+      // Prune empty directories left behind by deleted files
+      const pruneEmptyDirs = (dir: string): boolean => {
+        const entries = readdirSync(dir, { withFileTypes: true });
+        let hasContent = false;
+        for (const ent of entries) {
+          const abs = join(dir, ent.name);
+          const rel = relative(absWorkspace, abs);
+          if (shouldIgnore(rel, ent.name)) {
+            hasContent = true;
+            continue;
+          }
+          if (ent.isDirectory() && !ent.isSymbolicLink()) {
+            if (!pruneEmptyDirs(abs)) {
+              rmSync(abs, { recursive: true, force: true });
+            } else {
+              hasContent = true;
+            }
           } else {
             hasContent = true;
           }
-        } else {
-          hasContent = true;
         }
-      }
-      return hasContent;
-    };
-    pruneEmptyDirs(absWorkspace);
+        return hasContent;
+      };
+      pruneEmptyDirs(absWorkspace);
 
-    // Post-rollback integrity verification
-    if (isDirty()) {
-      throw new TransactionalRollbackError(
-        "ROLLBACK_FAILED",
-        `Workspace "${absWorkspace}" failed post-rollback SHA-256 verification`,
-        1
-      );
+      // Post-rollback integrity verification
+      if (isDirty()) {
+        throw new TransactionalRollbackError(
+          "ROLLBACK_FAILED",
+          `Workspace "${absWorkspace}" failed post-rollback SHA-256 verification`,
+          1
+        );
+      }
     }
 
     const event: TxOcelEventLike = {
@@ -525,9 +623,16 @@ export type TransactionalStepFn = (
   ctx: { attempt: number; signal: AbortSignal }
 ) => Promise<TransactionalStepOutcome>;
 
+export type TransactionalStepCompensateFn = (
+  transition: Transition,
+  ctx: { attempt: number; reason: string }
+) => Promise<void> | void;
+
 export interface TransactionalStepSpec {
   run: TransactionalStepFn;
   timeoutMs?: number;
+  abortGraceMs?: number;
+  compensate?: TransactionalStepCompensateFn;
 }
 
 export type TransactionalStepsInput =
@@ -539,8 +644,12 @@ export interface TransactionalRollbackContext {
   rollbackOnDirty?: boolean;
   maxRetriesPerSignature?: number;
   stepTimeoutMs?: number;
+  abortGraceMs?: number;
   maxWallClockMs?: number;
   maxAttemptsTotal?: number;
+  maxSilentSteps?: number;
+  snapshotIgnorePatterns?: readonly string[];
+  lifecycleSavepoint?: boolean;
   retryLimiter?: SignatureRetryLimiter;
   throwOnRefusal?: boolean;
 }
@@ -551,6 +660,7 @@ export interface TransactionalLifecycleResult {
   refusalCode?: string;
   errorDetail?: string;
   rolledBackCount: number;
+  compensatedCount: number;
   attemptsExecuted: number;
   events: TxOcelEventLike[];
   retryCounts: Record<string, number>;
@@ -560,7 +670,7 @@ export interface TransactionalLifecycleResult {
 function resolveStepSpec(
   steps: TransactionalStepsInput,
   t: Transition
-): { run: TransactionalStepFn; timeoutMs?: number } | null {
+): TransactionalStepSpec | null {
   if (typeof steps === "function") {
     return { run: steps };
   }
@@ -577,18 +687,32 @@ async function runWithTimeout(
   fn: TransactionalStepFn,
   transition: Transition,
   attempt: number,
-  timeoutMs: number | undefined
+  timeoutMs: number | undefined,
+  abortGraceMs = 250
 ): Promise<TransactionalStepOutcome> {
   const ac = new AbortController();
   if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return await fn(transition, { attempt, signal: ac.signal });
   }
+  let runSettled = false;
+  const runPromise = Promise.resolve().then(() => fn(transition, { attempt, signal: ac.signal }));
+  const settledPromise = runPromise.then(
+    () => {
+      runSettled = true;
+    },
+    () => {
+      runSettled = true;
+    }
+  );
+
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   try {
     return await Promise.race([
-      fn(transition, { attempt, signal: ac.signal }),
+      runPromise,
       new Promise<TransactionalStepOutcome>((_, reject) => {
         timer = setTimeout(() => {
+          timedOut = true;
           ac.abort();
           reject(
             new TransactionalRollbackError(
@@ -600,6 +724,31 @@ async function runWithTimeout(
         }, timeoutMs);
       })
     ]);
+  } catch (err) {
+    if (timedOut && !runSettled) {
+      const graceMs = Number.isFinite(abortGraceMs) && abortGraceMs >= 0 ? abortGraceMs : 250;
+      if (graceMs > 0) {
+        let graceTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            settledPromise,
+            new Promise<void>((resolveGrace) => {
+              graceTimer = setTimeout(resolveGrace, graceMs);
+            })
+          ]);
+        } finally {
+          if (graceTimer !== undefined) clearTimeout(graceTimer);
+        }
+      }
+      if (!runSettled) {
+        throw new TransactionalRollbackError(
+          "ROLLBACK_FAILED",
+          `Transition "${transition.id}" did not settle within ${graceMs}ms after abort; refusing rollback to prevent concurrent workspace corruption`,
+          1
+        );
+      }
+    }
+    throw err;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
@@ -617,6 +766,11 @@ export async function executeTransactionalLifecycle(
   const rollbackOnDirty = rollbackCtx.rollbackOnDirty ?? true;
   const maxWallClockMs = rollbackCtx.maxWallClockMs ?? 60_000;
   const maxAttemptsTotal = rollbackCtx.maxAttemptsTotal ?? Math.max(16, net.transitions.length * 8);
+  const maxSilentSteps = rollbackCtx.maxSilentSteps ?? Math.max(100, net.transitions.length * 16);
+  const defaultAbortGraceMs = rollbackCtx.abortGraceMs ?? 250;
+  const snapshotOpts: WorkspaceSnapshotOptions | undefined = rollbackCtx.snapshotIgnorePatterns
+    ? { ignorePatterns: rollbackCtx.snapshotIgnorePatterns }
+    : undefined;
   const startedAt = Date.now();
 
   const marking = new Array<number>(net.places.length).fill(0);
@@ -642,24 +796,81 @@ export async function executeTransactionalLifecycle(
   const isEnabledAt = (ti: number): boolean =>
     net.preIndices[ti]!.every((p) => marking[p]! >= 1);
 
-  const drainSilent = () => {
+  const drainSilent = (): { ok: true } | { ok: false; code: "SILENT_CYCLE_DETECTED" | "LIFECYCLE_TIMEOUT"; detail: string } => {
+    const visited = new Set<string>([marking.join(",")]);
+    let silentSteps = 0;
     let progressed = true;
     while (progressed) {
+      if (Date.now() - startedAt > maxWallClockMs) {
+        return {
+          ok: false,
+          code: "LIFECYCLE_TIMEOUT",
+          detail: `Lifecycle exceeded maxWallClockMs=${maxWallClockMs} during silent transition draining`
+        };
+      }
       progressed = false;
       for (let ti = 0; ti < net.transitions.length; ti++) {
         const t = net.transitions[ti]!;
         if (t.silent && isEnabledAt(ti)) {
           for (const p of net.preIndices[ti]!) marking[p]! -= 1;
           for (const p of net.postIndices[ti]!) marking[p]! += 1;
+          silentSteps += 1;
+          const key = marking.join(",");
+          if (visited.has(key)) {
+            return {
+              ok: false,
+              code: "SILENT_CYCLE_DETECTED",
+              detail: `Silent transition "${t.id}" revisited marking [${key}] after ${silentSteps} silent step(s)`
+            };
+          }
+          if (silentSteps >= maxSilentSteps) {
+            return {
+              ok: false,
+              code: "SILENT_CYCLE_DETECTED",
+              detail: `Silent transition draining exceeded maxSilentSteps=${maxSilentSteps} at transition "${t.id}"`
+            };
+          }
+          visited.add(key);
           progressed = true;
         }
       }
     }
+    return { ok: true };
   };
 
   let rolledBackCount = 0;
+  let compensatedCount = 0;
   let attemptsExecuted = 0;
   const stepAttempts = new Map<string, number>();
+  const committedSteps: Array<{
+    transition: Transition;
+    attempt: number;
+    compensate?: TransactionalStepCompensateFn;
+  }> = [];
+
+  let lifecycleSnap: WorkspaceSnapshotHandle | null = null;
+  if (rollbackCtx.lifecycleSavepoint && rollbackCtx.workspaceDir) {
+    try {
+      lifecycleSnap = captureWorkspaceSnapshot(rollbackCtx.workspaceDir, snapshotOpts);
+    } catch (err) {
+      const code = err instanceof TransactionalRollbackError ? err.code : "ROLLBACK_FAILED";
+      const msg = err instanceof Error ? err.message : String(err);
+      pushEvent("transition_refused", [{ name: "reason", value: code }, { name: "detail", value: msg }]);
+      if (rollbackCtx.throwOnRefusal) throw err;
+      return {
+        ok: false,
+        standing: "BLOCKED",
+        refusalCode: code,
+        errorDetail: msg,
+        rolledBackCount: 0,
+        compensatedCount: 0,
+        attemptsExecuted: 0,
+        events,
+        retryCounts: limiter.getCounts(),
+        finalMarking: { [net.places[net.sourceIdx]!.id]: 1 }
+      };
+    }
+  }
 
   const buildFinalMarking = (): Record<string, number> => {
     const out: Record<string, number> = {};
@@ -669,12 +880,58 @@ export async function executeTransactionalLifecycle(
     return out;
   };
 
-  const failReturn = (
+  const failReturn = async (
     standing: "REFUSED" | "BLOCKED",
     refusalCode: string,
     errorDetail: string,
     errToThrow?: unknown
-  ): TransactionalLifecycleResult => {
+  ): Promise<TransactionalLifecycleResult> => {
+    // Saga-style LIFO compensation of previously committed transitions
+    for (let i = committedSteps.length - 1; i >= 0; i--) {
+      const entry = committedSteps[i]!;
+      if (!entry.compensate) continue;
+      try {
+        await entry.compensate(entry.transition, {
+          attempt: entry.attempt,
+          reason: refusalCode
+        });
+        compensatedCount += 1;
+        pushEvent("transition_compensated", [
+          { name: "transition", value: entry.transition.id },
+          { name: "attempt", value: String(entry.attempt) },
+          { name: "reason", value: refusalCode },
+          { name: "status", value: "ok" }
+        ]);
+      } catch (compErr) {
+        const compMsg = compErr instanceof Error ? compErr.message : String(compErr);
+        pushEvent("transition_compensated", [
+          { name: "transition", value: entry.transition.id },
+          { name: "attempt", value: String(entry.attempt) },
+          { name: "reason", value: refusalCode },
+          { name: "status", value: "failed" },
+          { name: "detail", value: compMsg }
+        ]);
+      }
+    }
+
+    if (lifecycleSnap) {
+      try {
+        const rb = lifecycleSnap.rollback(`lifecycle_${refusalCode.toLowerCase()}`, "__lifecycle__", rollbackOnDirty);
+        rolledBackCount += 1;
+        events.push(rb.event);
+      } catch (rbErr) {
+        const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+        pushEvent("transition_refused", [
+          { name: "transition", value: "__lifecycle__" },
+          { name: "reason", value: "ROLLBACK_FAILED" },
+          { name: "detail", value: rbMsg }
+        ]);
+      } finally {
+        lifecycleSnap.dispose();
+        lifecycleSnap = null;
+      }
+    }
+
     if (rollbackCtx.throwOnRefusal && errToThrow) {
       throw errToThrow;
     }
@@ -684,6 +941,7 @@ export async function executeTransactionalLifecycle(
       refusalCode,
       errorDetail,
       rolledBackCount,
+      compensatedCount,
       attemptsExecuted,
       events,
       retryCounts: limiter.getCounts(),
@@ -695,10 +953,22 @@ export async function executeTransactionalLifecycle(
     if (Date.now() - startedAt > maxWallClockMs) {
       const msg = `Lifecycle exceeded maxWallClockMs=${maxWallClockMs}`;
       pushEvent("transition_refused", [{ name: "reason", value: "LIFECYCLE_TIMEOUT" }, { name: "detail", value: msg }]);
-      return failReturn("BLOCKED", "LIFECYCLE_TIMEOUT", msg, new TransactionalRollbackError("LIFECYCLE_TIMEOUT", msg, 1));
+      return await failReturn("BLOCKED", "LIFECYCLE_TIMEOUT", msg, new TransactionalRollbackError("LIFECYCLE_TIMEOUT", msg, 1));
     }
 
-    drainSilent();
+    const drainRes = drainSilent();
+    if (!drainRes.ok) {
+      pushEvent("transition_refused", [
+        { name: "reason", value: drainRes.code },
+        { name: "detail", value: drainRes.detail }
+      ]);
+      return await failReturn(
+        "BLOCKED",
+        drainRes.code,
+        drainRes.detail,
+        new TransactionalRollbackError(drainRes.code, drainRes.detail, 1)
+      );
+    }
     if (marking[net.sinkIdx]! >= 1 && marking.every((m, idx) => idx === net.sinkIdx || m === 0)) {
       break;
     }
@@ -710,7 +980,7 @@ export async function executeTransactionalLifecycle(
     if (enabledIndices.length === 0) {
       const msg = `Deadlock: no enabled transitions before reaching sinkPlace "${net.sinkPlace}"`;
       pushEvent("transition_refused", [{ name: "reason", value: "DEADLOCK" }, { name: "detail", value: msg }]);
-      return failReturn("BLOCKED", "DEADLOCK", msg);
+      return await failReturn("BLOCKED", "DEADLOCK", msg);
     }
 
     const ti = enabledIndices[0]!;
@@ -719,7 +989,7 @@ export async function executeTransactionalLifecycle(
     if (!spec) {
       const msg = `No step handler configured for transition "${t.id}" (${t.activityId ?? t.label})`;
       pushEvent("transition_refused", [{ name: "transition", value: t.id }, { name: "detail", value: msg }]);
-      return failReturn("BLOCKED", "MISSING_STEP_HANDLER", msg);
+      return await failReturn("BLOCKED", "MISSING_STEP_HANDLER", msg);
     }
 
     attemptsExecuted += 1;
@@ -727,7 +997,7 @@ export async function executeTransactionalLifecycle(
       const msg = `Lifecycle exceeded maxAttemptsTotal=${maxAttemptsTotal}`;
       pushEvent("retry_budget_exhausted", [{ name: "transition", value: t.id }, { name: "detail", value: msg }]);
       const err = new ComplianceRefusalError("RETRY_BUDGET_EXHAUSTED", msg, "mu_on_O");
-      return failReturn("REFUSED", "RETRY_BUDGET_EXHAUSTED", msg, err);
+      return await failReturn("REFUSED", "RETRY_BUDGET_EXHAUSTED", msg, err);
     }
 
     const attempt = (stepAttempts.get(t.id) ?? 0) + 1;
@@ -736,13 +1006,13 @@ export async function executeTransactionalLifecycle(
     let snap: WorkspaceSnapshotHandle | null = null;
     try {
       if (rollbackCtx.workspaceDir) {
-        snap = captureWorkspaceSnapshot(rollbackCtx.workspaceDir);
+        snap = captureWorkspaceSnapshot(rollbackCtx.workspaceDir, snapshotOpts);
       }
     } catch (err) {
       const code = err instanceof TransactionalRollbackError ? err.code : "ROLLBACK_FAILED";
       const msg = err instanceof Error ? err.message : String(err);
       pushEvent("transition_refused", [{ name: "transition", value: t.id }, { name: "reason", value: code }, { name: "detail", value: msg }]);
-      return failReturn("BLOCKED", code, msg, err);
+      return await failReturn("BLOCKED", code, msg, err);
     }
 
     // Reserve input tokens
@@ -754,11 +1024,12 @@ export async function executeTransactionalLifecycle(
     );
 
     const stepTimeout = spec.timeoutMs ?? rollbackCtx.stepTimeoutMs;
+    const stepAbortGrace = spec.abortGraceMs ?? defaultAbortGraceMs;
     let outcome: TransactionalStepOutcome | undefined;
     let caughtError: unknown;
 
     try {
-      outcome = await runWithTimeout(spec.run, t, attempt, stepTimeout);
+      outcome = await runWithTimeout(spec.run, t, attempt, stepTimeout, stepAbortGrace);
     } catch (err) {
       caughtError = err;
     }
@@ -766,6 +1037,11 @@ export async function executeTransactionalLifecycle(
     if (outcome?.ok) {
       try {
         for (const p of net.postIndices[ti]!) marking[p]! += 1;
+        committedSteps.push({
+          transition: t,
+          attempt,
+          compensate: spec.compensate
+        });
         pushEvent("transition_completed", [
           { name: "transition", value: t.id },
           { name: "attempt", value: String(attempt) }
@@ -774,6 +1050,18 @@ export async function executeTransactionalLifecycle(
         snap?.dispose();
       }
       continue;
+    }
+
+    // If timed-out step failed to settle within abortGraceMs, fail closed without invoking snap.rollback()
+    if (caughtError instanceof TransactionalRollbackError && caughtError.code === "ROLLBACK_FAILED") {
+      snap?.dispose();
+      for (const p of net.preIndices[ti]!) marking[p]! += 1;
+      pushEvent("transition_refused", [
+        { name: "transition", value: t.id },
+        { name: "reason", value: "ROLLBACK_FAILED" },
+        { name: "detail", value: caughtError.message }
+      ]);
+      return await failReturn("REFUSED", "ROLLBACK_FAILED", caughtError.message, caughtError);
     }
 
     // Step failed or timed out -> atomic rollback first (if workspaceDir provided), then check retry cap
@@ -794,10 +1082,11 @@ export async function executeTransactionalLifecycle(
         events.push(rb.event);
       } catch (rbErr) {
         snap.dispose();
+        for (const p of net.preIndices[ti]!) marking[p]! += 1;
         const code = rbErr instanceof TransactionalRollbackError ? rbErr.code : "ROLLBACK_FAILED";
         const msg = rbErr instanceof Error ? rbErr.message : String(rbErr);
         pushEvent("transition_refused", [{ name: "transition", value: t.id }, { name: "reason", value: code }, { name: "detail", value: msg }]);
-        return failReturn("REFUSED", code, msg, rbErr);
+        return await failReturn("REFUSED", code, msg, rbErr);
       } finally {
         snap.dispose();
       }
@@ -805,21 +1094,23 @@ export async function executeTransactionalLifecycle(
 
     const canRetryFlag = outcome?.retryable !== false;
     if (!canRetryFlag) {
+      for (const p of net.preIndices[ti]!) marking[p]! += 1;
       const msg = outcome?.detail ?? `Non-retryable failure on "${t.id}"`;
       pushEvent("transition_refused", [{ name: "transition", value: t.id }, { name: "detail", value: msg }]);
-      return failReturn("REFUSED", "STEP_REFUSED", msg);
+      return await failReturn("REFUSED", "STEP_REFUSED", msg);
     }
 
     try {
       limiter.recordFailure(errorSignature, t.id);
     } catch (limitErr) {
+      for (const p of net.preIndices[ti]!) marking[p]! += 1;
       const msg = limitErr instanceof Error ? limitErr.message : String(limitErr);
       pushEvent("retry_budget_exhausted", [
         { name: "transition", value: t.id },
         { name: "signature", value: limiter.normalizeSignature(errorSignature) },
         { name: "detail", value: msg }
       ]);
-      return failReturn("REFUSED", "RETRY_BUDGET_EXHAUSTED", msg, limitErr);
+      return await failReturn("REFUSED", "RETRY_BUDGET_EXHAUSTED", msg, limitErr);
     }
 
     // Return tokens cleanly ONLY after atomic rollback & retry budget check succeeded
@@ -831,10 +1122,13 @@ export async function executeTransactionalLifecycle(
     ]);
   }
 
+  lifecycleSnap?.dispose();
+
   return {
     ok: true,
     standing: "ALIVE",
     rolledBackCount,
+    compensatedCount,
     attemptsExecuted,
     events,
     retryCounts: limiter.getCounts(),
