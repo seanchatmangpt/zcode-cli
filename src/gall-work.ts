@@ -66,11 +66,20 @@ import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { selectExecutionProvider, type ReadConfigText } from "./execution-providers.ts";
-import { GALL_WORK_SOURCE, OcelRecorder, STREAM_SOURCE, leaseIdentityFromEnv, ocelDirectory, ocelEnabled } from "./ocel-tap.ts";
+import {
+  GALL_WORK_SOURCE,
+  OcelRecorder,
+  STREAM_SOURCE,
+  buildDualLogJoinManifest,
+  leaseIdentityFromEnv,
+  ocelDirectory,
+  ocelEnabled,
+  writeDualLogJoinManifest
+} from "./ocel-tap.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import {
   capacityFromBody,
@@ -564,9 +573,8 @@ export function leaseFilePaths(cwd: string): string[] {
  * Persist writes the same set via `leaseFilePathsKeyed`. Unkeyed sessions
  * read/write legacy `.json` only.
  *
- * Residual: installed cache `26.9.17` may still try keyed then legacy until
- * reinstall/sync catches source; a keyed writer remains correct under both
- * (gate's first hit is the keyed file we write).
+ * Host cache `…/xaas-fabric/26.9.22/` must match source gate sha (26.9.17
+ * residual removed). Keyed writer remains correct under keyed-only gate law.
  */
 export function leaseGateReadPathsKeyed(cwd: string, leaseId: string | undefined): string[] {
   // Writer and source-gate share one path set: keyed-only or legacy-only.
@@ -868,6 +876,10 @@ export interface ConstructOutcome {
   heartbeatFailures?: string[];
   /** Receipt sealed by the OCEL tap when ZCODE_OCEL=1 (ZCODE-26922-06). */
   ocelReceiptPath?: string;
+  /** Stream `.jsonocel` path sealed with the construct turn (dual-log join). */
+  ocelPath?: string;
+  /** Sanitized stream session id (E2O session namespace for the join sidecar). */
+  ocelSessionId?: string;
 }
 
 const constructOutputTailBytes = 4096;
@@ -1012,9 +1024,14 @@ export async function runConstruct(
       clearInterval(heartbeat);
       signal?.removeEventListener("abort", onAbort);
       let ocelReceiptPath: string | undefined;
+      let ocelPath: string | undefined;
+      let ocelSessionId: string | undefined;
       if (ocel) {
         try {
-          ocelReceiptPath = ocel.finish().receiptPath;
+          const sealed = ocel.finish();
+          ocelReceiptPath = sealed.receiptPath;
+          ocelPath = sealed.ocelPath;
+          ocelSessionId = sealed.sessionId;
         } catch (error) {
           // A failed tap must not fail the leased turn; the close evidence
           // simply carries no receipt path.
@@ -1026,7 +1043,9 @@ export async function runConstruct(
         outputTail: tail,
         durationMs: Date.now() - started,
         heartbeatFailures,
-        ocelReceiptPath
+        ocelReceiptPath,
+        ocelPath,
+        ocelSessionId
       });
     };
 
@@ -1232,6 +1251,8 @@ export async function runGallWork(
     ? new OcelRecorder(GALL_WORK_SOURCE, ocelDirectory(env), lifecycleIdentity)
     : undefined;
   const lifecycleReceiptPath = lifecycle ? join(ocelDirectory(env), `gall-work-${request.epochId}.receipt.json`) : undefined;
+  // Captured when construct seals its stream log — join sidecar needs both paths.
+  let streamOcelSeal: { ocelPath: string; sessionId?: string } | undefined;
   let lifecycleSeq = 0;
   const emitLifecycle = (event: string, fields: Record<string, unknown>): void => {
     if (!lifecycle) return;
@@ -1463,6 +1484,9 @@ export async function runGallWork(
     const construct = options.construct
       ? await options.construct(request, prompt, heartbeat, abort.signal)
       : await runConstruct(request, prompt, heartbeat, runOptions);
+    if (construct.ocelPath) {
+      streamOcelSeal = { ocelPath: construct.ocelPath, sessionId: construct.ocelSessionId };
+    }
     // Union outer + construct observations; never prefer one list and drop the other.
     const surfacedHeartbeatFailures = [
       ...heartbeatFailures,
@@ -1698,7 +1722,29 @@ export async function runGallWork(
     for (const signalName of ["SIGINT", "SIGTERM"] as const) process.removeListener(signalName, onSignal);
     if (lifecycle) {
       try {
-        lifecycle.finish();
+        const gallSealed = lifecycle.finish();
+        // Dual-log join sidecar: index stream↔gall files by lease identity.
+        // No merge/rehash — basenames + optional session namespaces only.
+        const workOrderIri = request.descriptor?.work_order_iri;
+        if (streamOcelSeal && workOrderIri) {
+          const manifest = buildDualLogJoinManifest({
+            streamOcel: basename(streamOcelSeal.ocelPath),
+            gallOcel: basename(gallSealed.ocelPath),
+            workOrderIri,
+            epochId: request.epochId,
+            streamSession: streamOcelSeal.sessionId,
+            gallSession: gallSealed.sessionId
+          });
+          if (manifest) {
+            try {
+              writeDualLogJoinManifest(ocelDirectory(env), manifest);
+            } catch (error) {
+              console.error(
+                `gall-work: ocel dual-log join write failed: ${error instanceof Error ? error.message : String(error)}`
+              );
+            }
+          }
+        }
       } catch (error) {
         console.error(`gall-work: ocel lifecycle seal failed: ${error instanceof Error ? error.message : String(error)}`);
       }

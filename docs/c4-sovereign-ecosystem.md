@@ -19,9 +19,9 @@ C4Context
   Person(architect, "Solo Principal Architect", "Operates the TAI 555-to-1 Foundry (F=0), approves TASK_CONTRACT.md, and seals Seat AS-01 DO transitions")
   Person_Ext(buyer, "HoldCo Principal / Executive", "Drops read-only ERP/repo snapshots via /drop/:lease_id, views Claims vs Code, funds Monday pull rails")
   Person_Ext(oem, "Woz & Jobs OEM Partner", "Independent cybersecurity pro, MSP, or vCISO delivering branded audits (wholesale RAID cells aspirational / MISSING)")
-  Person_Ext(gatekeeper, "Insurer / Regulator / Auditor", "Verifies 352B CTRT and 736B PCCf compliance offline via free sub-250 KB WASM verifier")
-  Person_Ext(staff, "Client Staff & Church Leaders", "Uses existing React/SaaS screens wrapped by FFB compat shims at 120 Hz DOC-ONLY/target (unmeasured) with zero retraining")
-  Person_Ext(vendor, "Trade Vendors & Carriers", "Settles 3-way verified invoices at T+0 via zero-install ash_a2a Kudzu runners")
+  Person_Ext(gatekeeper, "Insurer / Regulator / Auditor", "Offline Ed25519 verify_witness via slim gatekeeper WASM (28673 B ALIVE; ≤250 KiB court); fat ~718 KB provenance ABI ≠ gatekeeper — not CTRT/PCCf fossil parse")
+  Person_Ext(staff, "Client Staff & Church Leaders", "Uses existing React/SaaS screens wrapped by on-disk FFB compat shims (no @fnox/* GA; 120 Hz DOC-ONLY/unmeasured)")
+  Person_Ext(vendor, "Trade Vendors & Carriers", "Settles verified invoices via ash_a2a Kudzu runners (T+0 / instant-clear = DOC-ONLY)")
 
   System(ecosystem, "Sovereign Ecosystem (doc label v26.11.20)", "Five-plane deterministic compiler foundry, cloud faces (AWS/Azure/GCP ALIVE; 4-Cloud RAID aspirational), zero-LLM runtime, CASTLE (fortune5 ALIVE as CASTLE CLI — zcode↛fortune5; probes/publish underwire), and in-cos RevOps + FinFab clearinghouse")
 
@@ -34,15 +34,15 @@ C4Context
   Rel(architect, ecosystem, "Authorizes contracts, authors ontologies/TOML, seals DO", "CLI / WebAuthn")
   Rel(buyer, ecosystem, "Uploads snapshots, reviews exhibits, funds pull rails", "HTTPS / ACH / MACC / Card")
   Rel(oem, ecosystem, "Pulls --brand content packs (wholesale RAID cells aspirational)", "CLI / Monday Pull Rails")
-  Rel(gatekeeper, ecosystem, "Validates cryptographic witnesses with zero PII access", "Air-gapped WASM verify_witness")
-  Rel(staff, ecosystem, "Operates familiar UIs without browser tokens/REST", "WebTransport h3 (AOQ1)")
-  Rel(vendor, ecosystem, "Executes instant-clear settlements & cure obligations", "a2a.proto / 736B PCCf")
+  Rel(gatekeeper, ecosystem, "Validates Ed25519 witnesses offline (slim 28673 B; fat ≠ gatekeeper)", "Air-gapped slim verify_witness")
+  Rel(staff, ecosystem, "Operates familiar UIs via on-disk FFB compat (DOC-ONLY wire theater)", "WebTransport h3 / AOQ1 DOC-ONLY/underwire")
+  Rel(vendor, ecosystem, "Settlements & cure obligations (instant-clear DOC-ONLY)", "a2a.proto underwire")
 
   Rel(ecosystem, clouds, "Runs Cloud Run + cloud faces (AWS/Azure/GCP); erasure-coded RAID striping aspirational/MISSING", "Terraform / QUIC :443")
-  Rel(ecosystem, llm_edge, "Parses unstructured PDFs/CSVs/transcripts to candidate RDF", "Stateless HTTPS ($0.22/MTok)")
+  Rel(ecosystem, llm_edge, "Parses unstructured PDFs/CSVs/transcripts to candidate RDF", "Stateless HTTPS ($0.22/MTok DOC-ONLY)")
   Rel(ecosystem, webauthn, "Requires hardware user-verification seal for DO actuation", "FIDO2 / WebAuthn ES256")
   Rel(ecosystem, linkedin, "Publishes anonymized carousels/newsletters; ingests signals (headcount unverified)", "PDF / Markdown / CSV")
-  Rel(ecosystem, legacy_saas, "Wraps UIs via FFB compat modules; ingests read-only exports", "repop/src/compat / CSV / Read-Only API")
+  Rel(ecosystem, legacy_saas, "Wraps UIs via on-disk FFB compat (no @fnox/* GA); ingests read-only exports", "repop/src/compat / CSV / Read-Only API")
 ```
 
 ---
@@ -87,28 +87,28 @@ C4Container
 
   System_Boundary(p2, "Plane 2: Sovereign Wire, Storage & Cryptographic Proof") {
     Container(wire, "Arcus & cgap", "Go / Rust (mixed)", "Byte-for-byte wire slicing (Arcus) + gcp_emulator code ALIVE (production-parity UNVERIFIED) + cgap-bosym/cgap-ocel2 (std) + cgap-branchless (#![no_std] #![forbid(unsafe_code)] SWAR only) [TRANSPORT]")
-    Container(proof, "GraphLaw & Affidavit", "Rust no_std / WASM / BEAM NIF", "Sub-10 ns SRL turnstile DOC-ONLY/unmeasured (GraphLaw); 352B CTRT, 736B PCCf frame ALIVE / admit_pccf FAKE-ALIVE stub, map_live vs sub-250 KB verify_witness; GraphLaw Rel→Affidavit ML-DSA DOC-ONLY/aspirational (GraphLaw attest Ed25519; Affidavit ML-DSA-65 local ≠ that Rel; Σ_PQC unmet on GraphLaw path) [ADMIT/ATTEST labels aspirational]")
+    Container(proof, "GraphLaw & Affidavit", "Rust no_std / WASM / BEAM NIF", "Sub-10 ns SRL DOC-ONLY (GraphLaw); CTRT/PCCf frame parse ALIVE / admit_pccf stub; slim gatekeeper verify_witness Ed25519 ALIVE @28673 B (fat ~718 KB provenance ≠ gatekeeper); GraphLaw Rel→Affidavit ML-DSA aspirational (attest Ed25519; Σ_PQC unmet) [ADMIT/ATTEST aspirational]")
     ContainerDb(aod, "Zero-String Sealed .aod & Smalt", "Binary 0x9F1AC401 / BEAM+Rust", "64B-aligned zero-string storage, monoatomic leases, affi aod rotate; MDS+FROST 4-Cloud RAID NOT in smalt (aspirational/MISSING); AoQ QUIC face without live 1350B/RFC 9266 Isochronous product (those aspirational) [STORE / INFRA]")
   }
 
-  Rel(revops, sjira, "Emits staged SHA-256 diagnostic candidates", "candidates.jsonl")
-  Rel(revops, cos, "Routes cleared buyers via inverse surface compiler", "Ash / PostgreSQL")
-  Rel(cos, brce, "Requests guarded treasury settlement via CommandBus/BRCEBroker + WebAuthn where wired — NOT via CASTLE ConstructAdmission (CASTLE-local opaque; ↛ gymact/CommandBus product wire)", "AshA2A.CommandBus / gymact BRCEBroker")
+  Rel(revops, sjira, "Emits staged diagnostic candidates (DOC-ONLY / underwire staging)", "candidates.jsonl DOC-ONLY")
+  Rel(revops, cos, "Routes cleared buyers (inverse-surface compiler DOC-ONLY/underwire)", "Ash / PostgreSQL underwire")
+  Rel(cos, brce, "Guarded treasury settlement via CommandBus/BRCEBroker + WebAuthn where wired — NOT CASTLE ConstructAdmission", "AshA2A.CommandBus / gymact BRCEBroker")
   Rel(sjira, zcode, "Feeds eligible work-order frontier", "ggen sjira frontier")
-  Rel(zcode, castle, "OPT-IN underwire castle-publish only (enabled=false; CASTLE_PUBLISH_EXECUTE opt-in) — zcode↛fortune5; fortune5 ALIVE as CASTLE CLI only; probes/deletion/publish underwire", "adapter / CONSTRUCT (not fortune5)")
+  Rel(zcode, castle, "OPT-IN underwire castle-publish (enabled=false) — zcode↛fortune5; fortune5 = CASTLE CLI only", "adapter / CONSTRUCT")
   Rel(zcode, ggen, "Executes pack qualification & clean-room sync", "marketplace.py / mix ggen_igniter.sync --check")
   Rel(transducer, reasoner, "Submits candidate RDF structs", "SHACL; Truex whitelist via cos")
   Rel(reasoner, ferroplan, "Supplies verified domain ontologies", "Arrow IPC / /dev/shm")
   Rel(ferroplan, ggen, "Supplies POWL v2 & control surfaces", "UniversalPlan ABI")
-  Rel(ggen, tenants, "Synthesizes disposable app trees & FFB shims", "Zero-diff codegen")
+  Rel(ggen, tenants, "Synthesizes disposable app trees & FFB compat shims", "AOT codegen; drift gate mix ggen_igniter.sync --check")
   Rel(ggen, xaas, "Compiles photomask closures & static string tables", "AOT Rust/Elixir")
-  Rel(castle, brce, "DOC-ONLY / aspirational cross-repo Rel — ConstructAdmission↛AshA2A.CommandBus/gymact BRCEBroker; CASTLE-local GymAct/BRCE journal underwire only (v26_8_18), not product CommandBus wire", "aspirational / no cross-repo Rel")
+  Rel(castle, brce, "DOC-ONLY — ConstructAdmission↛CommandBus/BRCEBroker; CASTLE-local journal underwire only", "aspirational / no cross-repo Rel")
   Rel(brce, xaas, "Grants scoped GymAct execution leases via BRCEBroker/CommandBus", "Monotonic Lease")
-  Rel(ffb, xaas, "Streams 16B intent frames; receives 28B Arrow pages", "WebTransport h3 (64B AOQ1)")
-  Rel(xaas, diode, "DOC-ONLY/underwire — intended frames toward *4pm POWL alignment; named Causal Diode MISSING", "aspirational / host modules")
-  Rel(diode, proof, "DOC-ONLY OVERCLAIM — former gamma>0→SMT/PCCf revoke; named Causal Diode MISSING; MDP gamma ≠ POWL gamma ≠ Affidavit revoke; diode↛proof product wire", "aspirational; not 736B PCCf revoke path")
+  Rel(ffb, xaas, "Intended binary edge frames (16B/28B/64B AOQ1 DOC-ONLY/underwire)", "WebTransport h3 DOC-ONLY/underwire")
+  Rel(xaas, diode, "DOC-ONLY/underwire — *4pm POWL alignment; named Causal Diode MISSING", "aspirational / host modules")
+  Rel(diode, proof, "DOC-ONLY OVERCLAIM — named Causal Diode MISSING; MDP/POWL/Affidavit gamma ≠; diode↛proof", "aspirational")
   Rel(xaas, wire, "Streams OCEL 2.0 events & binary payloads", "Zero-copy /dev/shm")
-  Rel(wire, proof, "Intended ingress validate + crypto shadow seal underwire (admit_pccf FAKE-ALIVE/stub; GraphLaw Rel→Affidavit ML-DSA aspirational — Ed25519 on GraphLaw)", "GraphLaw / Affidavit")
+  Rel(wire, proof, "Ingress validate + crypto shadow underwire (admit_pccf stub; GraphLaw attest Ed25519)", "GraphLaw / Affidavit")
   Rel(proof, aod, "Maps live leases & rotates write-forward shards", "affi aod seal / rotate")
 ```
 
@@ -118,7 +118,7 @@ C4Container
 
 This view zooms into how `zcode-cli 3.14.4*` orchestrates the Explore→Exploit I/O loop across `sJira`, `ggen-marketplace`, `ggen_igniter`, `ferroplan`, and (opt-in) `CASTLE` publish — not a sealed hands-free twin-parity product.
 
-> **Rel honesty (C4 mop / 61ae727b):** `Rel(zcode,castle)` **zcode↛fortune5** — `[adapters.castle_publish] enabled=false` underwire; `CASTLE_PUBLISH_EXECUTE` opt-in; fortune5 ALIVE only as CASTLE CLI. `ConstructAdmission` **↛** AshA2A.CommandBus / gymact BRCEBroker (CASTLE-local opaque; in-crate GymAct/BRCE journal underwire ≠ product wire). `Rel(diode,proof)` **DOC-ONLY OVERCLAIM** — named Causal Diode MISSING; former γ>0→SMT revoke false; cognition MDP `gamma` ≠ POWL choice-graph `gamma` ≠ Affidavit revoke. GraphLaw Rel→Affidavit **ML-DSA / Σ_PQC live seal OVERCLAIM** — attest **Ed25519** today; Affidavit ML-DSA-65 local ≠ that Rel; Σ_PQC unmet (keep Sub-10ns / Σ_PQC / 120Hz **DOC-ONLY**). Arcus `gcp_emulator` code ALIVE; **production-parity UNVERIFIED**. Twin-parity: explore found `[adapters.sjira].enforce_twin_parity` **TOML unread**/orphan; loader now parses → ReceiptSink; default pin arms `twin_parity_self_test_cmd=["true"]` → `hands_free` **auto-armed** (stub court only — not a product twin court).
+> **Rel honesty:** `zcode↛fortune5` (castle-publish `enabled=false`). `ConstructAdmission` **↛** CommandBus/BRCEBroker. `diode↛proof` DOC-ONLY OVERCLAIM. GraphLaw attest **Ed25519** (ML-DSA/Σ_PQC unmet). Arcus emulator **production-parity UNVERIFIED**. Twin pin (CREATE-4): `twin_parity_self_test_cmd=["true"]` → `hands_free` stub-armed only — not a product twin court.
 
 ```mermaid
 C4Component
@@ -205,14 +205,14 @@ C4Component
     Component(arcus_c, "Arcus Wire & Emulators", "Go", "Byte-for-byte boundary slicing + ~/arcus/internal/gcp_emulator code ALIVE; production-parity vs real GCP UNVERIFIED (KNOWN_DIVERGENCES / binauthz_cloudrun.tf)")
     Component(cgap_c, "cgap Kernel (mixed std)", "Rust", "cgap-bosym + cgap-ocel2 = std; only cgap-branchless is #![no_std] #![forbid(unsafe_code)]; 8B u64 OCEL packing DOC-ONLY rates")
     Component(gl_c, "GraphLaw Turnstile", "Rust no_std", "Sub-10 ns DOC-ONLY/unmeasured gate + encrypted literal enclaves; admit_pccf FAKE-ALIVE/stub; production attest Ed25519 — GraphLaw Rel→Affidavit ML-DSA aspirational; Σ_PQC unmet on GraphLaw path")
-    Component(affi_c, "Affidavit ~26.10.17 Dual-Mode Verifier", "Rust no_std / WASM / NIF", "map_live vs verify_witness (sub-250 KB WASM); Affidavit ML-DSA-65 local/PQC path exists — not the live GraphLaw Rel modulus (that Rel stays Ed25519/aspirational ML-DSA)")
+    Component(affi_c, "Affidavit ~26.10.17 Dual-Mode Verifier", "Rust no_std / WASM / NIF", "map_live vs slim gatekeeper verify_witness Ed25519 ALIVE @28673 B (≤250 KiB); fat 718736 B provenance ≠ gatekeeper / not CTRT/PCCf fossil parse; ML-DSA-65 local ≠ GraphLaw Rel (Ed25519)")
     Component(aod_c, "Zero-String Sealed .aod Engine", "Binary Format", "64B AodHeader (0x9F1AC401), 32B BufferDirEntry, 64B-aligned FFOR/avec pages, 352B CtrtShadow, affi aod rotate")
     Component(smalt_c, "Smalt (cloud faces host; RAID aspirational)", "BEAM/OTP + Rust no_std", "AWS/Azure/GCP faces via Arcus; MDS/FROST 4-Cloud RAID NOT in smalt (MISSING); AoQ QUIC face without live 1350B Isochronous / RFC 9266 (those aspirational); servengine_sim ALIVE")
   }
 
   Rel(shims, worker, "Dispatches salted BLAKE3 proxy lookups", "SharedArrayBuffer")
   Rel(worker, gpu, "Projects nameless Arrow buffers", "Zero-copy")
-  Rel(worker, a2a, "16B intent frames / 28B page projections", "WebTransport h3 (64B AOQ1)")
+  Rel(worker, a2a, "Intended binary edge frames (16B/28B/64B AOQ1 DOC-ONLY/underwire)", "WebTransport h3 DOC-ONLY/underwire")
   Rel(brce_gate, a2a, "Unlocks protected DO via CommandBus/BRCEBroker — ConstructAdmission↛this Rel", "Signed Lease")
   Rel(a2a, crud, "Executes tenant-isolated domain actions", "TenantBinding.with_tenant_tx")
   Rel(a2a, wasm4pm_c, "DOC-ONLY/underwire — intended receipts toward *4pm POWL alignment; named Causal Diode MISSING", "wasm4pm / BeamPM")
@@ -230,7 +230,7 @@ C4Component
 
 This view maps every active repository, live production surface, local cloud-twin code (Arcus `gcp_emulator` ALIVE; **production-parity UNVERIFIED**), and zero-custody client infrastructure node onto its execution environment.
 
-> **Twin / parity honesty:** Arcus emulator twins ≠ sealed production-parity (**UNVERIFIED** if claimed as parity). Explore (61ae727b): `[adapters.sjira].enforce_twin_parity` was **TOML unread**/orphan. Loader now parses → `ReceiptSink`; default `zcode-cli.toml` pins `twin_parity_self_test_cmd=["true"]` → `twinParity.hands_free` **auto-armed** (stub only; not a product ALIVE twin court).
+> **Twin / parity honesty:** Arcus emulator ≠ sealed production-parity (**UNVERIFIED**). CREATE-4 pin: `twin_parity_self_test_cmd=["true"]` → `twinParity.hands_free` stub-armed only (not a product ALIVE twin court).
 
 > **Deploy packaging truth:** Keep **AWS / Azure / GCP** faces. Treat **4-Cloud RAID / OCI** and **MDS+FROST striping** as **MISSING / aspirational** (not in `~/smalt`). FFB edge packaging = **7 `~/repop` compat shims**, not published `@fnox/*`; **`@fnox/react` MISSING**. **1,350B Isochronous AoQ QUIC = aspirational** (AoQ face without live 1350/9266 product). Arcus `gcp_emulator` **code ALIVE**; **production-parity UNVERIFIED**.
 
@@ -269,12 +269,12 @@ C4Deployment
   }
 
   Deployment_Node(auditor_host, "Air-Gapped Gatekeeper / Insurer Host", "Zero Network Egress") {
-    Container(wasm_aud, "Affidavit Micro-Verifier", "Standalone sub-250 KB WASM", "Offline verify_witness over 352B CTRT & 736B PCCf fossils")
+    Container(wasm_aud, "Affidavit Micro-Verifier", "affidavit-gatekeeper-wasm 28673 B", "Offline Ed25519 verify_witness (slim ALIVE); fat affidavit-wasm 718736 B = provenance ABI ≠ gatekeeper; not CTRT/PCCf fossil parse")
   }
 
   Rel(repos_core, gcp_fnox, "Deploys clean-room builds & verified TF plans", "Artifact Registry / Terraform")
   Rel(repos_core, client_faces, "Provisions cloud faces (RAID cells aspirational/MISSING)", "Arcus faces / Terraform")
-  Rel(client_browser, gcp_fnox, "Connects FFB compat modules to live XaaS", "WebTransport h3 (AOQ1)")
+  Rel(client_browser, gcp_fnox, "Connects on-disk FFB compat modules to live XaaS (wire DOC-ONLY)", "WebTransport h3 / AOQ1 DOC-ONLY/underwire")
   Rel(client_browser, client_faces, "Intended sovereign RAID path (MISSING in smalt)", "AoQ QUIC face; 1,350B Isochronous + RFC 9266 aspirational (not live)")
   Rel(gcp_fnox, auditor_host, "Publishes anonymized gatekeeper-pack exhibits", "Offline Transfer (Zero PII)")
 ```
@@ -316,7 +316,7 @@ Program umbrella title `v26.11.20` is **not** a package pin. Package claims belo
 | **Arcus** | `~/arcus` | Go + Terraform | Plane 2 | Byte-for-byte wire slicing + `internal/gcp_emulator` **code ALIVE**; **production-parity UNVERIFIED** vs real GCP (`KNOWN_DIVERGENCES`, `binauthz_cloudrun.tf`) (`TRANSPORT`) |
 | **cgap** | `/Users/sac/cgap` | Rust mixed: **only `cgap-branchless`** is `#![no_std]` `#![forbid(unsafe_code)]`; **`cgap-bosym` / `cgap-ocel2` = std** | Plane 2 | `cgap-bosym`, `cgap-ocel2` (8B `u64` OCEL packing; ~98.3% / >12M rows/s **DOC-ONLY**), `cgap-branchless` SWAR (`TRANSPORT/STORE`) |
 | **GraphLaw** | `graphlaw/src/pccf.rs`, `ash_graphlaw` | Rust `#![no_std]` / Elixir | Plane 2 | Sub-10 ns semantic-law ingress turnstile **DOC-ONLY/unmeasured**; `admit_pccf` **FAKE-ALIVE/stub** (`NotImplemented`); 736B parse fence ALIVE; encrypted literal enclaves; **Rel→Affidavit ML-DSA = DOC-ONLY/aspirational** (GraphLaw production attest **Ed25519**; $\mathbf{\Sigma}_{\text{PQC}}$ unmet on GraphLaw path) (`ADMIT` label aspirational) |
-| **Affidavit / strata** | `affi` CLI ~26.10.17, `ash_affidavit`, `strata` | Rust `#![no_std]` / WASM / BEAM NIF | Plane 2 | Zero-String `.aod` (`0x9F1AC401`), 352B CTRT, 736B PCCf, `map_live` vs `< 250 KB` `verify_witness`; Affidavit ML-DSA-65 **local/PQC path** exists — **not** the live GraphLaw Rel modulus (that Rel stays Ed25519 / aspirational ML-DSA) (`ATTEST` label aspirational) |
+| **Affidavit / strata** | `affi` CLI ~26.10.17, `ash_affidavit`, `strata` | Rust `#![no_std]` / WASM / BEAM NIF | Plane 2 | Zero-String `.aod`; CTRT/PCCf **frame parse** ALIVE; slim gatekeeper `verify_witness` **Ed25519 ALIVE @28673 B** (≤250 KiB court); fat ~718 KB provenance ABI ≠ gatekeeper / **not** fossil-parse product; GraphLaw Rel modulus stays Ed25519 (`ATTEST` aspirational) |
 | **Smalt** | `~/smalt` | BEAM/OTP + Rust `#![no_std]` | Plane 2 | Cloud faces via Arcus (AWS/Azure/GCP **ALIVE**); **4-Cloud RAID / OCI / MDS+FROST NOT in smalt** (MISSING/aspirational); AoQ QUIC **face** without live **1,350B Isochronous / RFC 9266** (those aspirational); `servengine_sim` (`INFRASTRUCTURE`) |
 | **BRCE** | Protocol host modules (not solo crate) + Seat AS-01 | `gymact` BRCEBroker / `AshA2A.CommandBus` / WebAuthn ES256 | Plane 3 | Receipted `DO` via CommandBus/BRCEBroker ALIVE where wired; `ConstructAdmission` **↛** that product Rel (CASTLE-local opaque; in-crate GymAct/BRCE journal underwire ≠ gymact named type / 7-rung enum; lattice DOC-ONLY/aspirational); UV seals where wired |
 | **XaaS** | `~/xaas` (`ash_a2a`, `ash_pplan`, `ash_surface`, `chicago_server`) | Elixir / BEAM OTP 28 | Plane 3 | Zero-LLM A2A `gen_statem` runtime (WAL append ~29k–88k frames/s measured; 113k frames/s **DOC-ONLY**; B=1), tenant CRUD + PG15 RLS (`EXECUTE behind BRCE`; compose `pgvector/pgvector:pg15`) |
@@ -356,5 +356,6 @@ Throughput and size figures that previously appeared as live C4 product claims a
 | `ConstructAdmission` → BRCE/CommandBus | **↛ product Rel** | CASTLE-local opaque; in-crate GymAct/BRCE journal underwire ≠ AshA2A.CommandBus / gymact BRCEBroker |
 | `Rel(diode,proof)` / gamma revoke | **DOC-ONLY OVERCLAIM** | Named Causal Diode MISSING; MDP γ ≠ POWL γ ≠ Affidavit SMT revoke |
 | GraphLaw Rel → Affidavit ML-DSA | **DOC-ONLY / aspirational** | GraphLaw attest Ed25519; Affidavit ML-DSA-65 local ≠ that Rel modulus |
-| twin-parity / `hands_free` | **stub-armed** | Default pin `twin_parity_self_test_cmd=["true"]` → `hands_free` auto-armed; not a product twin court |
+| twin-parity / `hands_free` | **stub-armed** | CREATE-4 pin `twin_parity_self_test_cmd=["true"]` → `hands_free` auto-armed; not a product twin court |
+| Affidavit slim gatekeeper WASM | **ALIVE @28673 B** | `affidavit-gatekeeper-wasm` Ed25519 `verify_witness`; ≤250 KiB court; fat ~718 KB provenance ≠ gatekeeper / not CTRT/PCCf fossil parse |
 | Arcus production-parity | **UNVERIFIED** | `gcp_emulator` code ALIVE; parity vs real GCP not sealed (`KNOWN_DIVERGENCES`) |

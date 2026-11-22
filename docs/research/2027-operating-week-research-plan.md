@@ -31,7 +31,7 @@ Standing vocabulary (from SoT mop):
 | 4 | CASTLE `qualify_fortune5` (40 controls) | **ALIVE** | `~/castle` CLI `fortune5 qualify` |
 | 5 | CASTLE multi-probe forensic pins | **PARTIAL** | `~/castle/src/probes` wired; `configs/probes-manifest.json` still `PIN_ON_BUILD` |
 | 6 | CASTLE publish Typst → PDF / LinkedIn exhibits | **PARTIAL** | `~/castle/src/publish` Typst-**source** emit; no Typst compiler product; `CASTLE-SPEC-26.11.20` **MISSING** |
-| 7 | Gatekeeper sub-250 KB WASM `verify_witness` | **PARTIAL** | `~/affidavit` `verify_witness` / Ed25519 witness path ALIVE in crate+tests; insurer **packaging / size receipt** not productized as “gatekeeper-pack” |
+| 7 | Gatekeeper sub-250 KB WASM `verify_witness` | **ALIVE** (slim) | `~/affidavit/affidavit-gatekeeper-wasm` pin **28673 B** (`dist/affidavit_gatekeeper_verify_witness.wasm`, size court ≤256000); inventory `docs/GATEKEEPER_VERIFY_WITNESS_WASM_INVENTORY.md`. Fat `affidavit-wasm` **718736 B** remains provenance ABI — **not** the gatekeeper product |
 | 8 | 352B CTRT / 736B PCCf fossils | **PARTIAL** | Frame/parse surfaces in Affidavit/GraphLaw; `graphlaw/src/pccf.rs` `admit_pccf` → **FAKE-ALIVE stub** (`NotImplemented`) |
 | 9 | Seat AS-01 WebAuthn DO seal (UV=1, monotonic `sign_count`) | **ALIVE** (hygiene) / **PARTIAL** (end-to-end DO evidence) | `~/fnox/cos` `FnoxCosWeb.SealChallenge` + WebAuthn docs; need receipted DO transition evidence, not only helpers |
 | 10 | HoldCo / FinFab clearinghouse (`cos.fnox.io`) | **PARTIAL** / live **FAKE-ALIVE** | Code+TF ALIVE (`infra/gcp/cos`, AshDoubleEntry); live `/healthz` with **`DB_UNAVAILABLE`** |
@@ -65,7 +65,7 @@ Goal: every contested 2027 claim gets a **named receipt** that would flip standi
 | cos readiness | `/healthz` **and** DB migrate/connect; SlotLease take/release against live PG; refuse if `DB_UNAVAILABLE` | Cloud Run + migrate receipt; redact secrets |
 | CASTLE publish | Typst source → **PDF bytes** with pinned compiler SHA; carousel/post lint court pass | `castle` publish receipt; compiler pin file |
 | Probe pins | Every `PIN_ON_BUILD` replaced by real `binary_sha256` / `rulepack_sha256` | Diff of `probes-manifest.json` + pin script |
-| Affidavit gatekeeper | `verify_witness` WASM artifact size ≤ claimed band; offline host, zero PII, CTRT/PCCf fossil round-trip | Size bench + `wasm-opt` receipt; packaging README |
+| Affidavit gatekeeper | Slim `verify_witness` WASM **28673 B** ALIVE (Ed25519-only; ≤250 KiB court); fat ~718 KB provenance ≠ gatekeeper | Size court + `ARTIFACTS.sha256` pin ALIVE; CTRT/PCCf fossil round-trip / CASTLE gatekeeper-pack exhibit = residual (not slim path) |
 | FFB honesty | Document 7 shims as **repo-local**; explicitly non-claim published npm / 120 Hz | CAPABILITY or FFB honesty note (no fake `@fnox` publish) |
 | Drift gate | Cite only `mix ggen_igniter.sync --check` in operator runbooks | Doc fix only |
 | Performance demotions | Keep WAL ~29k–88k as only measured fps band; leave 113k/340ns/5k/120Hz as DOC-ONLY | Point at existing benches; do **not** invent new “ALIVE” numbers |
@@ -92,7 +92,7 @@ Only after R1 receipts exist (or explicit operator waiver):
 | Track | Research question | Honesty bar |
 | --- | --- | --- |
 | OEM branding | Can BrandTheme + `--brand` produce a partner-named audit pack without RAID? | Yes path = brand CSS + CASTLE exhibits; RAID stays MISSING |
-| Insurer verifier packaging | Ship Affidavit `verify_witness` as air-gapped WASM + fossil fixtures | Size + offline + zero-PII receipts; no admit_pccf theater |
+| Insurer verifier packaging | Ship slim Affidavit `verify_witness` WASM (**28673 B** ALIVE); fossil fixtures optional/separate | Size court pin ALIVE; fat ≠ gatekeeper; no admit_pccf theater |
 | CindyCat un-shelve | Cash / compounding gates from Fourth Watch | Explicit criteria doc; no product runtime until gates met |
 | FFB packaging | Keep 7 `repop` shims; research whether npm publish is needed at all | Prefer honesty: unpublished shims + live servengine/platform; no fake `@fnox/react` |
 
@@ -132,7 +132,7 @@ Three crisp choices — deepen **one** path; park the others until its R0/R1 rec
 | --- | --- | --- |
 | **A. Fourth Watch Day-1 CASTLE path** | Closest to a marketable “normal Monday” exhibit without clearinghouse dependency | Probe pins + fortune5 → publish (Typst source or PDF) with Fourth Watch brand |
 | **B. cos readiness** | Unblocks FinFab, drop airlock, Monday rails, AS-01 DO against real DB | Clear `DB_UNAVAILABLE`; SlotLease take/release on live cos |
-| **C. Affidavit `verify_witness` packaging** | Unlocks Gatekeeper / insurer story without RAID or CindyCat | Offline WASM artifact + size receipt + fossil round-trip |
+| **C. Affidavit `verify_witness` packaging** | Unlocks Gatekeeper / insurer story without RAID or CindyCat | Slim WASM **28673 B** + size court already ALIVE; residual = insurer pack exhibit / fossil fixtures (not fat-as-gatekeeper) |
 
 **Recommendation default (if undecided):** **B then A** — a FAKE-ALIVE cos undermines HoldCo/FinFab and drop rails that the 2027 week assumes; CASTLE Day-1 can still produce Typst-source exhibits in parallel once pins resolve. **C** is the best parallel research track if insurer conversations are the near-term revenue wedge.
 

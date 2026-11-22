@@ -12,7 +12,13 @@ import { execFileSync } from "node:child_process";
 
 import { Tap, verifyChain, type OcelDoc } from "./generated/ocel.ts";
 import { appendOutcome, appendPending, seal, unpaired, verify, type Chain, type Entry } from "./generated/receipt.ts";
-import { redactComplianceData } from "./compliance/redactor.ts";
+import {
+  createComplianceRedactor,
+  pseudonymizeActor,
+  redactComplianceText,
+  type ComplianceRedactor,
+  type RedactComplianceOptions
+} from "./compliance/redactor.ts";
 
 export const STREAM_SOURCE = "zcode_stream";
 export const APP_SERVER_SOURCE = "zcode_app_server";
@@ -178,9 +184,11 @@ function pushAttr(obj: OcelObject, name: string, value: string, time: string): v
 /**
  * Post-seal O2O + object-attribute closure for lease identity.
  * The generated Tap.toOcel() leaves object.relationships / attributes empty
- * (PI pack projects E2O only). This residue joins stream+gall dual logs by
- * binding work_order ↔ epoch ↔ subject ↔ base (and lease when present) without
+ * (PI pack projects E2O only). This residue binds work_order ↔ epoch ↔
+ * subject ↔ base (and lease/session when present) *within one log* without
  * rewriting event pi_hash (object graph is outside the event chain).
+ * File-level stream↔gall correlation is the dual-log join sidecar
+ * (`buildDualLogJoinManifest` / `writeDualLogJoinManifest`) — not this graph.
  */
 export function closeLeaseIdentityGraph(
   doc: OcelDoc,
@@ -335,6 +343,77 @@ export function normalizeRecord(record: unknown): unknown {
 
 export type OcelResult = { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string };
 
+/** Schema id for the stream↔gall dual-log join sidecar (no merge/rehash). */
+export const DUAL_LOG_JOIN_SCHEMA = "zcode.dual-log-join/1" as const;
+
+/**
+ * Minimal seal-time index linking the two OCEL files that share a lease
+ * identity. Lease objects may appear in both logs; this sidecar is the
+ * durable join key (basenames under ZCODE_OCEL_DIR).
+ */
+export interface DualLogJoinManifest {
+  schema: typeof DUAL_LOG_JOIN_SCHEMA;
+  stream_ocel: string;
+  gall_ocel: string;
+  work_order_iri: string;
+  epoch_id: string;
+  /** Optional E2O session object ids (namespaces only; no cross-file merge). */
+  sessions?: {
+    stream?: string;
+    gall?: string;
+  };
+}
+
+export function dualLogJoinBasename(epochId: string): string {
+  return `gall-work-${epochId}.join.json`;
+}
+
+/**
+ * Build a dual-log join manifest when all four core fields are present.
+ * Returns undefined rather than fabricating a partial join.
+ */
+export function buildDualLogJoinManifest(input: {
+  streamOcel: string;
+  gallOcel: string;
+  workOrderIri: string;
+  epochId: string;
+  streamSession?: string;
+  gallSession?: string;
+}): DualLogJoinManifest | undefined {
+  const stream_ocel = input.streamOcel.trim();
+  const gall_ocel = input.gallOcel.trim();
+  const work_order_iri = input.workOrderIri.trim();
+  const epoch_id = input.epochId.trim();
+  if (!stream_ocel || !gall_ocel || !work_order_iri || !epoch_id) return undefined;
+
+  const streamSession = input.streamSession?.trim();
+  const gallSession = input.gallSession?.trim();
+  const sessions =
+    streamSession || gallSession
+      ? {
+          ...(streamSession ? { stream: streamSession } : {}),
+          ...(gallSession ? { gall: gallSession } : {})
+        }
+      : undefined;
+
+  return {
+    schema: DUAL_LOG_JOIN_SCHEMA,
+    stream_ocel,
+    gall_ocel,
+    work_order_iri,
+    epoch_id,
+    ...(sessions && Object.keys(sessions).length > 0 ? { sessions } : {})
+  };
+}
+
+/** Atomically write `<dir>/gall-work-<epoch>.join.json`; returns the path. */
+export function writeDualLogJoinManifest(dir: string, manifest: DualLogJoinManifest): string {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, dualLogJoinBasename(manifest.epoch_id));
+  atomicWrite(path, JSON.stringify(manifest, null, 2));
+  return path;
+}
+
 /**
  * Disk receipt for a sealed OCEL tap. Two independent integrity witnesses —
  * never conflate them (pre-fix: `chain_intact` was ALOOP `verify(chain)`,
@@ -387,121 +466,88 @@ export function sanitizeSessionFileId(sessionId: string): string {
   return (cleaned.slice(0, 180) || `unknown-${Date.now()}`);
 }
 
-// Credential-shaped keys — aligned with CAPABILITY_SNAPSHOT.md /
-// src/compliance/redactor.ts SECRET_KEY_RE (client_secret, *_api_key,
-// authToken, private_key, passwd, cookie/set-cookie, …). Longer compound
-// forms precede bare `token` so "refresh_token" / "session_token" match whole.
-const SECRET_KEY_ALT =
-  "(?:(?:[a-z0-9_-]+[-_])?api[-_]?key|(?:access|refresh|auth|id|session|bearer|oauth|csrf|api)[-_]?token|refreshtoken|token|(?:[a-z0-9_-]+[-_])?secret|password|passwd|pwd|private[-_]?key|authorization|set[-_]?cookie|cookie)";
-const secretKeyRe = new RegExp(`^${SECRET_KEY_ALT}$`, "i");
-// Matches secret keys inside STRING payloads that embed JSON, including the
-// escaped forms (\", \\\") produced when a tool result quotes a config file.
-const escapedSecretRe = new RegExp(
-  `((?:\\\\{0,2}")(?:${SECRET_KEY_ALT})(?:\\\\{0,2})"\\s*:\\s*(?:\\\\{0,2})")((?:[^"\\\\]|\\\\.)*?)((?:\\\\{0,2})")`,
-  "gi"
-);
-// Bearer is itself the credential marker anywhere in text. Short Bearers that
-// carry a digit/symbol (≥3) or any ≥8-char token are scrubbed — matching the
-// capability-snapshot / compliance redactor (skeptic: `Bearer abc1234`).
-// Other schemes (Basic, Token, Digest, ApiKey) and raw keys are redacted only
-// in an explicit Authorization header context, so ordinary prose ("the token
-// bucket refills") survives.
-const bearerRe =
-  /(Bearer\s+)((?=[^\s"'\\]{8,})[^\s"'\\]+|(?=[^\s"'\\]*[0-9_.\-+/=])[^\s"'\\]{3,})/gi;
-const authSchemeRe = /(authorization\s*[:=]\s*(?:basic|token|digest|apikey)\s+)\S{3,}/gi;
-// Raw Authorization values: no ≥8 floor — capability-snapshot / compliance
-// scrub any non-empty token after the header (skeptic: `authorization: abc1234`).
-const authRawRe = /(authorization\s*[:=]\s*)(?!basic\s|token\s|digest\s|bearer\s|apikey\s)\S+/gi;
-// Compact JWT + PEM private-key blocks (CAPABILITY_SNAPSHOT claims; skeptic
-// falsifier: no eyJ… / BEGIN PRIVATE KEY handling in the tap).
-const jwtRe = /\beyJ[A-Za-z0-9_-]{4,}\.e[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{4,}\b/g;
-const pemPrivateKeyRe =
-  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/g;
-// URL query/fragment credential params (B4 pre-fix, 2026-11-21): secrets in
-// `?api_key=` / `#access_token=` / `?token=` never matched a JSON key shape.
-const urlSecretParamRe = new RegExp(`([?&#](?:${SECRET_KEY_ALT})=)([^&#\\s"']+)`, "gi");
-// URL userinfo password: scheme://user:password@host
-const urlUserinfoRe = /(\/\/[^:/?#\s"']+:)([^@/?#\s"']+)(@)/g;
-
-/** Under a secret-shaped key: scrub any non-empty credential value, including
- * numbers/booleans, array elements, and nested object leaves (skeptic: only
- * `typeof child === "string"` left `{"apiKey":["sk"],"password":12345}` intact). */
-function redactSensitiveValue(value: unknown): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value === "string") return value.length > 0 ? "REDACTED" : value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return "REDACTED";
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return value;
-    return value.map((item) => redactSensitiveValue(item));
-  }
-  if (typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactSensitiveValue(v)])
-    );
-  }
-  return value;
-}
-
-function redactNode(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactNode);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [
-        key,
-        // Empty strings carry nothing to leak and stay honest ("no key set"
-        // is not rewritten into a phantom "REDACTED").
-        secretKeyRe.test(key) ? redactSensitiveValue(child) : redactNode(child)
-      ])
-    );
-  }
-  if (typeof value === "string") return redactEmbeddedSecrets(value);
-  return value;
-}
-
-/** Scheme-shaped credentials, JWT/PEM, and URL-embedded secrets in free text:
- * Bearer anywhere; other Authorization schemes only behind an explicit header;
- * credential query/fragment params and userinfo passwords in URLs. */
-function redactSchemes(text: string): string {
-  return text
-    .replace(pemPrivateKeyRe, "REDACTED")
-    .replace(jwtRe, "REDACTED")
-    .replace(bearerRe, "$1REDACTED")
-    .replace(authSchemeRe, "$1REDACTED")
-    .replace(authRawRe, "$1REDACTED")
-    .replace(urlSecretParamRe, "$1REDACTED")
-    .replace(urlUserinfoRe, "$1REDACTED$3");
-}
-
-function redactEmbeddedSecrets(text: string): string {
-  let out = text;
-  if (/[{[]/.test(text)) {
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      const redacted = redactNode(parsed);
-      if (JSON.stringify(redacted) !== JSON.stringify(parsed)) out = JSON.stringify(redacted);
-    } catch {
-      // not JSON — the escaped-shape fallback below still applies
-    }
-  }
-  out = out.replace(escapedSecretRe, "$1REDACTED$3");
-  return redactSchemes(out);
-}
-
 /** Replaces credential-shaped values with REDACTED before they enter the event
  * chain: hashes are computed on redacted content, so no chain ever commits a
- * secret (leak-prevention tripwire, 2026-09-23). Handles plain JSON text and
- * raw lines containing escaped JSON. */
+ * secret (leak-prevention tripwire, 2026-09-23). Delegates to the canonical
+ * compliance redactor with PII disabled so non-credential text stays byte-identical. */
 export function redactSecrets(text: string): string {
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    return JSON.stringify(redactNode(parsed));
-  } catch {
-    // fall through to shape-level redaction
+  return redactComplianceText(text, { redactPii: false });
+}
+
+/**
+ * Canonical ALOOP receipt chain subject binding session, OCEL head_hash,
+ * ocel_file_sha256, and (when provided) the O2O object-graph digest.
+ */
+export function receiptChainSubject(
+  sessionId: string,
+  headHash: string,
+  ocelFileSha256: string,
+  objectsSha256?: string
+): string {
+  return objectsSha256
+    ? `${sessionId}|head=${headHash}|file=${ocelFileSha256}|objects=${objectsSha256}`
+    : `${sessionId}|head=${headHash}|file=${ocelFileSha256}`;
+}
+
+/**
+ * Verify that the ALOOP receipt chain is cryptographically intact AND that its
+ * sealed subject commits to `session`, `head_hash`, `ocel_file_sha256`, and
+ * (when `ocelText` or `doc` is supplied) the actual `.jsonocel` digest and O2O
+ * `doc.objects` digest. Tampering with O2O edges, `ocel_file_sha256`, or
+ * `head_hash` breaks this binding.
+ */
+export function verifyOcelReceipt(
+  receipt: Pick<OcelTapReceipt, "session" | "head_hash" | "ocel_file_sha256" | "chain">,
+  ocelText?: string,
+  doc?: Pick<OcelDoc, "objects">
+): boolean {
+  if (!verify(receipt.chain) || receipt.chain.length === 0) return false;
+  if (ocelText !== undefined && sha256(ocelText) !== receipt.ocel_file_sha256) return false;
+  let parsedDoc = doc;
+  if (parsedDoc === undefined && ocelText !== undefined) {
+    try {
+      parsedDoc = JSON.parse(ocelText) as Pick<OcelDoc, "objects">;
+    } catch {
+      return false;
+    }
   }
-  let out = text.replace(escapedSecretRe, "$1REDACTED$3");
-  return redactSchemes(out);
+  const sealEntry = receipt.chain[receipt.chain.length - 1]!;
+  if (parsedDoc !== undefined) {
+    const objectsSha = sha256(JSON.stringify(parsedDoc.objects));
+    const expected = receiptChainSubject(receipt.session, receipt.head_hash, receipt.ocel_file_sha256, objectsSha);
+    return sealEntry.subject === expected;
+  }
+  const prefix = `${receiptChainSubject(receipt.session, receipt.head_hash, receipt.ocel_file_sha256)}|objects=`;
+  return sealEntry.subject.startsWith(prefix);
+}
+
+const ACTOR_KEY_RE = /^(?:actor|actor_?id|user|user_?id|username|author|owner|operator)$/i;
+
+function pseudonymizeActors(value: unknown, salt: string, seen = new WeakSet<object>(), depth = 0): unknown {
+  if (value === null || value === undefined || typeof value !== "object") return value;
+  if (value instanceof Date || value instanceof RegExp) return value;
+  if (depth >= 128 || seen.has(value)) return value;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => pseudonymizeActors(item, salt, seen, depth + 1));
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, child]) => {
+        if (ACTOR_KEY_RE.test(key) && typeof child === "string" && child.length > 0) {
+          return [key, pseudonymizeActor(child, salt)];
+        }
+        return [key, pseudonymizeActors(child, salt, seen, depth + 1)];
+      })
+    );
+  } finally {
+    seen.delete(value);
+  }
+}
+
+export interface OcelRecorderOptions extends RedactComplianceOptions {
+  /** Optional non-empty salt for HMAC-SHA256 pseudonymization of actor/user identifiers. */
+  actorSalt?: string;
 }
 
 
@@ -551,15 +597,22 @@ export function closeEventTypeAttributes(doc: OcelDoc): OcelDoc {
 
 export class OcelRecorder {
   private readonly tap: Tap;
+  private readonly redactor: ComplianceRedactor;
   private sessionId: string | undefined;
   private carry = "";
   private closed = false;
   /** Subject HEAD resolved at recorder open — stable E2O object id for the turn. */
   private readonly subjectSha: string | undefined;
 
-  constructor(readonly source: string, private readonly dir: string, private readonly identity: LeaseIdentity = {}) {
+  constructor(
+    readonly source: string,
+    private readonly dir: string,
+    private readonly identity: LeaseIdentity = {},
+    private readonly redactionOptions: OcelRecorderOptions = {}
+  ) {
     this.tap = new Tap(source);
     this.subjectSha = subjectHead(identity.subjectCwd);
+    this.redactor = createComplianceRedactor(redactionOptions);
   }
 
   /** Feed raw stdout bytes; complete lines are parsed, the tail is carried to the next chunk. */
@@ -588,10 +641,19 @@ export class OcelRecorder {
     if (this.closed) return;
     // Redact BEFORE binding sessionId: a pre-redaction capture let secret-
     // bearing URL sessionIds reach receipt.session and the output basename
-    // (B4 pre-fix, 2026-11-21). Route through compliance redactor so GDPR PII,
-    // JWTs, PEM keys (including truncated), env secrets, and credential keys
-    // never enter the OCEL log or its SHA-256 pi_hash chain.
-    const redacted = redactComplianceData(redactNode(normalizeRecord(record)));
+    // (B4 pre-fix, 2026-11-21). Route through compiled compliance redactor so
+    // GDPR PII, JWTs, PEM keys (including truncated), env secrets, and
+    // credential keys never enter the OCEL log or its SHA-256 pi_hash chain.
+    const normalized = normalizeRecord(record);
+    const prepared =
+      this.redactionOptions.actorSalt !== undefined
+        ? pseudonymizeActors(normalized, this.redactionOptions.actorSalt)
+        : normalized;
+    const redacted = this.redactor.redactData(prepared);
+    const serializedRedacted = JSON.stringify(redacted);
+    if (this.redactor.containsUnredacted(serializedRedacted)) {
+      throw new Error("REDACTION_FAILURE: unredacted secrets or PII detected before OCEL ingest");
+    }
     // Promote lease identity into OCEL objects via E2O paths declared in the
     // ontology (work_order_iri / epoch / subject / base) — not receipt-only.
     const withIdentity = bindLeaseIdentityObjects(redacted, this.identity, this.subjectSha);
@@ -616,6 +678,8 @@ export class OcelRecorder {
     );
     const head = this.tap.seal();
     const ocelText = JSON.stringify(doc);
+    const ocelFileSha256 = sha256(ocelText);
+    const objectsSha256 = sha256(JSON.stringify(doc.objects));
     mkdirSync(this.dir, { recursive: true });
     const ocelPath = join(this.dir, `${sessionId}.jsonocel`);
     const receiptPath = join(this.dir, `${sessionId}.receipt.json`);
@@ -625,16 +689,26 @@ export class OcelRecorder {
     // from the receipt ALOOP seal (`receipt_chain_intact`); never conflate
     // the two (skeptic: chain_intact was a false witness for pi_hash).
     const ocelIntact = verifyChain(doc as OcelDoc, this.tap.spec.hash) === null && doc.events.length > 0;
+    const chainSubject = receiptChainSubject(sessionId, head, ocelFileSha256, objectsSha256);
     const chain: Chain = [];
-    appendPending(chain, `${sessionId}-e1`, sessionId, "record-ocel");
-    appendOutcome(chain, `${sessionId}-e2`, ocelIntact ? "alive" : "blocked", sessionId, "record-ocel");
-    seal(chain, `${sessionId}-e3`, ocelIntact ? "alive" : "blocked", sessionId);
-    const receiptIntact = verify(chain);
+    appendPending(chain, `${sessionId}-e1`, chainSubject, "record-ocel");
+    appendOutcome(chain, `${sessionId}-e2`, ocelIntact ? "alive" : "blocked", chainSubject, "record-ocel");
+    seal(chain, `${sessionId}-e3`, ocelIntact ? "alive" : "blocked", chainSubject);
+    const receiptIntact = verifyOcelReceipt(
+      {
+        session: sessionId,
+        head_hash: head,
+        ocel_file_sha256: ocelFileSha256,
+        chain
+      },
+      ocelText,
+      doc as OcelDoc
+    );
     const receipt: OcelTapReceipt = {
       session: sessionId,
       source: this.source,
       ocel_file: `${sessionId}.jsonocel`,
-      ocel_file_sha256: sha256(ocelText),
+      ocel_file_sha256: ocelFileSha256,
       event_count: doc.events.length,
       head_hash: head,
       // Exact subject and lease identity (ZCODE-26922-06): bound only when
@@ -646,7 +720,7 @@ export class OcelRecorder {
       // Replay binding is redacted before disk write — XAAS_REPLAY_BINDING
       // must not land secrets or PII next to the "redacted" OCEL log.
       ...(this.identity.replayBinding
-        ? { replay_binding: redactComplianceData(redactNode(this.identity.replayBinding)) as Record<string, unknown> }
+        ? { replay_binding: this.redactor.redactData(this.identity.replayBinding) as Record<string, unknown> }
         : {}),
       chain_intact: ocelIntact,
       receipt_chain_intact: receiptIntact,
