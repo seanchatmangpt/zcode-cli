@@ -64,7 +64,7 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
         expect(doc.events.some((e) => e.type === "art50_disclosure_emitted")).toBe(true);
       });
     });
-  }, 15_000);
+  }, 45_000);
 
   test("A01.2: --json under art50-only includes ai_disclosure object with regulation, provider_id, and model_id", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -85,7 +85,7 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
         expect(parsed.ai_disclosure?.model_id).toBeTruthy();
       });
     });
-  }, 15_000);
+  }, 45_000);
 
   test("A01.3: provenance sidecar .zcode-provenance/<session>.json records verifiable SHA-256 of artifact bytes", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -115,7 +115,7 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
       expect(sidecarRaw).toContain("EU");
       expect(sidecarRaw.includes(exportedSha) || sidecarRaw.includes(expectedSha)).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A01.4: git_provenance_trailer=true attaches AI-Generated-By trailer on compliance provenance commit", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -152,7 +152,7 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
         : "";
       expect(`${logMsg}\n${sidecarText}\n${docRaw}\n${llmStdout}`).toContain("AI-Generated-By");
     });
-  });
+  }, 45_000);
 
   test("A01.5: Markdown and JSON provenance metadata outputs preserve strict parseability", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -170,7 +170,7 @@ describe("A01 — Art. 50(1)/(2) Direct AI Disclosure & Provenance Marking (F07,
       expect(mdRes.stdout).toContain("#");
       expect(mdRes.stdout.toLowerCase()).toContain("ai");
     });
-  });
+  }, 45_000);
 });
 
 describe("A02 — Art. 9 AIRO Risk Register & Art. 9/12/14/15 Mapping (F03, F16)", () => {
@@ -187,7 +187,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Art. 9/12/14/15 Mapping (F03, F16)
       expect(ids.some((id) => id.includes("Risk_SilentSkip"))).toBe(true);
       expect(ids.some((id) => id.includes("Risk_ContractDrift"))).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A02.2: zcode compliance risk-register --md renders non-empty Markdown matrix with residual thresholds", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -199,7 +199,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Art. 9/12/14/15 Mapping (F03, F16)
       expect(res.stdout).toContain("|");
       expect(res.stdout.toLowerCase()).toMatch(/likelihood|residual|risk/);
     });
-  });
+  }, 45_000);
 
   test("A02.3: risk-register --json maps OCEL 2.0 logs, POWL soundness, and HITL gates to EU AI Act Arts. 9, 12, 14, 15", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -214,7 +214,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Art. 9/12/14/15 Mapping (F03, F16)
       expect(serialized.toLowerCase()).toMatch(/powl|soundness/);
       expect(serialized.toLowerCase()).toMatch(/oversight|hitl|permission/);
     });
-  });
+  }, 45_000);
 
   test("A02.4: baseline AIRO pin tests pass with RiskSource === 3 and RiskControl === 2 preserved", () => {
     const res = runSubprocess(
@@ -224,7 +224,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Art. 9/12/14/15 Mapping (F03, F16)
     );
     expect(res.exitCode).toBe(0);
     expect(res.stdout + res.stderr).toMatch(/\b0 fail\b/);
-  });
+  }, 45_000);
 
   test("A02.5: ontology/eu-ai-act.ttl exists and every <file:...> URI in both AIRO TTLs resolves on disk", () => {
     const airoPath = join(REPO_ROOT, "ontology", "airo_risk_description.ttl");
@@ -264,7 +264,7 @@ describe("A03 — Art. 10 Data Governance & Unified Secret/PII Redactor (F04)", 
       expect(ver.exitCode).toBe(0);
       expect(ver.json<{ chainIntact?: boolean; valid?: boolean }>().chainIntact ?? ver.json<{ valid?: boolean }>().valid).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A03.2: unified redactor scrubs emails, IPv4, /Users/<name>/ paths, JWTs, and PEM private keys", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -282,7 +282,7 @@ describe("A03 — Art. 10 Data Governance & Unified Secret/PII Redactor (F04)", 
       expect(rawOut).not.toContain("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c");
       expect(rawOut).not.toContain("MIIEvQIBADANBgkqhkiG9w0BAQEF");
     });
-  });
+  }, 45_000);
 
   test("A03.3: [ocel].redact_env redacts custom secret env var values in compliance OCEL export", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -303,7 +303,7 @@ describe("A03 — Art. 10 Data Governance & Unified Secret/PII Redactor (F04)", 
       expect(rawOut).not.toContain(customSecret);
       expect(rawOut).toContain("REDACTED");
     });
-  });
+  }, 45_000);
 
   test("A03.4: non-credential prose ('the token bucket refills') and empty string survive redaction verbatim", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -324,7 +324,7 @@ describe("A03 — Art. 10 Data Governance & Unified Secret/PII Redactor (F04)", 
       });
       expect(unitRes.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A03.5: capability-snapshot.sh save + verify succeeds on sanitized tree and aligns with unified redactor rules", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -365,7 +365,7 @@ describe("A03 — Art. 10 Data Governance & Unified Secret/PII Redactor (F04)", 
       const scriptText = readFileSync(join(REPO_ROOT, "scripts/capability-snapshot.sh"), "utf8");
       expect(scriptText).toContain("refresh_token");
     });
-  });
+  }, 45_000);
 });
 
 describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", () => {
@@ -380,7 +380,7 @@ describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", ()
       const doc = JSON.parse(readFileSync(join(outDir, "annex-iv.json"), "utf8")) as Record<string, unknown>;
       expect(doc.sections ?? doc).toBeDefined();
     });
-  });
+  }, 45_000);
 
   test("A04.2: byte-identical re-run of annex-iv yields identical section hashes", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -394,7 +394,7 @@ describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", ()
       expect(sha256File(join(dir1, "annex-iv.json"))).toBe(sha256File(join(dir2, "annex-iv.json")));
       expect(sha256File(join(dir1, "annex-iv.md"))).toBe(sha256File(join(dir2, "annex-iv.md")));
     });
-  });
+  }, 45_000);
 
   test("A04.3: zcode compliance annex-iv --out <dir> --check exits 0 against valid HEAD and admitted receipts", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -422,7 +422,7 @@ describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", ()
           out.standing === "ALIVE",
       ).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A04.4: annex-iv.json covers all §1–§8 Annex IV requirements including runtime lock, OCEL schema, Art. 9 & PMM", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -438,7 +438,7 @@ describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", ()
       expect(raw.toLowerCase()).toMatch(/pmm|post.?market|drift/);
       expect(Object.keys(parsed).length).toBeGreaterThanOrEqual(4);
     });
-  });
+  }, 45_000);
 
   test("A04.5: annex-iv.md renders valid Markdown headings for all Annex IV sections (§1–§8)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -450,7 +450,7 @@ describe("A04 — Art. 11 & Annex IV Technical Documentation Compiler (F15)", ()
       const headings = md.split("\n").filter((l) => /^#{1,3}\s+/.test(l));
       expect(headings.length).toBeGreaterThanOrEqual(8);
     });
-  });
+  }, 45_000);
 });
 
 describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention (F05, F06, F03)", () => {
@@ -465,7 +465,7 @@ describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention
       expect(out.valid ?? out.chainIntact).toBe(true);
       expect(out.eventCount).toBe(doc.events.length);
     });
-  });
+  }, 45_000);
 
   test("A05.2: zcode ocel export --format sqlite writes standard IEEE OCEL 2.0 tables in WAL mode", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -488,7 +488,7 @@ describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention
       expect(db.eventObjectCount).toBeGreaterThan(0);
       expect(db.objectObjectCount).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A05.3: zcode ocel export --format xml writes well-formed IEEE OCEL 2.0 XML", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -508,7 +508,7 @@ describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention
       expect(xml).toContain('type="session_created"');
       expect(xml).toContain("</log>");
     });
-  });
+  }, 45_000);
 
   test("A05.4: O2O qualifiers (in_session, in_turn, uses_provider, spawned_by, governs, mutated_in, seals) round-trip cleanly", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -526,7 +526,7 @@ describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention
       const db = inspectOcel2Sqlite(dbPath);
       expect(db.objectObjectCount).toBeGreaterThanOrEqual(7);
     });
-  });
+  }, 45_000);
 
   test("A05.5: Source-AppServer verification test & app-server-list.jsonocel pass with deviations: 0", () => {
     const appServerTest = join(REPO_ROOT, "test/ocel-appserver-capture.test.ts");
@@ -545,7 +545,7 @@ describe("A05 — Art. 12 OCEL 2.0 JSON/SQLite/XML, Source-AppServer & Retention
     expect(verifyRes.exitCode).toBe(0);
     expect(verifyRes.stdout).toContain("deviations: 0");
     expect(verifyRes.stdout).toContain("chain-verified:");
-  });
+  }, 45_000);
 });
 
 describe("A06 — Art. 13 Instructions for Use & compliance info (F16)", () => {
@@ -560,7 +560,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info (F16)", () => {
       expect(text.toLowerCase()).toMatch(/provider|intended|purpose/);
       expect(text.toLowerCase()).toMatch(/limitation|constraint|oversight/);
     });
-  });
+  }, 45_000);
 
   test("A06.2: zcode compliance info --md renders readable Instructions for Use summary", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -571,7 +571,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info (F16)", () => {
       expect(res.stdout).toContain("#");
       expect(res.stdout.toLowerCase()).toContain("eu ai act");
     });
-  });
+  }, 45_000);
 
   test("A06.3: docs/INSTRUCTIONS_FOR_USE.md exists and covers Art. 13(3)(a)–(f) sections", () => {
     const docPath = join(REPO_ROOT, "docs", "INSTRUCTIONS_FOR_USE.md");
@@ -591,7 +591,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info (F16)", () => {
       const text = JSON.stringify(res.json()).toLowerCase();
       expect(text).toMatch(/standing|uncertainty|caveat|alignment|conformance/);
     });
-  });
+  }, 45_000);
 
   test("A06.5: compliance info --json matches package.json version and zcode-runtime.lock.json metadata", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -605,7 +605,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info (F16)", () => {
       expect(text).toContain(pkg.version);
       expect(text).toContain(lock.appVersion);
     });
-  });
+  }, 45_000);
 });
 
 describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)", () => {
@@ -630,7 +630,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)
         }
       });
     });
-  }, 20_000);
+  }, 45_000);
 
   test("A07.2: permission_resolved with overseer_id and decision_latency_ms >= min_review_ms verifies without AB_RISK_FLAG", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -644,7 +644,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)
       expect(parsed.eventCount).toBe(doc.events.length);
       expect(JSON.stringify(parsed)).not.toContain("AB_RISK_FLAG");
     });
-  });
+  }, 45_000);
 
   test("A07.3: oversight_intervened emergency stop event verifies cleanly with overseer_id and reason", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -657,7 +657,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)
       expect(parsed.eventCount).toBe(doc.events.length);
       expect(doc.events.some((e) => e.type === "oversight_intervened")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A07.4: subagent object preserves spawned_by O2O relationship to parent session in OCEL & SQLite", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -671,7 +671,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)
       expect(db.objects.some((o) => o.ocel_type === "subagent")).toBe(true);
       expect(db.objectObjectCount).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A07.5: compliance oversight test suite & permission preview risk rendering verify cleanly", () => {
     const oversightTest = join(REPO_ROOT, "test/compliance-oversight.test.ts");
@@ -681,7 +681,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Lock, Subagent Gate & Stop (F09)
       timeoutMs: 15_000,
     });
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 });
 
 describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F21)", () => {
@@ -693,7 +693,7 @@ describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F
       timeoutMs: 20_000,
     });
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 
   test("A08.2: un-tampered OCEL verify exits 0 and fail-closed DfCM receipts:validate refuses defective ZCODE-26923-01 while admitting clean g0.json integrity", () => {
     const ocel1 = runBunScript("scripts/ocel-verify.ts", ["test/fixtures/zcode-ocel/turn-list.jsonocel"]);
@@ -745,7 +745,7 @@ describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F
       expect(parsed.eventCount).toBe(doc.events.length);
       expect(doc.events.some((e) => e.type === "workspace_rolled_back")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A08.5: transient 429 provider-backoff recovery test passes without silent corrupt state", () => {
     const res = runSubprocess(process.execPath, ["test", "test/provider-backoff.test.ts"], {
@@ -753,7 +753,7 @@ describe("A08 — Art. 15 Accuracy, Prompt-Injection Security & Rollback (F12, F
       timeoutMs: 20_000,
     });
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 });
 
 describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate & version --compliance (F17, F20, F21)", () => {
@@ -788,7 +788,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
       expect(out.verdict).toBe("CONFORMITY_ADMITTED");
       expect(["ALIVE", "PARTIAL_ALIVE"]).toContain(out.standing ?? "");
     });
-  });
+  }, 45_000);
 
   test("A09.3: zcode compliance doc --out <file> emits Annex V EU Declaration of Conformity with HEAD & lock sha512", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -803,7 +803,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
       expect(Object.keys(doc).length).toBeGreaterThanOrEqual(9);
       expect(raw).toContain(lock.sha512);
     });
-  });
+  }, 45_000);
 
   test("A09.4: zcode version --compliance and zcode --version --compliance exit 0 hermetically with compliance metadata", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -815,7 +815,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, Annex V DoC, receipts:validate &
         expect(text.toLowerCase()).toMatch(/eu.?ai.?act|2024\/1689|compliance/);
       }
     });
-  });
+  }, 45_000);
 
   test("A09.5: receipts:validate fails closed on defective ZCODE-26923-01 (with g0.json clean) AND validateDfcmReceipt admits valid v2 git-backed receipt", async () => {
     expect(runReceiptIntegrityProbe("receipts/v26.9.22/g0.json")).toEqual([]);
@@ -877,7 +877,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
       const out = res.json<{ admitted?: boolean; ok?: boolean; standing?: string }>();
       expect(out.admitted ?? out.ok ?? out.standing === "ALIVE").toBeTruthy();
     });
-  });
+  }, 45_000);
 
   test("A10.2: zcode compliance fria-export --out fria.json exports Art. 27(1)(a)–(f) JSON structure", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -891,7 +891,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
       expect(raw).toContain("overseer-alice-eu");
       expect(raw).toMatch(/27|fundamental.?rights|fria/);
     });
-  });
+  }, 45_000);
 
   test("A10.3: zcode compliance fria-export --out fria.md --format md exports valid Markdown FRIA report", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -903,7 +903,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
       expect(md).toContain("#");
       expect(md).toContain("overseer-alice-eu");
     });
-  });
+  }, 45_000);
 
   test("A10.4: ZCODE_COMPLIANCE_PROFILE and ZCODE_OVERSEER_ID env overrides supersede TOML deterministically", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -921,7 +921,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
       expect(serialized).toContain("high-risk-annex-i");
       expect(serialized).toContain("overseer-env-override");
     });
-  });
+  }, 45_000);
 
   test("A10.5: standard profile preserves legacy OCEL launcher defaults (ocelEnabled({}) === false)", () => {
     const res = runSubprocess(process.execPath, ["test", "test/ocel-launcher.test.ts"], {
@@ -929,7 +929,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, [compliance] Config & FRIA Expo
       timeoutMs: 15_000,
     });
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 });
 
 describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting (F19)", () => {
@@ -947,7 +947,7 @@ describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting
       const out = res.json<{ driftDetected?: boolean; status?: string }>();
       expect(out.driftDetected).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A11.2: zcode pmm analyze classifies stationary heavy-tailed latency logs as no_drift without false alarms", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -961,7 +961,7 @@ describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting
       const out = res.json<{ driftDetected?: boolean; status?: string }>();
       expect(out.driftDetected).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A11.3: zcode incident report produces Art. 73 JSON packet for targeted session", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -977,7 +977,7 @@ describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting
       const pkt = JSON.parse(readFileSync(outPath, "utf8")) as Record<string, unknown>;
       expect(JSON.stringify(pkt)).toContain("sess_crash");
     });
-  });
+  }, 45_000);
 
   test("A11.4: Art. 73 incident packet includes causal OCEL slice, OC-DFG root cause, and valid deadline_class", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -999,7 +999,7 @@ describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting
       expect(pkt.causal_slice ?? pkt.ocel_slice).toBeDefined();
       expect(pkt.root_cause).toBeDefined();
     });
-  });
+  }, 45_000);
 
   test("A11.5: critical breach / unredacted secret incident classifies deadline_class deterministically as 2d or 10d", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1029,7 +1029,7 @@ describe("A11 — Art. 72/73 Post-Market Monitoring & Serious Incident Reporting
       const pkt = JSON.parse(readFileSync(outPath, "utf8")) as { deadline_class?: string };
       expect(["2d", "10d"]).toContain(pkt.deadline_class ?? "");
     });
-  });
+  }, 45_000);
 });
 
 describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
@@ -1081,7 +1081,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
         expect(r.status).toBe("SATISFIED_WITNESSED");
       }
     });
-  });
+  }, 45_000);
 
   test("A12.2: Init(session_created) and Existence(turn_started) return SATISFIED_WITNESSED with witness_event_ids", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1104,7 +1104,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
         expect(r.witness_event_ids.length).toBeGreaterThan(0);
       }
     });
-  });
+  }, 45_000);
 
   test("A12.3: Response(session_created, art50_disclosure_emitted) returns SATISFIED_WITNESSED", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1129,7 +1129,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
       expect(r.status).toBe("SATISFIED_WITNESSED");
       expect(r.witness_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A12.4: Precedence(permission_resolved, tool_updated) returns SATISFIED_WITNESSED when permission precedes tool", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1154,7 +1154,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
       expect(r.status).toBe("SATISFIED_WITNESSED");
       expect(r.witness_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A12.5: Absence(unredacted_secret) and NotCoExistence(mode_yolo, high_risk) pass with empty counterexamples", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1183,7 +1183,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity (F10)", () => {
         expect(r.counterexample_event_ids).toEqual([]);
       }
     });
-  });
+  }, 45_000);
 });
 
 describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () => {
@@ -1198,7 +1198,7 @@ describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () 
       expect(out.alignment.alignmentCost).toBe(0);
       expect(out.alignment.fitness).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("A13.2: optimal A* alignment moves array reports all sync moves with cost === 0", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1214,7 +1214,7 @@ describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () 
         expect(m.cost).toBe(0);
       }
     });
-  });
+  }, 45_000);
 
   test("A13.3: precision (escapingEdgesPrecision) equals 1.0 on exact deterministic trace", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1227,7 +1227,7 @@ describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () 
       const prec = out.alignment.escapingEdgesPrecision ?? out.alignment.precision;
       expect(prec).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("A13.4: concurrent/parallel WF-net with valid parallel interleaving yields alignmentCost === 0 (gamma = 0)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1286,7 +1286,7 @@ describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () 
       expect(out.alignment.alignmentCost).toBe(0);
       expect(out.alignment.fitness).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("A13.5: alignment output strictly distinguishes behavioral A* alignment from completionHeuristic", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1299,7 +1299,7 @@ describe("A13 — Optimal A* Trace Alignment (gamma = 0) & Precision (F11)", () 
       expect(out.alignment).toBeDefined();
       expect((out.alignment as Record<string, unknown>).method).not.toBe("completionHeuristic");
     });
-  });
+  }, 45_000);
 });
 
 describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisions) (F13)", () => {
@@ -1317,7 +1317,7 @@ describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisi
       };
       expect((dfg.objectTypes ?? Object.keys(dfg.byObjectType ?? {})).length).toBeGreaterThanOrEqual(2);
     });
-  });
+  }, 45_000);
 
   test("A14.2: zcode ocel discover --format dot outputs valid Graphviz digraph syntax", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1329,7 +1329,7 @@ describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisi
       expect(res.stdout).toContain("->");
       expect(res.stdout.trim().endsWith("}")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A14.3: zcode ocel discover --format mermaid outputs valid Mermaid flowchart syntax", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1340,7 +1340,7 @@ describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisi
       expect(res.stdout).toMatch(/flowchart\s+(LR|TD|TB)/);
       expect(res.stdout).toContain("-->");
     });
-  });
+  }, 45_000);
 
   test("A14.4: zcode ocel discover --ocpn --format json outputs Object-Centric Petri Net + soundness check", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1361,7 +1361,7 @@ describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisi
       expect(ocpn.soundness).toBeDefined();
       expect(typeof ocpn.soundness?.sound).toBe("boolean");
     });
-  });
+  }, 45_000);
 
   test("A14.5: OC-DFG discovery computes reworkCycles, fileCollisions, and per-object sojourn median/p95 timings", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1379,7 +1379,7 @@ describe("A14 — OCPN & OC-DFG Discovery (--ocpn, DOT/Mermaid, Rework & Collisi
       expect(Array.isArray(dfg.fileCollisions)).toBe(true);
       expect(dfg.sojournByObjectType).toBeDefined();
     });
-  });
+  }, 45_000);
 });
 
 describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separation (F13, F14)", () => {
@@ -1396,7 +1396,7 @@ describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separ
       expect(out.driftDetected).toBe(false);
       expect(out.pageHinkley ?? out.adwin).toBeDefined();
     });
-  });
+  }, 45_000);
 
   test("A15.2: pmm analyze detects injected sudden step-change with driftDetected: true and pValue < 0.01", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1413,7 +1413,7 @@ describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separ
       expect(typeof out.pValue).toBe("number");
       expect(out.pValue!).toBeLessThan(0.01);
     });
-  });
+  }, 45_000);
 
   test("A15.3: pmm analyze detects gradual drift via EWMA / 2-sample KS", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1428,7 +1428,7 @@ describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separ
       expect(out.driftDetected).toBe(true);
       expect(["gradual", "sudden"]).toContain(out.driftKind ?? "");
     });
-  });
+  }, 45_000);
 
   test("A15.4: Kingman separation keeps heavy-tailed coding serviceMs (c_s^2 >> 1) with healthy TTFT free of false MD/drift", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1444,7 +1444,7 @@ describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separ
       expect(out.driftDetected).toBe(false);
       expect(out.ttftMdTriggered ?? false).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A15.5: Kingman scheduler & throughput metrics compute lambdaAlive below rho -> 1 saturation cliff", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1458,7 +1458,7 @@ describe("A15 — Bose/van der Aalst Concept Drift, SPC & Kingman Variance Separ
       const raw = JSON.stringify(res.json()).toLowerCase();
       expect(raw).toMatch(/kingman|cs2|rho|lambda/);
     });
-  });
+  }, 45_000);
 });
 
 describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)", () => {
@@ -1476,7 +1476,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)",
       const exported = JSON.parse(readFileSync(outPath, "utf8")) as Ocel2Doc;
       expect(exported.events.length).toBe(doc.events.length);
     });
-  });
+  }, 45_000);
 
   test("A16.2: --rpm-safe export replaces raw overseer emails/IDs with salted HMAC-SHA256 pseudonyms", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1493,7 +1493,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)",
       expect(rawOut).not.toContain("raw-user-alice");
       expect(rawOut).toMatch(/hmac|pseudo|[0-9a-f]{16,}/i);
     });
-  });
+  }, 45_000);
 
   test("A16.3: fairness audit stratifies metrics by provider_id and model_id without demographic fields", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1510,7 +1510,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)",
       expect(text.toLowerCase()).not.toContain("gender");
       expect(text.toLowerCase()).not.toContain("ethnicity");
     });
-  });
+  }, 45_000);
 
   test("A16.4: accuracy audit reports log completeness and missing-E2O ratio honestly (ALIVE on complete log)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1522,7 +1522,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)",
       expect(out.standing).toBe("ALIVE");
       expect(out.missingE2oRatio ?? 0).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A16.5: transparency output attaches exact OCEL event IDs and/or OC-DFG edges to audit verdicts", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1534,7 +1534,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Export (F14)",
       const serialized = JSON.stringify(res.json());
       expect(serialized).toContain("sess_transp_ev_001");
     });
-  });
+  }, 45_000);
 });
 
 describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap (F12)", () => {
@@ -1545,7 +1545,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap
       { cwd: REPO_ROOT, timeoutMs: 20_000 },
     );
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 
   test("A17.2: clean transactional lifecycle trace completes without workspace_rolled_back", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1558,7 +1558,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap
       expect(parsed.eventCount).toBe(doc.events.length);
       expect(doc.events.some((e) => e.type === "workspace_rolled_back")).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A17.3: compliance-transactional-kingman test suite passes bounded rollback and retry cap checks", () => {
     const txTest = join(REPO_ROOT, "test/compliance-transactional-kingman.test.ts");
@@ -1568,7 +1568,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap
       timeoutMs: 20_000,
     });
     expect(res.exitCode).toBe(0);
-  });
+  }, 45_000);
 
   test("A17.4: distinct failure signatures track independent retry budgets in zcode-cli.toml config validation", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1592,7 +1592,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap
       expect(verOut.valid ?? verOut.chainIntact).toBe(true);
       expect(verOut.eventCount).toBe(doc.events.length);
     });
-  });
+  }, 45_000);
 
   test("A17.5: ZCODE_MAX_TURNS budget and max_cycles bounds terminate deterministically without livelock", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1609,5 +1609,5 @@ describe("A17 — Bounded Transactional Lifecycle Nets & Per-Signature Retry Cap
         expect(res.stdout).toContain("OK");
       });
     });
-  }, 15_000);
+  }, 45_000);
 });

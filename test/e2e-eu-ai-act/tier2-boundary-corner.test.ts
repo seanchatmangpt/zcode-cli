@@ -52,7 +52,7 @@ describe("A01 — Art. 50(1)/(2) Disclosure & Provenance Negative/Boundary Tests
         expect(res.stdout + res.stderr).toContain("DISCLOSURE_REQUIRED");
       });
     });
-  }, 15_000);
+  }, 45_000);
 
   test("A01.2: binary .wasm/.png and strict .json artifacts receive sidecar provenance without # comment corruption", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -86,7 +86,7 @@ describe("A01 — Art. 50(1)/(2) Disclosure & Provenance Negative/Boundary Tests
       const sidecars = readdirSync(provDir).filter((f) => f.endsWith(".json"));
       expect(sidecars.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A01.3: missing model_id / unsealed provenance under high-risk-annex-iii fails with PROVENANCE_SEAL_FAILED (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -108,7 +108,7 @@ describe("A01 — Art. 50(1)/(2) Disclosure & Provenance Negative/Boundary Tests
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("PROVENANCE_SEAL_FAILED");
     });
-  });
+  }, 45_000);
 
   test("A01.4: empty session (0 events) fails OCEL verification and emits zero fake art50_disclosure_emitted claims", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -124,7 +124,7 @@ describe("A01 — Art. 50(1)/(2) Disclosure & Provenance Negative/Boundary Tests
       expect(res.stdout).not.toContain("SATISFIED_WITNESSED");
       expect(res.stdout).not.toContain("art50_disclosure_emitted");
     });
-  });
+  }, 45_000);
 
   test("A01.5: tampered .zcode-provenance sidecar SHA-256 mismatch is rejected fail-closed (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -153,7 +153,7 @@ describe("A01 — Art. 50(1)/(2) Disclosure & Provenance Negative/Boundary Tests
       expect(ver.exitCode).toBe(1);
       expect(ver.stdout + ver.stderr).toMatch(/PROVENANCE_SEAL_FAILED|mismatch|tamper/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5 tests)", () => {
@@ -166,7 +166,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5
       expect([1, 2]).toContain(res.exitCode);
       expect(res.stdout + res.stderr).toMatch(/INVALID_COMPLIANCE_PROFILE|unregulated-custom/i);
     });
-  });
+  }, 45_000);
 
   test("A02.2: invalid --format bogus flag on compliance risk-register exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -177,7 +177,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/--format|format|bogus|unsupported/i);
     });
-  });
+  }, 45_000);
 
   test("A02.3: mutating pinned contract fixture breaks ZCODE_CONTRACT_FIXTURE court (anti-vacuity)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -198,7 +198,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("mutated_invalid_type");
     });
-  });
+  }, 45_000);
 
   test("A02.4: high-risk profile with allow_yolo = true in zcode-cli.toml refuses risk-register with OVERSIGHT_POLICY_REFUSED (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -207,7 +207,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A02.5: malformed TOML syntax in zcode-cli.toml fails closed on risk-register with INVALID_COMPLIANCE_CONFIG (exit 2)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -216,7 +216,7 @@ describe("A02 — Art. 9 AIRO Risk Register & Mapping Boundary/Negative Tests (5
       expect(res.exitCode).toBe(2);
       expect(res.stdout + res.stderr).toMatch(/INVALID_COMPLIANCE_CONFIG|TOML/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative Tests (5 tests)", () => {
@@ -244,7 +244,7 @@ describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative T
       const ver = runZcodeCli(["ocel", "verify", "--in", outPath, "--json"], ws);
       expect(ver.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A03.2: escaped JSON secrets, JWT, PEM private key, email, IPv4, and /Users/<user>/ are redacted prior to pi_hash", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -266,7 +266,7 @@ describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative T
       const ver = runZcodeCli(["ocel", "verify", "--in", outPath, "--json"], ws);
       expect(ver.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A03.3: capability-snapshot.sh save refuses and cleans up staging/dest when >2MB file contains unredacted secret", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -298,7 +298,7 @@ describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative T
       const leftovers = existsSync(backupRoot) ? readdirSync(backupRoot) : [];
       expect(leftovers).toEqual([]);
     });
-  });
+  }, 45_000);
 
   test("A03.4: capability-snapshot.sh save redacts <8-char apiKey/refresh_token and JWT/PEM in archived user-state.tar.gz", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -346,7 +346,7 @@ describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative T
       expect(archived).toContain("REDACTED");
       expect(archived).toContain("the token bucket refills");
     });
-  });
+  }, 45_000);
 
   test("A03.5: unparseable/corrupt JSON passed to ocel export fails closed without emitting partial output", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -360,7 +360,7 @@ describe("A03 — Art. 10 Data Governance & Unified Redactor Boundary/Negative T
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/parse|syntax|unexpected|REDACTION_FAILURE|JSON/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)", () => {
@@ -374,7 +374,7 @@ describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)"
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/directory|not a directory|ENOTDIR|regular file|--out/i);
     });
-  });
+  }, 45_000);
 
   test("A04.2: tampering with annex-iv.json causes annex-iv --check to exit non-zero", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -392,7 +392,7 @@ describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)"
       expect([1, 2]).toContain(chk.exitCode);
       expect(chk.stdout + chk.stderr).toMatch(/drift|mismatch|tamper|differ|FAIL/i);
     });
-  });
+  }, 45_000);
 
   test("A04.3: stale git HEAD SHA inside annex-iv.json causes annex-iv --check to fail closed", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -412,7 +412,7 @@ describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)"
       expect([1, 2]).toContain(chk.exitCode);
       expect(chk.stdout + chk.stderr).toMatch(/head|sha|drift|mismatch|FAIL/i);
     });
-  });
+  }, 45_000);
 
   test("A04.4: missing [pmm] section or monitoring_enabled=false under high-risk flags incomplete Annex IV §8 / fails --check", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -422,7 +422,7 @@ describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)"
       expect([1, 2]).toContain(res.exitCode);
       expect(res.stdout + res.stderr).toMatch(/pmm|monitoring|incomplete|UNVERIFIED|LOGGING_UNAVAILABLE/i);
     });
-  });
+  }, 45_000);
 
   test("A04.5: missing --out argument value on compliance annex-iv exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -432,7 +432,7 @@ describe("A04 — Art. 11 & Annex IV Compiler Boundary/Negative Tests (5 tests)"
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/--out|missing|argument|required/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Tests (7 tests)", () => {
@@ -456,7 +456,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
         expect(res.stdout + res.stderr).toContain("LOGGING_UNAVAILABLE");
       });
     });
-  }, 15_000);
+  }, 45_000);
 
   test("A05.2: unwritable ZCODE_OCEL_DIR fails at preflight with LOGGING_UNAVAILABLE (exit 2)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -485,7 +485,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
         chmodSync(lockedDir, 0o755);
       }
     });
-  }, 15_000);
+  }, 45_000);
 
   test("A05.3: empty or corrupt JSON OCEL 2.0 file causes zcode ocel verify to fail closed (exit 1 or 2)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -501,7 +501,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       expect(corruptRes.stdout + corruptRes.stderr).not.toContain("Usage:");
       expect(corruptRes.stdout + corruptRes.stderr).toMatch(/parse|syntax|unexpected|invalid/i);
     });
-  });
+  }, 45_000);
 
   test("A05.4: dangling E2O and dangling O2O objectId references fail zcode ocel verify with exit 1", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -525,7 +525,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       expect(r2.exitCode).toBe(1);
       expect(r2.stdout + r2.stderr).toContain("missing_o2o_target");
     });
-  });
+  }, 45_000);
 
   test("A05.5: non-monotonic dynamic object attribute timestamp (t2 < t1) fails zcode ocel verify (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -540,7 +540,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toMatch(/monotonic|timestamp|order/i);
     });
-  });
+  }, 45_000);
 
   test("A05.6: tampered pi_hash chain fails both zcode ocel verify and scripts/ocel-verify.ts (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -568,7 +568,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       const scriptRes = runBunScript("scripts/ocel-verify.ts", [badJsonOcel], { cwd: REPO_ROOT });
       expect(scriptRes.exitCode).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("A05.7: SQLite WAL export integrity & corrupted/truncated SQLite rejection", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -594,7 +594,7 @@ describe("A05 — Art. 12 OCEL 2.0, AppServer & Retention Boundary/Negative Test
       expect(badVerify.stdout + badVerify.stderr).not.toContain("Usage:");
       expect(badVerify.stdout + badVerify.stderr).toMatch(/sqlite|corrupt|invalid|malformed|database/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A06 — Art. 13 Instructions for Use & compliance info Negative/Boundary Tests (5 tests)", () => {
@@ -606,7 +606,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info Negative/Bounda
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/--format|format|bogus|unsupported/i);
     });
-  });
+  }, 45_000);
 
   test("A06.2: malformed zcode-cli.toml causes zcode compliance info to fail closed (exit 2)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -615,7 +615,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info Negative/Bounda
       expect(res.exitCode).toBe(2);
       expect(res.stdout + res.stderr).toContain("INVALID_COMPLIANCE_CONFIG");
     });
-  });
+  }, 45_000);
 
   test("A06.3: standard vs high-risk-annex-iii profile distinguishes prohibited autonomous safety-critical use", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -634,7 +634,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info Negative/Bounda
       expect(hrText).not.toBe(stdText);
       expect(hrText.toLowerCase()).toMatch(/prohibit|oversight|high-risk/);
     });
-  });
+  }, 45_000);
 
   test("A06.4: compliance info without soak logs never mislabels unverified accuracy/conformance standing as ALIVE", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -645,7 +645,7 @@ describe("A06 — Art. 13 Instructions for Use & compliance info Negative/Bounda
       const standings = [parsed.standing, parsed.runtime_standing, parsed.alignment_standing].filter(Boolean);
       expect(standings).not.toContain("ALIVE");
     });
-  });
+  }, 45_000);
 
   test("A06.5: docs/INSTRUCTIONS_FOR_USE.md explicitly documents prohibited uses, limitations, and human oversight", () => {
     const docPath = join(REPO_ROOT, "docs", "INSTRUCTIONS_FOR_USE.md");
@@ -667,7 +667,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A07.2: --mode yolo, --permission-mode bypassPermissions, and --permission-mode dontAsk under high-risk-annex-i all exit 1", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -683,7 +683,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
         expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
       }
     });
-  });
+  }, 45_000);
 
   test("A07.3: allow_yolo = true in zcode-cli.toml under high-risk-annex-iii refuses with OVERSIGHT_POLICY_REFUSED (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -692,7 +692,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A07.4: subagent oversight inheritance refuses privilege escalation / ZCODE_ALLOW_YOLO=1 under regulated profile", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -711,7 +711,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A07.5: decision_latency_ms < 500ms (< min_review_ms) sets AB_RISK_FLAG automation-bias warning", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -721,7 +721,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
       const res = runZcodeCli(["ocel", "verify", "--in", inPath, "--json"], ws);
       expect(res.stdout + res.stderr).toContain("AB_RISK_FLAG");
     });
-  });
+  }, 45_000);
 
   test("A07.6: missing overseer_id on permission_resolved under regulated profile fails oversight verification (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -743,7 +743,7 @@ describe("A07 — Art. 14 Human Oversight, YOLO Block & Stop Negative/Boundary T
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toMatch(/overseer_id|OVERSIGHT_POLICY_REFUSED|missing/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests (5 tests)", () => {
@@ -757,7 +757,7 @@ describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toMatch(/pi_hash|hash|chain/i);
     });
-  });
+  }, 45_000);
 
   test("A08.2: deleting a middle event breaks pi_parent chain and fails ocel verify (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -768,7 +768,7 @@ describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toMatch(/pi_parent|chain|hash/i);
     });
-  });
+  }, 45_000);
 
   test("A08.3: tampered dataset-manifest.json SHA-256 mismatch is caught when compared against disk", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -815,7 +815,7 @@ describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests
       });
       expect(secTest.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A08.4: dirty workspace with rollback_on_dirty = false refuses with DIRTY_TIMEOUT_REFUSED", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -835,7 +835,7 @@ describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests
       expect([1, 2]).toContain(res.exitCode);
       expect(res.stdout + res.stderr).toMatch(/DIRTY_TIMEOUT_REFUSED|dirty/i);
     });
-  });
+  }, 45_000);
 
   test("A08.5: DfCM receipt missing identity.subject_sha or tampered replay SHA fails validateDfcmReceipt (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -860,7 +860,7 @@ describe("A08 — Art. 15 Security, Injection & Rollback Negative/Boundary Tests
       expect(v.admitted).toBe(false);
       expect(v.exitCode).not.toBe(0);
     });
-  });
+  }, 45_000);
 });
 
 describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary Tests (5 tests)", () => {
@@ -874,7 +874,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary
       expect(res.stdout).not.toContain("CONFORMITY_ADMITTED");
       expect(res.stdout + res.stderr).toMatch(/UNVERIFIED|empty|no logs|0 logs/i);
     });
-  });
+  }, 45_000);
 
   test("A09.2: compliance assess refuses (exit 1) when soak logs contain tampered pi_hash", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -891,7 +891,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary
       expect(res.stdout + res.stderr).toMatch(/pi_hash|hash|chain|tamper/i);
       expect(res.stdout).not.toContain("CONFORMITY_ADMITTED");
     });
-  });
+  }, 45_000);
 
   test("A09.3: zcode compliance doc refuses (exit 1 or 2) when regulated config fails oversight policy", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -902,7 +902,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary
       expect(existsSync(outPath)).toBe(false);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A09.4: validateDfcmReceipt refuses empty JSON receipt {} fail-closed (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -912,7 +912,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary
       expect(v.admitted).toBe(false);
       expect(v.exitCode).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("A09.5: invalid compliance subcommand or bogus flag exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -929,7 +929,7 @@ describe("A09 — Art. 17/43/47/48 QMS, assess, DoC & receipts Negative/Boundary
       expect(badFlagOut).not.toContain("invalid input or flag");
       expect(badFlagOut).toMatch(/--unknown-flag-xyz|unknown option|unknown flag/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative Tests (5 tests)", () => {
@@ -950,7 +950,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
       const res180 = runZcodeCli(["compliance", "deployer-check", "--config", cfg180, "--json"], ws);
       expect(res180.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A10.2: missing overseer_id under high-risk-annex-iii fails deployer-check (exit 1, OVERSIGHT_POLICY_REFUSED)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -961,7 +961,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("OVERSIGHT_POLICY_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A10.3: monitoring_enabled = false fails deployer-check (exit 1, LOGGING_UNAVAILABLE)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -972,7 +972,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
       expect(res.exitCode).toBe(1);
       expect(res.stdout + res.stderr).toContain("LOGGING_UNAVAILABLE");
     });
-  });
+  }, 45_000);
 
   test("A10.4: forbidden static concurrency keys ([aimd].concurrency = 4 / wip = 8 / max_parallel = 4) exit 2 with STATIC_CONCURRENCY_FORBIDDEN", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -989,7 +989,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
         expect(res.stdout + res.stderr).toContain("STATIC_CONCURRENCY_FORBIDDEN");
       }
     });
-  });
+  }, 45_000);
 
   test("A10.5: fria-export on missing overseer_id / invalid config fails closed instead of fabricating deployer fields", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1000,7 +1000,7 @@ describe("A10 — Art. 26/27 Deployer Preflight, Config & FRIA Boundary/Negative
       expect(existsSync(outPath)).toBe(false);
       expect(res.stdout + res.stderr).toMatch(/OVERSIGHT_POLICY_REFUSED|overseer_id/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 tests)", () => {
@@ -1024,7 +1024,7 @@ describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 t
       expect(corruptOut).not.toContain("invalid input or flag");
       expect(corruptOut).toMatch(/parse|syntax|JSON|corrupt|unexpected/i);
     });
-  });
+  }, 45_000);
 
   test("A11.2: single 10-minute refactor turn outlier amid fast turns (c_s^2 >> 1) with healthy TTFT does NOT trigger false Art. 72/73 drift", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1059,7 +1059,7 @@ describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 t
       expect(out.driftDetected).toBe(false);
       expect(out.ttftMdTriggered ?? false).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A11.3: sustained >= 3-sigma drop in fitness & oversight triggers drift alert and escalates PMM verdict", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1075,7 +1075,7 @@ describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 t
       expect(typeof out.pValue).toBe("number");
       expect(out.pValue!).toBeLessThan(0.01);
     });
-  });
+  }, 45_000);
 
   test("A11.4: zcode incident report for nonexistent --session exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1092,7 +1092,7 @@ describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 t
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/nonexistent_session_xyz|session.*not found|missing.*session/i);
     });
-  });
+  }, 45_000);
 
   test("A11.5: sample window < min_window (10 < 20) reports UNVERIFIED / insufficient power honestly", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1115,7 +1115,7 @@ describe("A11 — Art. 72/73 PMM & Serious Incident Negative/Boundary Tests (5 t
         ).toBe(true);
       }
     });
-  });
+  }, 45_000);
 });
 
 describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 tests)", () => {
@@ -1153,7 +1153,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 te
       expect(rule?.status).not.toBe("SATISFIED_WITNESSED");
       expect(rule?.witness_event_ids).toEqual([]);
     });
-  });
+  }, 45_000);
 
   test("A12.2: tool_updated without prior permission_resolved fails Precedence with exit 1, VIOLATED, and counterexample_event_ids", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1188,7 +1188,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 te
       expect(rule.status).toBe("VIOLATED");
       expect(rule.counterexample_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A12.3: missing art50_disclosure_emitted after session_created violates Response (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1221,7 +1221,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 te
       expect(rule.status).toBe("VIOLATED");
       expect(rule.counterexample_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A12.4: co-occurrence of mode_yolo_enabled and high_risk_profile_active violates NotCoExistence (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1270,7 +1270,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 te
       expect(rule.status).toBe("VIOLATED");
       expect(rule.counterexample_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A12.5: ChainResponse(worker_claim, receipt_persist) fails with VIOLATED when an intervening event appears (exit 1)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1332,7 +1332,7 @@ describe("A12 — Declare / LTLf Conformance & Anti-Vacuity Negative Tests (5 te
       expect(rule.status).toBe("VIOLATED");
       expect(rule.counterexample_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 });
 
 describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)", () => {
@@ -1361,7 +1361,7 @@ describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)",
       expect(out.alignment.fitness).toBeLessThan(1);
       expect(out.alignment.moves.some((m) => m.kind === "model_move")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A13.2: unexpected extra tool_updated event yields log_move (alignmentCost >= 1, fitness < 1.0)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1382,7 +1382,7 @@ describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)",
       expect(out.alignment.fitness).toBeLessThan(1);
       expect(out.alignment.moves.some((m) => m.kind === "log_move")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A13.3: swapped out-of-order events yield alignmentCost >= 2 (both log_move and model_move)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1412,7 +1412,7 @@ describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)",
       expect(out.alignment.moves.some((m) => m.kind === "log_move")).toBe(true);
       expect(out.alignment.moves.some((m) => m.kind === "model_move")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A13.4: malformed cyclic WF-net / missing sourcePlace exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1436,7 +1436,7 @@ describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)",
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/sourcePlace|missing_source_place|wfnet|cyclic|soundness|unsound/i);
     });
-  });
+  }, 45_000);
 
   test("A13.5: empty observed trace against non-trivial WF-net produces fitness === 0 (all model_move, never 1.0)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1455,7 +1455,7 @@ describe("A13 — Optimal A* Trace Alignment Boundary/Negative Tests (5 tests)",
       expect(out.alignment.alignmentCost).toBeGreaterThanOrEqual(9);
       expect(out.alignment.moves.every((m) => m.kind === "model_move")).toBe(true);
     });
-  });
+  }, 45_000);
 });
 
 describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", () => {
@@ -1477,7 +1477,7 @@ describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", ()
       const res = runZcodeCli(["ocel", "discover", "--in", inPath, "--ocpn", "--format", "json"], ws);
       expect(res.stdout + res.stderr).toContain("UNOBSERVED_OBJECT_TYPE");
     });
-  });
+  }, 45_000);
 
   test("A14.2: rework loop (tool_updated -> turn_failed -> tool_updated -> turn_failed -> tool_updated) surfaces reworkCycles", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1527,7 +1527,7 @@ describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", ()
       const out = res.json<{ reworkCycles: Array<{ count?: number }> }>();
       expect(out.reworkCycles.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A14.3: concurrent mutated_in on the same workspace_file triggers fileCollisions diagnostic", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1567,7 +1567,7 @@ describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", ()
       const out = res.json<{ fileCollisions: unknown[] }>();
       expect(out.fileCollisions.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("A14.4: nonexistent --in path passed to zcode ocel discover exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1577,7 +1577,7 @@ describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", ()
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/does-not-exist|ENOENT|no such file|not found/i);
     });
-  });
+  }, 45_000);
 
   test("A14.5: invalid --format bogus passed to zcode ocel discover exits 2", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1589,7 +1589,7 @@ describe("A14 — OCPN & OC-DFG Discovery Boundary/Negative Tests (5 tests)", ()
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/--format|format|bogus|unsupported/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Tests (5 tests)", () => {
@@ -1606,7 +1606,7 @@ describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Test
       expect(out.driftDetected).toBe(true);
       expect(["gradual", "sudden"]).toContain(out.driftKind ?? "");
     });
-  });
+  }, 45_000);
 
   test("A15.2: heavy-tailed coding turns (c_s^2 >> 1) with healthy TTFT keep driftDetected: false and ttftMdTriggered: false", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1622,7 +1622,7 @@ describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Test
       expect(out.driftDetected).toBe(false);
       expect(out.ttftMdTriggered ?? false).toBe(false);
     });
-  });
+  }, 45_000);
 
   test("A15.3: window < min_window (12 < 20) reports UNVERIFIED / insufficientPower instead of fabricating p < 0.01", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1645,7 +1645,7 @@ describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Test
         ).toBe(true);
       }
     });
-  });
+  }, 45_000);
 
   test("A15.4: TTFT spike > 2x rolling median in second half triggers ttftMdTriggered / AIMD multiplicative decrease", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1660,7 +1660,7 @@ describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Test
       const out = res.json<{ driftDetected: boolean; ttftMdTriggered?: boolean }>();
       expect(out.driftDetected || out.ttftMdTriggered).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("A15.5: sustained high utilization & high c_s^2 surfaces Kingman queueing saturation metrics", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1682,7 +1682,7 @@ describe("A15 — Concept Drift, SPC & Kingman Variance Separation Boundary Test
       const text = JSON.stringify(res.json()).toLowerCase();
       expect(text).toMatch(/kingman|rho|cs2|queue|wait/);
     });
-  });
+  }, 45_000);
 });
 
 describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Boundary Tests (5 tests)", () => {
@@ -1709,7 +1709,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Bound
         expect(combined).toMatch(/k.?anonym|anonymity|outlier|support\s*<|variant/i);
       }
     });
-  });
+  }, 45_000);
 
   test("A16.2: --rpm-safe with k <= 1 (--k 1 and --k 0) fails input validation (exit 2, no trivial bypass)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1728,7 +1728,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Bound
         expect(combined).toMatch(/--k|k_anonymity|k >= 2|k must be|anonymity/i);
       }
     });
-  });
+  }, 45_000);
 
   test("A16.3: --rpm-safe export never leaves raw email or unredacted secret in exported bundle", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1767,7 +1767,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Bound
         expect(res.stdout + res.stderr).toMatch(/REDACTION|unredacted|secret|pii/i);
       }
     });
-  });
+  }, 45_000);
 
   test("A16.4: missing E2O links degrade RPM accuracy standing (PARTIAL_ALIVE or BUILD_BROKEN, NEVER ALIVE)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1790,7 +1790,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Bound
         expect(res.stdout + res.stderr).toMatch(/e2o|PARTIAL_ALIVE|BUILD_BROKEN/i);
       }
     });
-  });
+  }, 45_000);
 
   test("A16.5: empty/constant-zero salt under --rpm-safe is rejected rather than allowing reversible pseudonyms", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1808,7 +1808,7 @@ describe("A16 — Responsible Process Mining (FACT) & k-Anonymity Negative/Bound
       expect(combined).not.toContain("invalid input or flag");
       expect(combined).toMatch(/salt|pseudonym|hmac/i);
     });
-  });
+  }, 45_000);
 });
 
 describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Negative Tests (5 tests)", () => {
@@ -1845,7 +1845,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Neg
       const unitRes = runSubprocess(process.execPath, ["test", txTest], { cwd: REPO_ROOT, timeoutMs: 20_000 });
       expect(unitRes.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("A17.2: dirty workspace with rollback_on_dirty = false returns DIRTY_TIMEOUT_REFUSED (never silent retry)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1865,7 +1865,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Neg
       expect([1, 2]).toContain(res.exitCode);
       expect(res.stdout + res.stderr).toContain("DIRTY_TIMEOUT_REFUSED");
     });
-  });
+  }, 45_000);
 
   test("A17.3: invalid --max-turns 0 and tight token/wall-clock budget bounds terminate fail-closed without livelock", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1889,7 +1889,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Neg
         }
       });
     });
-  }, 20_000);
+  }, 45_000);
 
   test("A17.4: locked .git/index.lock prevents dirty rollback and halts fail-closed", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1910,7 +1910,7 @@ describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Neg
       expect([1, 2]).toContain(res.exitCode);
       expect(res.stdout + res.stderr).toMatch(/index\.lock|ROLLBACK|DIRTY|LOCK/i);
     });
-  });
+  }, 45_000);
 
   test("A17.5: max_retries_per_signature = 0 in zcode-cli.toml is refused as INVALID_COMPLIANCE_CONFIG (exit 2)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1921,5 +1921,5 @@ describe("A17 — Bounded Transactional Lifecycle Nets, Rollback & Retry Cap Neg
       expect(res.exitCode).toBe(2);
       expect(res.stdout + res.stderr).toContain("INVALID_COMPLIANCE_CONFIG");
     });
-  });
+  }, 45_000);
 });

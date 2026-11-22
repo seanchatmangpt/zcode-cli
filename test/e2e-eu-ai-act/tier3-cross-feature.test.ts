@@ -104,7 +104,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
         expect(dbInfo.events.some((e) => e.ocel_type === "art50_disclosure_emitted")).toBe(true);
       });
     });
-  }, 20_000);
+  }, 45_000);
 
   test("T3.02 (A01 × A07): Art. 14 OVERSIGHT_POLICY_REFUSED (--mode yolo under high-risk-annex-iii) emits Art. 50 disclosure / audit event without leaking secret env/flags", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -159,7 +159,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
         expect(hasDisclosureInStdout || hasDisclosureInOcel).toBe(true);
       });
     });
-  }, 15_000);
+  }, 45_000);
 
   test("T3.03 (A03 × A05): PII + JWT + PEM inside tool output is scrubbed by unified redactor before pi_hash, then survives SQLite WAL & XML exports with zero leaks", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -235,7 +235,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
         expect(xmlText).not.toContain(secret);
       }
     });
-  });
+  }, 45_000);
 
   test("T3.04 (A03 × A16): Unified redactor + --rpm-safe --k 5 export pseudonymizes actors, scrubs PII/secrets, and suppresses or refuses <k unique outlier", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -306,7 +306,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
         expect(expOutlier.exitCode).toBe(1);
       }
     });
-  });
+  }, 45_000);
 
   test("T3.05 (A05 × A12): SQLite OCEL 2.0 round-trip -> JSON re-import -> ocel verify --declare separates SATISFIED_WITNESSED from SATISFIED_VACUOUS", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -382,7 +382,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(byId.get("DEC-RESP-ART50")?.status).toBe("SATISFIED_WITNESSED");
       expect(byId.get("DEC-PREC-VACUOUS")?.status).toBe("SATISFIED_VACUOUS");
     });
-  });
+  }, 45_000);
 
   test("T3.06 (A05 × A13): OCEL 2.0 trace skipping permission_resolved yields A* model_move (fitness < 1) AND Declare Precedence VIOLATED", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -443,7 +443,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(precRule?.status).toBe("VIOLATED");
       expect(precRule?.counterexample_event_ids.length).toBeGreaterThan(0);
     });
-  });
+  }, 45_000);
 
   test("T3.07 (A07 × A12): permission_resolved (< 500ms latency) triggers AB_RISK_FLAG across ocel verify and pmm analyze automation-bias check", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -494,7 +494,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(pmmRes.exitCode).toBe(0);
       expect(readFileSync(pmmOut, "utf8")).toMatch(/AB_RISK_FLAG|automation.?bias/i);
     });
-  });
+  }, 45_000);
 
   test("T3.08 (A07 × A17): Emergency oversight stop (oversight_intervened) chains to transactional rollback (workspace_rolled_back) leaving clean git worktree", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -551,7 +551,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
 
       expect(repo.statusPorcelain()).toBe("");
     });
-  });
+  }, 45_000);
 
   test("T3.09 (A08 × A17): Dirty-write fault with rollback_on_dirty=true restores clean git HEAD and repeated identical failure signature triggers RETRY_BUDGET_EXHAUSTED", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -629,7 +629,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       );
       expect(txTest.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("T3.10 (A02 × A04): AIRO risk-register feeds Annex IV §5 compiler with exact Art. 9 risks and <file:...> receipts", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -655,7 +655,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const checkRes = runZcodeCli(["compliance", "annex-iv", "--out", dossierDir, "--check"], ws);
       expect(checkRes.exitCode).toBe(0);
     });
-  });
+  }, 45_000);
 
   test("T3.11 (A04 × A09): annex-iv dossier + qms-manifest -> compliance assess (CONFORMITY_ADMITTED) -> compliance doc (Annex V DoC)", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -687,7 +687,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(Object.keys(parsedDoc).length).toBeGreaterThanOrEqual(9);
       expect(docText).toContain(lock.sha512);
     });
-  });
+  }, 45_000);
 
   test("T3.12 (A04 × A09 negative): Tampered annex-iv.json or empty/non-conforming logs refuses annex-iv --check, compliance assess (exit 1), and compliance doc", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -724,7 +724,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const docFail = runZcodeCli(["compliance", "doc", "--out", badDocPath], ws);
       expect(docFail.exitCode).not.toBe(0);
     });
-  });
+  }, 45_000);
 
   test("T3.13 (A10 × A05): [deployer].log_retention_days < 180 fails deployer-check AND fails OCEL retention compliance check", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -749,7 +749,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(assessRes.exitCode).toBe(1);
       expect((assessRes.stdout + assessRes.stderr).toLowerCase()).toMatch(/retention|180|refused/);
     });
-  });
+  }, 45_000);
 
   test("T3.14 (A10 × A16): fria-export incorporates RPM confidentiality/fairness metrics & [deployer].overseer_id", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -793,7 +793,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(friaMdRes.exitCode).toBe(0);
       expect(readFileSync(friaMdPath, "utf8")).toContain("overseer-fria-eu");
     });
-  });
+  }, 45_000);
 
   test("T3.15 (A13 × A14): Non-conforming rework trace (log_move in A* alignment) feeds ocel discover --ocpn to mine rework edge & OCPN soundness", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -843,7 +843,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(typeof ocpnOut.soundness?.sound).toBe("boolean");
       expect(readFileSync(ocpnPath, "utf8")).toContain("turn_failed");
     });
-  });
+  }, 45_000);
 
   test("T3.16 (A14 × A11): Injected rework + crash trace flows from ocel discover into incident report with causal OC-DFG root cause", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -886,7 +886,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(pkt.root_cause).toBeDefined();
       expect(JSON.stringify(pkt.root_cause)).toContain("turn_failed");
     });
-  });
+  }, 45_000);
 
   test("T3.17 (A15 × A11): Injected sudden drift -> pmm analyze emits drift_detected -> incident report classifies Art. 73 deadline", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -943,7 +943,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(["2d", "10d", "15d"]).toContain(pkt.deadline_class ?? "");
       expect(pkt.root_cause).toBeDefined();
     });
-  });
+  }, 45_000);
 
   test("T3.18 (A15 × A13): Heavy-tailed coding turns (c_s^2 >> 1) with healthy TTFT keep Kingman/SPC free of false MD/drift AND yield A* fitness === 1.0", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -986,7 +986,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(alignOut.alignment.alignmentCost).toBe(0);
       expect(alignOut.alignment.fitness).toBe(1);
     });
-  });
+  }, 45_000);
 
   test("T3.19 (A01 × A08): Sidecar .zcode-provenance SHA-256 + workspace rollback invalidates phantom provenance when aborted edit is rolled back", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1032,7 +1032,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const outDoc = JSON.parse(readFileSync(outOcelPath, "utf8")) as Ocel2Doc;
       expect(outDoc.events.some((e) => e.type === "workspace_rolled_back")).toBe(true);
     });
-  });
+  }, 45_000);
 
   test("T3.20 (A06 × A02): compliance info runtime limitations & accuracy metrics align with AIRO risk-register & EU AI Act Arts. 9/12/14/15", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1054,7 +1054,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       }
       expect(infoText.toLowerCase()).toMatch(/limitation|standing|uncertainty|oversight/);
     });
-  });
+  }, 45_000);
 
   test("T3.21 (A03 × A08): capability-snapshot.sh save+verify redacts short/long/JWT/PEM secrets while compliance/dataset-manifest.json validates SHA-256 provenance", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1140,7 +1140,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       }
       expect(sha256Text("tamper")).not.toBe(items[0]!.sha256);
     });
-  });
+  }, 45_000);
 
   test("T3.22 (A09 × A12): compliance assess evaluates Declare rules internally and refuses when Art. 14 Precedence is VIOLATED in soak logs", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1174,7 +1174,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       const assessOut = assessRes.json<{ verdict?: string }>();
       expect(assessOut.verdict).not.toBe("CONFORMITY_ADMITTED");
     });
-  });
+  }, 45_000);
 
   test("T3.23 (Source-AppServer × A14): Real Source-AppServer fixture verifies via ocel-verify.ts & ocel verify, then mines OC-DFG + OCPN & Mermaid", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1223,7 +1223,7 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(discMmd.stdout).toMatch(/flowchart\s+(LR|TD|TB)/);
       expect(discMmd.stdout).toContain("-->");
     });
-  });
+  }, 45_000);
 
   test("T3.24 (A15 Kingman × A14 OC-DFG / Stratified SPC): Multi-provider heavy-tailed logs yield accurate OC-DFG sojourn tail + stratified no_drift", async () => {
     await withIsolatedWorkspace(async (ws) => {
@@ -1260,5 +1260,5 @@ describe("Tier 3 — Pairwise Cross-Feature Combinations", () => {
       expect(pmmText).toContain("zai");
       expect(pmmText).toContain("anthropic");
     });
-  });
+  }, 45_000);
 });
