@@ -21,9 +21,10 @@ ledger_env = "SJIRA_LEDGER"
 out_dir_env = "SJIRA_OUT_DIR"
 forbid_tty_prompts = true
 enforce_twin_parity = true
-# Safe stub: exit 0 arms twinParity.hands_free=self-test-ok (ReceiptSink spawnSync).
-# No heavier twin court exists in-tree yet; ["true"] matches test/adapters.test.ts.
-twin_parity_self_test_cmd = ["true"]
+# Fail-closed brand twin court: castle/brands ≡ zcode-cli/brands (SHA-256).
+# Exit 0 → twinParity.hands_free=self-test-ok; non-zero → FAILED + UNVERIFIED.
+# Never ["true"] — that stub armed hands_free without proving twins.
+twin_parity_self_test_cmd = ["bun", "scripts/twin-parity-self-test.ts"]
 
 [adapters.ggen_marketplace]
 enabled = true

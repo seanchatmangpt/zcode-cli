@@ -223,6 +223,23 @@ describe("adapters/igniter-sync", () => {
     expect(seen.some((c) => c[0] === "mix" && c.includes("--check"))).toBe(true);
   });
 
+  test("falsifier: git* cleanRoomSyncCmd refuses without spawning git", async () => {
+    const seen: string[][] = [];
+    const court = new IgniterSyncCourtAdapter({
+      cleanRoomSyncCmd: ["git", "diff", "--exit-code"],
+      forbidGeneratedDirs: false,
+      run: (cmd) => {
+        seen.push(cmd);
+        return { status: 0, stdout: "", stderr: "" };
+      }
+    });
+    const v = await court.verifyPostTransition("/tmp");
+    expect(v.exitCode).toBe(1);
+    expect(v.standing).toBe("REFUSED");
+    expect(v.diagnostics.join(" ")).toMatch(/git\* sync cmd|clean-room fallacy/);
+    expect(seen.some((c) => c[0] === "git" || (c[0] ?? "").endsWith("/git"))).toBe(false);
+  });
+
   test("ggen sync --dry-run refuses non-empty planned_writes", async () => {
     const court = new IgniterSyncCourtAdapter({
       cleanRoomSyncCmd: ["ggen", "sync", "run", "--dry-run"],
@@ -331,8 +348,10 @@ describe("adapters/receipt-sink", () => {
     expect(isDfcmStubNonAdmit(dfcm)).toBe(true);
   });
 
-  test("TOML enforce_twin_parity=true arms twinParity.hands_free via ReceiptSink", () => {
+  test("TOML enforce_twin_parity=true + exit-0 cmd arms twinParity.hands_free via ReceiptSink", () => {
     const dir = mkdtempSync(join(tmpdir(), "twin-parity-toml-"));
+    // Isolated wiring probe: exit-0 cmd proves ReceiptSink spawn path only.
+    // Workspace pin uses scripts/twin-parity-self-test.ts (not ["true"]).
     const toml = `
 [adapters.sjira]
 enabled = true
@@ -371,18 +390,22 @@ twin_parity_self_test_cmd = ["true"]
     expect(result.aggregateStanding).toBe("ALIVE");
   });
 
-  test("workspace zcode-cli.toml enforce_twin_parity loads into receiptSink for foundry", () => {
+  test("workspace zcode-cli.toml twin self-test proves brand twins before hands_free", () => {
     const dir = mkdtempSync(join(tmpdir(), "twin-parity-foundry-"));
-    const tomlPath = resolve(import.meta.dir, "../zcode-cli.toml");
+    const repoRoot = resolve(import.meta.dir, "..");
+    const tomlPath = resolve(repoRoot, "zcode-cli.toml");
     const loaded = loadAdapterRegistryFromToml(tomlPath, { cwd: dir });
     expect(loaded.receiptSink.enforceTwinParity).toBe(true);
-    // Default pin arms twin_parity_self_test_cmd=["true"] — foundry-cli spreads
-    // this into ReceiptSink (src/foundry-cli.ts); hands_free must auto-arm.
-    expect(loaded.receiptSink.twinParitySelfTestCmd).toEqual(["true"]);
+    // Real brand-hash court — not the ["true"] noop stub.
+    expect(loaded.receiptSink.twinParitySelfTestCmd).toEqual([
+      "bun",
+      "scripts/twin-parity-self-test.ts"
+    ]);
     const sink = new ReceiptSink({
       ledgerPath: join(dir, "sink-ledger.jsonl"),
       outDir: join(dir, "out"),
-      cwd: dir,
+      // Script resolves brands via import.meta.dir; cwd must be repo for bun path.
+      cwd: repoRoot,
       enforceTwinParity: loaded.receiptSink.enforceTwinParity,
       twinParitySelfTestCmd: loaded.receiptSink.twinParitySelfTestCmd
     });
@@ -405,7 +428,7 @@ twin_parity_self_test_cmd = ["true"]
       aggregateStanding?: string;
     };
     expect(loop.twinParity?.hands_free).toBe("self-test-ok");
-    // sandbox still caps ALIVE → PARTIAL_ALIVE; twin parity no longer fail-closes.
+    // sandbox still caps ALIVE → PARTIAL_ALIVE after a real twin PASS.
     expect(result.aggregateStanding).toBe("PARTIAL_ALIVE");
   });
 
@@ -427,6 +450,35 @@ twin_parity_self_test_cmd = ["true"]
           outcome: "ALIVE",
           standing: "ALIVE",
           sha256Receipt: "cafe"
+        }
+      ]
+    });
+    const loop = JSON.parse(readFileSync(result.loopReceiptPath, "utf8")) as {
+      twinParity?: { hands_free?: string };
+    };
+    expect(loop.twinParity?.hands_free).toBe("FAILED");
+    expect(result.aggregateStanding).toBe("UNVERIFIED");
+  });
+
+  test("enforceTwinParity + failing self-test cmd fail-closes hands_free=FAILED", () => {
+    const dir = mkdtempSync(join(tmpdir(), "twin-parity-false-"));
+    const sink = new ReceiptSink({
+      ledgerPath: join(dir, "ledger.jsonl"),
+      outDir: join(dir, "out"),
+      cwd: dir,
+      enforceTwinParity: true,
+      twinParitySelfTestCmd: ["false"]
+    });
+    const result = sink.closeCycle({
+      cycleId: "twin-false",
+      startedAt: new Date().toISOString(),
+      receipts: [
+        {
+          cycleId: "twin-false",
+          workOrderId: "WO-FALSE",
+          outcome: "ALIVE",
+          standing: "ALIVE",
+          sha256Receipt: "dead"
         }
       ]
     });

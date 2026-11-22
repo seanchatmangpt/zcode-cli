@@ -72,7 +72,7 @@ C4Container
 
   System_Boundary(p1, "Plane 1: Semantic Foundry & Compiler Spine") {
     Container(transducer, "Perimeter Transducer", "Stateless Edge LLM", "Single-hop parser converting PDFs/CSVs/transcripts into candidate RDF structs [NONE label aspirational]")
-    Container(zcode, "zcode-cli 3.14.4*", "TypeScript / POWL v2 / AIMD", "Autonomic Explore-to-Exploit I/O orchestrator; castle-publish OPT-IN underwire (enabled=false); zcode↛fortune5 [CONSTRUCT enforced]")
+    Container(zcode, "zcode-cli 3.14.4*", "TypeScript / POWL v2 / AIMD / OCEL 2.0", "Autonomic Explore-to-Exploit I/O orchestrator + closed-loop zcode foundry + EU AI Act compliance & process-mining suite (src/compliance/); castle-publish OPT-IN underwire (enabled=false); zcode↛fortune5 [CONSTRUCT enforced]")
     Container(reasoner, "PurRDF 26.10.29 × purrdf-duckdb × purrdf-n3 (Eyeron absorbed)", "Rust / SIMD / Arrow", "Coupled Datalog x N3 + DuckDB RDF eval [CONSTRUCT enforced; 5k-stratum/340ns SHACL DOC-ONLY]")
     Container(ferroplan, "ferroplan & bcinr-pddl", "Rust / WASM", "HTN-FOND / HDDL-PDDL AOT planner emitting sound POWL v2 policies & Crystallized Control Surfaces [CONSTRUCT enforced]")
     Container(ggen, "ggen / ggen_igniter 26.11.18 / Marketplace", "Rust / Elixir AST", "Clean-room AOT codegen from .ttl/.rq/.eex packs; drift gate mix ggen_igniter.sync --check [CONSTRUCT enforced]")
@@ -125,9 +125,10 @@ C4Component
   title Level 3A: Component View — zcode-cli, ggen Foundry & CASTLE
 
   Container_Boundary(zcode_c, "zcode-cli 3.14.4* (Clean-Room Orchestrator)") {
-    Component(powl_eng, "POWL v2 & Petri Net Engine", "TypeScript", "compilePowlToWorkflowNet + executePowlWithTokenReplay; eliminates structural deadlocks")
-    Component(aimd, "AimdWipController & Autonomic Loop", "TypeScript", "Little's Law WIP slow-start, additive increase, multiplicative backoff, deriveFollowUpPowl")
-    Component(ocel_tap, "Dual OCEL 2.0 Tap", "TypeScript", "ocel-tap.ts capturing 26 wire events across 6 object types with SHA-256 hash chaining")
+    Component(powl_eng, "POWL v2, Petri Net & Transactional Net Engine", "TypeScript", "compilePowlToWorkflowNet + recursive write-scope validation, Hasse transitive reduction, Murata WF-net reductions, bounded transactional nets with silent-cycle detection & Saga LIFO compensation")
+    Component(aimd, "AimdWipController, Kingman Scheduler & Foundry Loop", "TypeScript", "Little's Law AIMD WIP control, multi-server G/G/c Kingman scheduler (src/compliance/kingman-scheduler.ts), closed-loop zcode foundry (src/foundry-cli.ts)")
+    Component(ocel_tap, "Dual OCEL 2.0 Tap & Retention Ledger", "TypeScript", "ocel-tap.ts + src/compliance/ocel2.ts & ocel-sqlite.ts: IEEE OCEL 2.0 strict validation, XML/SQLite round-trip, SHA-256 hash chain, 180-day event-time retention + retention-purge-ledger.ndjson")
+    Component(compliance_c, "EU AI Act Compliance & Process Mining Suite", "TypeScript / RDF / SHACL", "src/compliance/* + src/compliance-cli.ts + ontology/eu-ai-act*.ttl & airo_risk_description.ttl: Arts. 9-15,17,26,27,43,47,50,72,73; A* alignment + Align-ETC, Inductive Miner OCPN, OC-DFG, Art. 14 TUI oversight, Art. 50(2) provenance")
     Component(ad_sjira, "src/adapters/sjira-io.ts", "Adapter", "Pins absolute GGEN_BIN (>= fd4f99bbd), compiles candidates.jsonl to PartialOrder(V, prec)")
     Component(ad_mkt, "src/adapters/marketplace-court.ts", "Adapter", "Locks pack.toml keys, forbids ASK gates, runs 000_forbid_private_namespaces.rq & 2x capsule check")
     Component(ad_ui_layout, "src/adapters/ui-layout-court.ts", "Adapter", "TransitionCourtAdapter name=ui-layout-court; TOML [adapters.ui_layout]; exit codes 0/1/2/3; spawns ggen-layout-court layout_court")
@@ -160,6 +161,7 @@ C4Component
   Rel(ad_sjira, powl_eng, "Projects work-order DAG into POWL v2 AST")
   Rel(powl_eng, aimd, "Schedules transitions under dynamic WIP cap")
   Rel(powl_eng, ocel_tap, "Emits E2O/O2O execution telemetry")
+  Rel(ocel_tap, compliance_c, "Feeds OCEL 2.0 logs into A* alignment, OCPN/OC-DFG discovery & EU AI Act Art. 9-73 gates")
   Rel(powl_eng, ad_mkt, "Pre/post-validates touched ggen-marketplace packs")
   Rel(ad_mkt, truex, "Runs public-namespace and SELECT-only gate courts")
   Rel(ad_mkt, packs, "Double-checks capsule determinism before SHA-256 pinning")
@@ -302,7 +304,7 @@ Program umbrella title `v26.11.20` is **not** a package pin. Package claims belo
 
 | Project / Repo / Surface | Local Path / Domain | Runtime / Stack | C4 Plane | Core Responsibility & Authority (enforced: OBSERVE\|SELECT\|CONSTRUCT + receipted DO; 7-rung labels aspirational) |
 | --- | --- | --- | --- | --- |
-| **zcode-cli** | `zcode-cli 3.14.4*` (`bin/zcode.js`; on-disk `package.json` `3.14.4-1`) | TypeScript / POWL v2 / OCEL 2.0 | Plane 1 | Clean-room Explore-to-Exploit I/O orchestrator with sJira, Marketplace, Igniter, Receipt & `ui-layout-court` adapters; **zcode↛fortune5** (castle-publish OPT-IN underwire `enabled=false`; fortune5 ALIVE as CASTLE CLI only) (`CONSTRUCT`) |
+| **zcode-cli** | `zcode-cli 3.14.4*` (`bin/zcode.js`; on-disk `package.json` `3.14.4-1`) | TypeScript / POWL v2 / OCEL 2.0 / SHACL | Plane 1 | Clean-room Explore-to-Exploit I/O orchestrator + closed-loop `zcode foundry` (`src/foundry-cli.ts`) + EU AI Act compliance & process-mining suite (`src/compliance/`, `src/compliance-cli.ts`, `ontology/eu-ai-act*.ttl`, `airo_risk_description.ttl`: Arts. 9–15, 17, 26, 27, 43, 47, 50, 72, 73; A\* alignment/Align-ETC, OCPN, OC-DFG, G/G/c Kingman, transactional nets, Art. 14 oversight, Art. 50(2) provenance) + sJira, Marketplace, Igniter, Receipt & `ui-layout-court` adapters; **zcode↛fortune5** (castle-publish OPT-IN underwire `enabled=false`; fortune5 ALIVE as CASTLE CLI only) (`CONSTRUCT`) |
 | **ui-layout-court** | `zcode-cli/src/adapters/ui-layout-court.ts` (`[adapters.ui_layout]`) | TypeScript `TransitionCourtAdapter` | Plane 1 | UI layout TransitionCourt (exit 0/1/2/3); spawns `ggen-layout-court` `layout_court`; chicago suite on disk (`CONSTRUCT`) |
 | **ggen / ggen_igniter** | `ggen`, `ggen_igniter 26.11.18` | Rust / Elixir AST (Igniter/Sourceror) | Plane 1 | AOT clean-room codegen from `.ttl`/`.rq`/`.eex` packs; drift gate `mix ggen_igniter.sync --check`; hosts `SpatialCourt` / `BrandTheme` mix tasks (`CONSTRUCT`) |
 | **ggen-layout-court** | `ggen/crates/ggen-layout-court` | Rust / taffy (`#![no_std]`+alloc) | Plane 1 | AOT Flexbox/Grid bbox court — stay-in-bounds + pairwise non-overlap; `metrics.rs` + `text_spacing.rs`; bins `layout_court` / `overflow_viewport_sweep` (`CONSTRUCT`) |
@@ -347,6 +349,11 @@ Throughput and size figures that previously appeared as live C4 product claims a
 | 113k frames/s (as XaaS A2A) | **DOC-ONLY** | Not an XaaS `gen_statem` gate; Arcus/cgap ab-10 UDS soak printed 113,132 fps **never fenced** (different surface) |
 | packs ~50 KB | **DOC-ONLY / overstated** | Observed packs vary (e.g. `mobile-ui-layout-pack` ~80 KB) |
 | `git diff == 0` / `git diff --exit-code == 0` | **replaced** | Real drift gate is `mix ggen_igniter.sync --check` |
+| Zero-diff codegen (`Rel(ggen,tenants)`) | **replaced** | Was theater Rel label; live path is AOT codegen + `mix ggen_igniter.sync --check` |
+| WebTransport h3 / 16B intent / 28B Arrow / 64B AOQ1 | **DOC-ONLY / underwire** | `Rel(ffb,xaas)` / `Rel(worker,a2a)` / deploy browser Rel — not a live product wire |
+| T+0 / instant-clear settlements | **DOC-ONLY** | Vendor Rel / Kudzu settlement timing not receipt-gated product law |
+| `$0.22/MTok` LLM edge | **DOC-ONLY** | Marketing unit-cost; not a sealed pricing court |
+| RevOps inverse-surface compiler | **DOC-ONLY / underwire** | `Rel(revops,cos)` — in-cos RevOps exists; inverse-surface compiler not a sealed product Rel |
 | WAL append throughput | **MEASURED** | `ash_pplan` `Store.Wal` Z6 band **~29k–88k frames/s** (load-dependent; cite `ash_pplan/receipts/lanes/z6-wal-bench.md` / `bench/CLAIMS-BASELINE-2026-11-07.md`) |
 | sub-5 ms WAL / &lt; 5 ms WAL | **DOC-ONLY / removed** | Superseded by the measured frames/s band above |
 | Sub-10 ns SRL / GraphLaw turnstile | **DOC-ONLY / unmeasured** | Ungated product claim; no receipted bench gate on disk |

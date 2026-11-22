@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -292,9 +293,12 @@ export interface IncidentReportPacket {
   session_id: string;
   deadline_class: "2d" | "10d" | "15d";
   deadline_rationale: string;
-  chain_intact: boolean;
+  first_failing_event_at: string | null;
+  reporting_deadline_at: string | null;
+  // chain_intact omitted: validateOcel2 throws PROVENANCE_SEAL_FAILED before emit,
+  // so a boolean mirror of validation.ok would be a dead always-true witness.
   causal_slice: Ocel2Document;
-  ocel_slice: Ocel2Document;
+  ocel_slice_sha256: string;
   root_cause: {
     summary: string;
     failing_events: Array<{ id: string; type: string; time: string }>;
@@ -306,6 +310,150 @@ export interface IncidentReportPacket {
   };
   accuracy_standing: RpmFactAuditReport["standing"];
   remediation_powl: PowlNode;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+function computeArt73SlaTimestamps(
+  failingEvents: ReadonlyArray<{ time: string }>,
+  sliceEvents: ReadonlyArray<{ time: string }>,
+  deadlineClass: "2d" | "10d" | "15d"
+): { firstFailingEventAt: string | null; reportingDeadlineAt: string | null } {
+  const candidates = failingEvents.length > 0 ? failingEvents : sliceEvents;
+  let minMs = Number.POSITIVE_INFINITY;
+  for (const ev of candidates) {
+    const parsed = Date.parse(ev.time);
+    if (Number.isFinite(parsed) && parsed < minMs) {
+      minMs = parsed;
+    }
+  }
+  if (!Number.isFinite(minMs)) {
+    return { firstFailingEventAt: null, reportingDeadlineAt: null };
+  }
+  const days = deadlineClass === "2d" ? 2 : deadlineClass === "10d" ? 10 : 15;
+  return {
+    firstFailingEventAt: new Date(minMs).toISOString(),
+    reportingDeadlineAt: new Date(minMs + days * MS_PER_DAY).toISOString()
+  };
+}
+
+function synthesizeIncidentRemediationPowl(input: {
+  deadlineClass: "2d" | "10d" | "15d";
+  hasSecretBreach: boolean;
+  hasDrift: boolean;
+  hasDeclareViolations: boolean;
+}): PowlNode {
+  if (input.deadlineClass === "2d") {
+    return {
+      id: "powl_incident_2d_secret_remediation",
+      kind: "partial_order",
+      children: [
+        {
+          id: "incident_revoke_rotate_secrets",
+          kind: "activity",
+          label: input.hasSecretBreach
+            ? "revoke_and_rotate_exposed_credentials"
+            : "contain_critical_security_breach",
+          objectType: "secret"
+        },
+        {
+          id: "incident_purge_and_seal_audit",
+          kind: "activity",
+          label: "purge_unredacted_artifacts_and_seal_audit",
+          objectType: "session"
+        },
+        {
+          id: "incident_notify_authority_2d",
+          kind: "activity",
+          label: "submit_art73_3_urgent_2d_notification",
+          objectType: "human_overseer"
+        }
+      ],
+      order: [
+        ["incident_revoke_rotate_secrets", "incident_purge_and_seal_audit"],
+        ["incident_purge_and_seal_audit", "incident_notify_authority_2d"]
+      ]
+    };
+  }
+  if (input.deadlineClass === "10d" && (input.hasDrift || input.hasDeclareViolations)) {
+    return {
+      id: "powl_incident_10d_drift_declare_remediation",
+      kind: "partial_order",
+      children: [
+        {
+          id: "incident_declare_realign",
+          kind: "activity",
+          label: "run_a_star_declare_conformance_realignment",
+          objectType: "session"
+        },
+        {
+          id: "incident_drift_recalibrate",
+          kind: "activity",
+          label: "recalibrate_pmm_concept_drift_baseline",
+          objectType: "session"
+        },
+        {
+          id: "incident_notify_authority_10d",
+          kind: "activity",
+          label: "submit_art73_4_10d_incident_report",
+          objectType: "human_overseer"
+        }
+      ],
+      order: [
+        ["incident_declare_realign", "incident_drift_recalibrate"],
+        ["incident_drift_recalibrate", "incident_notify_authority_10d"]
+      ]
+    };
+  }
+  if (input.deadlineClass === "10d") {
+    return {
+      id: "powl_incident_10d_rollback_remediation",
+      kind: "partial_order",
+      children: [
+        {
+          id: "incident_contain_rollback",
+          kind: "activity",
+          label: "verify_workspace_clean_or_rollback",
+          objectType: "workspace_snapshot"
+        },
+        {
+          id: "incident_root_cause_patch",
+          kind: "activity",
+          label: "patch_failing_transition_and_add_falsifier",
+          objectType: "session"
+        },
+        {
+          id: "incident_human_review",
+          kind: "activity",
+          label: "overseer_signoff_art14_and_10d_report",
+          objectType: "human_overseer"
+        }
+      ],
+      order: [
+        ["incident_contain_rollback", "incident_root_cause_patch"],
+        ["incident_root_cause_patch", "incident_human_review"]
+      ]
+    };
+  }
+  return {
+    id: "powl_incident_15d_anomaly_remediation",
+    kind: "partial_order",
+    children: [
+      {
+        id: "incident_triage_anomaly",
+        kind: "activity",
+        label: "triage_operational_anomaly_oc_dfg",
+        objectType: "session"
+      },
+      {
+        id: "incident_human_review",
+        kind: "activity",
+        label: "overseer_signoff_art14",
+        objectType: "human_overseer"
+      }
+    ],
+    order: [["incident_triage_anomaly", "incident_human_review"]]
+  };
 }
 
 function loadSingleOcelDocument(inPath: string): Ocel2Document {
@@ -597,6 +745,15 @@ export function generateIncidentReportPacket(options: {
     summaryParts.push(`${declareViolations.length} Declare violation(s)`);
   }
 
+  const { firstFailingEventAt, reportingDeadlineAt } = computeArt73SlaTimestamps(
+    failingEvents,
+    sliceEvents,
+    deadlineClass
+  );
+  const ocelSliceSha256 = createHash("sha256")
+    .update(JSON.stringify(sliceDoc), "utf8")
+    .digest("hex");
+
   const packet: IncidentReportPacket = {
     schema: "zcode.art73-incident/1",
     regulation: "Regulation (EU) 2024/1689 Art. 73",
@@ -604,9 +761,10 @@ export function generateIncidentReportPacket(options: {
     session_id: targetSessionId,
     deadline_class: deadlineClass,
     deadline_rationale: deadlineRationale,
-    chain_intact: validation.ok,
+    first_failing_event_at: firstFailingEventAt,
+    reporting_deadline_at: reportingDeadlineAt,
     causal_slice: sliceDoc,
-    ocel_slice: sliceDoc,
+    ocel_slice_sha256: ocelSliceSha256,
     root_cause: {
       summary: summaryParts.join("; ") || "Operational anomaly captured in OC-DFG slice.",
       failing_events: failingEvents,
@@ -617,25 +775,12 @@ export function generateIncidentReportPacket(options: {
       oc_dfg_edges: totalEdges
     },
     accuracy_standing: rpm.standing,
-    remediation_powl: {
-      id: "powl_incident_remediation",
-      kind: "partial_order",
-      children: [
-        {
-          id: "incident_contain_rollback",
-          kind: "activity",
-          label: "verify_workspace_clean_or_rollback",
-          objectType: "workspace_snapshot"
-        },
-        {
-          id: "incident_human_review",
-          kind: "activity",
-          label: "overseer_signoff_art14",
-          objectType: "human_overseer"
-        }
-      ],
-      order: [["incident_contain_rollback", "incident_human_review"]]
-    }
+    remediation_powl: synthesizeIncidentRemediationPowl({
+      deadlineClass,
+      hasSecretBreach,
+      hasDrift,
+      hasDeclareViolations: declareViolations.length > 0
+    })
   };
 
   const redactedPacket = redactComplianceData(packet, {
