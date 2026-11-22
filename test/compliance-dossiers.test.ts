@@ -287,9 +287,21 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
       expect(okAssess.verdict).toBe("CONFORMITY_ADMITTED");
 
       const docPath = join(dir, "eu-doc.json");
-      const doc = generateEuDeclarationOfConformity({ outPath: docPath, packageRoot: REPO_ROOT, cwd: dir, configPath: cfgPath });
+      const doc = generateEuDeclarationOfConformity({
+        outPath: docPath,
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath,
+        logsDir: goodLogs
+      });
       expect(doc.git_head_sha).toMatch(/^[0-9a-f]{40}$/);
       expect(doc.runtime_lock.sha512.length).toBeGreaterThan(20);
+      expect(doc.sole_responsibility_statement).toMatch(/sole responsibility/i);
+      expect(doc.conformity_statement).toContain("Regulation (EU) 2024/1689");
+      expect(doc.place_of_issue.length).toBeGreaterThan(0);
+      expect(doc.signatory.name.length).toBeGreaterThan(0);
+      expect(doc.signatory.function.length).toBeGreaterThan(0);
+      expect(doc.signatory.signature.length).toBeGreaterThan(0);
 
       const friaPath = join(dir, "fria.json");
       const { report } = exportFriaReport({ outPath: friaPath, format: "json", packageRoot: REPO_ROOT, cwd: dir, configPath: cfgPath });
@@ -741,6 +753,88 @@ describe("M4 EU AI Act Dossiers, Risk Ledger, QMS & PMM/Incident (zero-mock Chic
           { requireHashChain: false }
         ).ok
       ).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("C6-AnnexV-DoC falsifier: refuses EU DoC when QMS manifest is missing or Annex VI conformity fails, and emits mandatory Annex V(4), V(5), V(7) fields when admitted", () => {
+    const dir = makeTempDir("zcode-c6-annexv-");
+    try {
+      const fakePkgRoot = join(dir, "pkg-no-qms");
+      mkdirSync(fakePkgRoot, { recursive: true });
+      writeFileSync(
+        join(fakePkgRoot, "package.json"),
+        JSON.stringify({ name: "zcode-app-cli", version: "3.14.4-1", author: "Test Provider", license: "MIT" }),
+        "utf8"
+      );
+      writeFileSync(
+        join(fakePkgRoot, "zcode-runtime.lock.json"),
+        readFileSync(join(REPO_ROOT, "zcode-runtime.lock.json"), "utf8"),
+        "utf8"
+      );
+
+      const cfgPath = join(dir, "zcode-cli.toml");
+      writeFileSync(
+        cfgPath,
+        '[compliance]\nprofile = "high-risk-annex-iii"\nallow_yolo = false\n[deployer]\noverseer_id = "ov-eu"\nlog_retention_days = 180\nmonitoring_enabled = true\n[pmm]\nmin_window = 20\n',
+        "utf8"
+      );
+
+      // 1. Missing QMS manifest must throw ComplianceRefusalError and write no file
+      const noQmsOut = join(dir, "no-qms-doc.json");
+      expect(() =>
+        generateEuDeclarationOfConformity({
+          outPath: noQmsOut,
+          packageRoot: fakePkgRoot,
+          cwd: dir,
+          configPath: cfgPath
+        })
+      ).toThrow(/ANNEX_V_QMS_REFUSED/);
+      expect(existsSync(noQmsOut)).toBe(false);
+
+      // 2. Valid QMS manifest but no conformity assessment / no logs must throw ComplianceRefusalError
+      const noAssessOut = join(dir, "no-assess-doc.json");
+      expect(() =>
+        generateEuDeclarationOfConformity({
+          outPath: noAssessOut,
+          packageRoot: REPO_ROOT,
+          cwd: dir,
+          configPath: cfgPath
+        })
+      ).toThrow(/ANNEX_V_CONFORMITY_REFUSED/);
+      expect(existsSync(noAssessOut)).toBe(false);
+
+      // 3. Valid QMS + admitted Annex VI conformity emits Annex V(4), V(5), V(7) fields
+      const goodLogs = join(dir, "good-logs");
+      mkdirSync(goodLogs, { recursive: true });
+      writeFileSync(join(goodLogs, "s1.ocel.json"), JSON.stringify(buildHighRiskSessionDoc("s_c6")), "utf8");
+      const validOut = join(dir, "valid-doc.json");
+      const doc = generateEuDeclarationOfConformity({
+        outPath: validOut,
+        packageRoot: REPO_ROOT,
+        cwd: dir,
+        configPath: cfgPath,
+        logsDir: goodLogs,
+        placeOfIssue: "Brussels, Belgium",
+        signatory: {
+          name: "Jane Doe",
+          function: "Head of AI Compliance",
+          signature: "sig:ed25519:verified"
+        }
+      });
+      expect(existsSync(validOut)).toBe(true);
+      expect(doc.qms_manifest_sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(doc.conformity_assessment.verdict).toBe("CONFORMITY_ADMITTED");
+      expect(doc.conformity_assessment.logs_analyzed).toBe(1);
+      expect(doc.sole_responsibility_statement).toMatch(/sole responsibility/i);
+      expect(doc.conformity_statement).toContain("Regulation (EU) 2024/1689");
+      expect(doc.place_of_issue).toBe("Brussels, Belgium");
+      expect(doc.signatory).toEqual({
+        name: "Jane Doe",
+        function: "Head of AI Compliance",
+        signature: "sig:ed25519:verified"
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,18 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   accessSync,
+  appendFileSync,
   constants,
   copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   statSync,
   unlinkSync,
   writeFileSync
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
@@ -1124,6 +1126,28 @@ export function readOcel2Sqlite(dbPath: string): Ocel2Document {
   }
 }
 
+export const RETENTION_PURGE_LEDGER_FILENAME = "retention-purge-ledger.ndjson";
+
+export interface RetentionPurgeReceipt {
+  schemaVersion: "1.0";
+  kind: "ocel_retention_purge_tombstone";
+  purgedAt: string;
+  artifactPath: string;
+  artifactName: string;
+  artifactSha256: string;
+  artifactSizeBytes: number;
+  mtimeIso: string;
+  latestEventTimeIso: string | null;
+  effectiveAgeDays: number;
+  minDays: number;
+  effectiveRetentionDays: number;
+  eventCount: number | null;
+  headHash: string | null;
+  reason: "EU_AI_ACT_ART12_RETENTION_EXPIRED";
+  prevHash: string;
+  entryHash: string;
+}
+
 export interface RetentionPolicyOptions {
   nowMs?: number;
   maxRetentionDays?: number;
@@ -1138,6 +1162,8 @@ export interface RetentionPolicyResult {
   checked: string[];
   retained: string[];
   purged: string[];
+  purgeLedgerPath?: string;
+  purgeReceipts: RetentionPurgeReceipt[];
 }
 
 function isManagedComplianceArtifact(name: string): boolean {
@@ -1148,6 +1174,189 @@ function isManagedComplianceArtifact(name: string): boolean {
     name.endsWith(".ocel.xml") ||
     name.endsWith(".receipt.json")
   );
+}
+
+interface ArtifactRetentionInspection {
+  latestEventTimeMs: number | null;
+  eventCount: number | null;
+  headHash: string | null;
+  unreadableProtected: boolean;
+}
+
+function extractLatestTimeFromOcelDoc(doc: Ocel2Document): {
+  latestEventTimeMs: number | null;
+  eventCount: number;
+  headHash: string | null;
+} {
+  let latest: number | null = null;
+  for (const ev of doc.events) {
+    const ms = Date.parse(ev.time);
+    if (Number.isFinite(ms) && (latest === null || ms > latest)) {
+      latest = ms;
+    }
+  }
+  for (const obj of doc.objects) {
+    for (const attr of obj.attributes) {
+      const ms = Date.parse(attr.time);
+      if (Number.isFinite(ms) && (latest === null || ms > latest)) {
+        latest = ms;
+      }
+    }
+  }
+  let headHash: string | null = null;
+  if (doc.events.length > 0) {
+    const lastEv = doc.events[doc.events.length - 1]!;
+    const piHash = lastEv.attributes.find((a) => a.name === "pi_hash")?.value;
+    if (typeof piHash === "string" && piHash.length > 0) {
+      headHash = piHash;
+    }
+  }
+  return { latestEventTimeMs: latest, eventCount: doc.events.length, headHash };
+}
+
+function inspectArtifactForRetention(
+  fullPath: string,
+  name: string
+): ArtifactRetentionInspection {
+  if (name.endsWith(".sqlite")) {
+    let header: Buffer;
+    try {
+      header = readFileSync(fullPath).subarray(0, 16);
+    } catch {
+      return {
+        latestEventTimeMs: null,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: true
+      };
+    }
+    const isSqliteMagic = header.length === 16 && header.toString("utf8") === "SQLite format 3\0";
+    if (!isSqliteMagic) {
+      return {
+        latestEventTimeMs: null,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: false
+      };
+    }
+    try {
+      const doc = readOcel2Sqlite(fullPath);
+      const info = extractLatestTimeFromOcelDoc(doc);
+      return { ...info, unreadableProtected: false };
+    } catch {
+      // Fail closed: never purge a real SQLite compliance DB whose event times cannot be read.
+      return {
+        latestEventTimeMs: null,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: true
+      };
+    }
+  }
+
+  if (name.endsWith(".jsonocel") || name.endsWith(".ocel.json")) {
+    try {
+      const parsed = JSON.parse(readFileSync(fullPath, "utf8")) as Partial<Ocel2Document>;
+      if (Array.isArray(parsed.events)) {
+        const safeDoc: Ocel2Document = {
+          objectTypes: Array.isArray(parsed.objectTypes) ? parsed.objectTypes : [],
+          eventTypes: Array.isArray(parsed.eventTypes) ? parsed.eventTypes : [],
+          objects: Array.isArray(parsed.objects) ? parsed.objects : [],
+          events: parsed.events
+        };
+        const info = extractLatestTimeFromOcelDoc(safeDoc);
+        return { ...info, unreadableProtected: false };
+      }
+    } catch {
+      // Fall through to mtime for non-OCEL/placeholder JSON files
+    }
+    return {
+      latestEventTimeMs: null,
+      eventCount: null,
+      headHash: null,
+      unreadableProtected: false
+    };
+  }
+
+  if (name.endsWith(".ocel.xml")) {
+    try {
+      const xml = readFileSync(fullPath, "utf8");
+      let latest: number | null = null;
+      const re = /\btime="([^"]+)"/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(xml)) !== null) {
+        const ms = Date.parse(match[1]!);
+        if (Number.isFinite(ms) && (latest === null || ms > latest)) {
+          latest = ms;
+        }
+      }
+      return {
+        latestEventTimeMs: latest,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: false
+      };
+    } catch {
+      return {
+        latestEventTimeMs: null,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: true
+      };
+    }
+  }
+
+  if (name.endsWith(".receipt.json")) {
+    try {
+      const parsed = JSON.parse(readFileSync(fullPath, "utf8")) as Record<string, unknown>;
+      let latest: number | null = null;
+      for (const key of ["purgedAt", "generatedAt", "timestamp", "createdAt", "recordedAt"]) {
+        const val = parsed[key];
+        if (typeof val === "string") {
+          const ms = Date.parse(val);
+          if (Number.isFinite(ms) && (latest === null || ms > latest)) {
+            latest = ms;
+          }
+        }
+      }
+      return {
+        latestEventTimeMs: latest,
+        eventCount: null,
+        headHash: null,
+        unreadableProtected: false
+      };
+    } catch {
+      // Fall through to mtime
+    }
+  }
+
+  return {
+    latestEventTimeMs: null,
+    eventCount: null,
+    headHash: null,
+    unreadableProtected: false
+  };
+}
+
+function readLastPurgeLedgerHash(ledgerPath: string): string {
+  if (!existsSync(ledgerPath)) return "GENESIS";
+  const content = readFileSync(ledgerPath, "utf8").trim();
+  if (!content) return "GENESIS";
+  const lines = content.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    const parsed = JSON.parse(line) as { entryHash?: unknown };
+    if (typeof parsed.entryHash === "string" && /^[a-f0-9]{64}$/.test(parsed.entryHash)) {
+      return parsed.entryHash;
+    }
+    throw new ComplianceRefusalError(
+      "LOGGING_UNAVAILABLE",
+      `Retention purge ledger '${ledgerPath}' has malformed entryHash.`,
+      "R_missing_consequence"
+    );
+  }
+  return "GENESIS";
 }
 
 export function enforceRetentionPolicy(
@@ -1191,6 +1400,8 @@ export function enforceRetentionPolicy(
   const checked: string[] = [];
   const retained: string[] = [];
   const purged: string[] = [];
+  const purgeReceipts: RetentionPurgeReceipt[] = [];
+  const ledgerPath = join(dir, RETENTION_PURGE_LEDGER_FILENAME);
 
   for (const entry of entries) {
     if (!entry.isFile() || !isManagedComplianceArtifact(entry.name)) continue;
@@ -1198,8 +1409,11 @@ export function enforceRetentionPolicy(
     checked.push(fullPath);
 
     let mtimeMs: number;
+    let artifactSizeBytes: number;
     try {
-      mtimeMs = statSync(fullPath).mtimeMs;
+      const st = statSync(fullPath);
+      mtimeMs = st.mtimeMs;
+      artifactSizeBytes = st.size;
       if (entry.name.endsWith(".sqlite")) {
         for (const walExt of ["-wal", "-shm"]) {
           const sidecar = `${fullPath}${walExt}`;
@@ -1212,10 +1426,57 @@ export function enforceRetentionPolicy(
       throw asLoggingUnavailable(`Failed to stat compliance artifact '${fullPath}'`, err);
     }
 
+    const inspection = inspectArtifactForRetention(fullPath, entry.name);
+    if (inspection.unreadableProtected) {
+      retained.push(fullPath);
+      continue;
+    }
+
+    // Use the newest of filesystem mtime and internal OCEL event/object timestamps so
+    // backdating mtime can never cause premature deletion of events younger than minDays.
+    const effectiveTimeMs =
+      inspection.latestEventTimeMs !== null
+        ? Math.max(mtimeMs, inspection.latestEventTimeMs)
+        : mtimeMs;
+
     // Never purge anything younger than minDays (180d floor) or effectiveRetentionDays
-    if (mtimeMs < cutoffMs && mtimeMs < minCutoffMs) {
+    if (effectiveTimeMs < cutoffMs && effectiveTimeMs < minCutoffMs) {
       if (!options.dryRun) {
         try {
+          const artifactSha256 = createHash("sha256")
+            .update(readFileSync(fullPath))
+            .digest("hex");
+          const prevHash = readLastPurgeLedgerHash(ledgerPath);
+          const payload: Omit<RetentionPurgeReceipt, "entryHash"> = {
+            schemaVersion: "1.0",
+            kind: "ocel_retention_purge_tombstone",
+            purgedAt: new Date(nowMs).toISOString(),
+            artifactPath: fullPath,
+            artifactName: basename(fullPath),
+            artifactSha256,
+            artifactSizeBytes,
+            mtimeIso: new Date(mtimeMs).toISOString(),
+            latestEventTimeIso:
+              inspection.latestEventTimeMs !== null
+                ? new Date(inspection.latestEventTimeMs).toISOString()
+                : null,
+            effectiveAgeDays: (nowMs - effectiveTimeMs) / MS_PER_DAY,
+            minDays,
+            effectiveRetentionDays,
+            eventCount: inspection.eventCount,
+            headHash: inspection.headHash,
+            reason: "EU_AI_ACT_ART12_RETENTION_EXPIRED",
+            prevHash
+          };
+          const entryHash = createHash("sha256")
+            .update(JSON.stringify(payload))
+            .digest("hex");
+          const receipt: RetentionPurgeReceipt = { ...payload, entryHash };
+
+          // Persist tamper-evident purge receipt BEFORE unlinking the expired artifact.
+          appendFileSync(ledgerPath, `${JSON.stringify(receipt)}\n`, "utf8");
+          purgeReceipts.push(receipt);
+
           unlinkSync(fullPath);
           if (entry.name.endsWith(".sqlite")) {
             for (const walExt of ["-wal", "-shm"]) {
@@ -1240,6 +1501,8 @@ export function enforceRetentionPolicy(
     writable: true,
     checked,
     retained,
-    purged
+    purged,
+    ...(purgeReceipts.length > 0 ? { purgeLedgerPath: ledgerPath } : {}),
+    purgeReceipts
   };
 }

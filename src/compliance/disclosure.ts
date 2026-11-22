@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   ComplianceRefusalError,
@@ -887,4 +887,175 @@ export function embedMarkdownProvenanceHeader(
     return `${fmWithNewline}${commentLine}${canonicalBody}`;
   }
   return `${commentLine}${canonicalBody}`;
+}
+
+export interface WorkspaceFileEntry {
+  mtimeMs: number;
+  size: number;
+}
+
+export type WorkspaceFileSnapshot = Map<string, WorkspaceFileEntry>;
+
+const PROVENANCE_SKIP_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".zcode-provenance",
+  "node_modules",
+  "dist",
+  "target",
+  ".next",
+  ".cache",
+  ".turbo"
+]);
+
+const DEFAULT_MAX_SNAPSHOT_FILES = 20_000;
+
+export function snapshotWorkspaceFiles(
+  workspaceDir: string,
+  options?: { maxFiles?: number }
+): WorkspaceFileSnapshot {
+  const snapshot: WorkspaceFileSnapshot = new Map();
+  const maxFiles = options?.maxFiles ?? DEFAULT_MAX_SNAPSHOT_FILES;
+  let rootReal: string;
+  try {
+    rootReal = realpathSync(resolve(workspaceDir));
+  } catch {
+    return snapshot;
+  }
+
+  const stack: string[] = [rootReal];
+  while (stack.length > 0 && snapshot.size < maxFiles) {
+    const current = stack.pop()!;
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (snapshot.size >= maxFiles) break;
+      const fullPath = join(current, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (PROVENANCE_SKIP_DIRS.has(entry.name)) continue;
+        stack.push(fullPath);
+      } else if (entry.isFile()) {
+        try {
+          const st = lstatSync(fullPath);
+          if (!st.isFile() || st.isSymbolicLink()) continue;
+          const relPath = relative(rootReal, fullPath).split(sep).join("/");
+          snapshot.set(relPath, { mtimeMs: st.mtimeMs, size: st.size });
+        } catch {
+          // skip unreadable/vanished file
+        }
+      }
+    }
+  }
+  return snapshot;
+}
+
+export function diffWorkspaceSnapshots(
+  before: WorkspaceFileSnapshot,
+  after: WorkspaceFileSnapshot
+): string[] {
+  const changed: string[] = [];
+  for (const [relPath, afterEntry] of after.entries()) {
+    const prev = before.get(relPath);
+    if (!prev || prev.mtimeMs !== afterEntry.mtimeMs || prev.size !== afterEntry.size) {
+      changed.push(relPath);
+    }
+  }
+  changed.sort();
+  return changed;
+}
+
+export interface RuntimeArt50ProvenanceOptions {
+  workspaceDir: string;
+  beforeSnapshot: WorkspaceFileSnapshot;
+  sessionId: string;
+  profile: ComplianceProfile;
+  provider: string;
+  model: string;
+  ocelHeadHash?: string;
+  cliVersion?: string;
+  redactPii?: boolean;
+  redactOptions?: RedactComplianceOptions;
+  ocelSink?: Art50OcelSink;
+}
+
+export interface RuntimeArt50ProvenanceResult {
+  sidecarPath: string;
+  markedMarkdownFiles: string[];
+  modifiedFiles: string[];
+  document: ProvenanceSidecarDocument;
+}
+
+function isMarkdownFile(relPath: string): boolean {
+  const ext = extname(relPath).toLowerCase();
+  return ext === ".md" || ext === ".markdown";
+}
+
+export function applyRuntimeArt50Provenance(
+  options: RuntimeArt50ProvenanceOptions
+): RuntimeArt50ProvenanceResult | null {
+  if (!isRegulatedProfile(options.profile)) return null;
+
+  const afterSnapshot = snapshotWorkspaceFiles(options.workspaceDir);
+  const modifiedFiles = diffWorkspaceSnapshots(options.beforeSnapshot, afterSnapshot);
+  if (modifiedFiles.length === 0) return null;
+
+  const workspaceReal = realpathSync(resolve(options.workspaceDir));
+  const markedMarkdownFiles: string[] = [];
+
+  for (const relPath of modifiedFiles) {
+    if (!isMarkdownFile(relPath)) continue;
+    const absPath = resolve(workspaceReal, relPath);
+    const content = readFileSync(absPath, "utf8");
+    const marked = embedMarkdownProvenanceHeader(content, {
+      profile: options.profile,
+      provider: options.provider,
+      model: options.model,
+      sessionId: options.sessionId,
+      cliVersion: options.cliVersion,
+      redactPii: options.redactPii,
+      redactOptions: options.redactOptions
+    });
+    if (marked !== content) {
+      writeFileSync(absPath, marked, "utf8");
+    }
+    markedMarkdownFiles.push(relPath);
+  }
+
+  const effectiveHeadHash =
+    options.ocelHeadHash?.trim() ||
+    sha256Hex(
+      JSON.stringify({
+        article: "EU-AI-ACT-Art.50(2)",
+        sessionId: options.sessionId,
+        profile: options.profile,
+        provider: options.provider,
+        model: options.model
+      })
+    );
+
+  const sidecar = writeProvenanceSidecar({
+    sessionId: options.sessionId,
+    workspaceDir: options.workspaceDir,
+    provider: options.provider,
+    model: options.model,
+    profile: options.profile,
+    ocelHeadHash: effectiveHeadHash,
+    modifiedSpans: modifiedFiles.map((filePath) => ({ filePath })),
+    redactPii: options.redactPii,
+    redactOptions: options.redactOptions,
+    ocelSink: options.ocelSink
+  });
+
+  return {
+    sidecarPath: sidecar.sidecarPath,
+    markedMarkdownFiles,
+    modifiedFiles,
+    document: sidecar.document
+  };
 }

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { PermissionPreview, PermissionView } from "../packages/zcode-tui/src/permission-view.ts";
+import { createPermissionPreview } from "../packages/zcode-tui/src/index.ts";
+import {
+  PermissionPreview,
+  PermissionView,
+  resolvePermissionOversightFromEnv
+} from "../packages/zcode-tui/src/permission-view.ts";
 import { createTheme } from "../packages/zcode-tui/src/theme.ts";
 import { ComplianceRefusalError, parseComplianceConfigToml } from "../src/compliance/config.ts";
 import {
@@ -435,5 +440,68 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
     expect(prop.env.ZCODE_OVERSEER_ID).toBe("alice.mueller@example.eu");
     expect(containsUnredactedSecretsOrPii(JSON.stringify(prop.ocelObject))).toBe(false);
     expect(prop.ocelObject.attributes.find((a) => a.name === "overseer_id")?.value).toBe("REDACTED");
+  });
+
+  test("regression (C4-Art14-Oversight): TUI permissionPreview wires env oversight panel and enforces min_review_ms dwell guard", () => {
+    const prevProfile = process.env.ZCODE_COMPLIANCE_PROFILE;
+    const prevMinReview = process.env.ZCODE_MIN_REVIEW_MS;
+    const prevOverseer = process.env.ZCODE_OVERSEER_ID;
+    try {
+      process.env.ZCODE_COMPLIANCE_PROFILE = "high-risk-annex-iii";
+      process.env.ZCODE_MIN_REVIEW_MS = "5000";
+      process.env.ZCODE_OVERSEER_ID = "alice-eu";
+
+      const theme = createTheme(true, "dark");
+      const preview = createPermissionPreview(
+        theme,
+        "bash",
+        { command: "rm -rf /tmp/x" },
+        "high"
+      );
+      const rendered = preview.render(100).join("\n");
+      expect(rendered).toContain("Blast radius:");
+      expect(rendered).toContain("Review dwell:");
+      expect(rendered).toContain("AB_RISK_FLAG");
+      expect(rendered).toContain("overseer=alice-eu");
+
+      // Submitting "allow" before min_review_ms (50ms < 5000ms) must be blocked/held
+      const heldDecision = preview.evaluateDecision("allow", 50);
+      expect(heldDecision.allowed).toBe(false);
+      expect(heldDecision.held).toBe(true);
+      expect(heldDecision.abRiskFlag).toBe(true);
+      expect(heldDecision.remainingMs).toBe(4950);
+
+      // Submitting "deny" is never blocked by dwell guard
+      const denyDecision = preview.evaluateDecision("deny", 50);
+      expect(denyDecision.allowed).toBe(true);
+      expect(denyDecision.held).toBe(false);
+
+      // Submitting "allow" once min_review_ms has elapsed is permitted
+      const allowedDecision = preview.evaluateDecision("allow", 5000);
+      expect(allowedDecision.allowed).toBe(true);
+      expect(allowedDecision.held).toBe(false);
+      expect(allowedDecision.remainingMs).toBe(0);
+
+      // Invalid ZCODE_MIN_REVIEW_MS fails closed
+      const badOversight = resolvePermissionOversightFromEnv({
+        ZCODE_COMPLIANCE_PROFILE: "high-risk-annex-iii",
+        ZCODE_MIN_REVIEW_MS: "invalid"
+      });
+      const badPreview = new PermissionPreview(
+        theme,
+        "bash",
+        { command: "ls" },
+        "high",
+        badOversight
+      );
+      expect(badPreview.evaluateDecision("allow", 10_000).allowed).toBe(false);
+    } finally {
+      if (prevProfile === undefined) delete process.env.ZCODE_COMPLIANCE_PROFILE;
+      else process.env.ZCODE_COMPLIANCE_PROFILE = prevProfile;
+      if (prevMinReview === undefined) delete process.env.ZCODE_MIN_REVIEW_MS;
+      else process.env.ZCODE_MIN_REVIEW_MS = prevMinReview;
+      if (prevOverseer === undefined) delete process.env.ZCODE_OVERSEER_ID;
+      else process.env.ZCODE_OVERSEER_ID = prevOverseer;
+    }
   });
 });

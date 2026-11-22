@@ -19,9 +19,11 @@ import { DatabaseSync } from "node:sqlite";
 import { ComplianceRefusalError, parseComplianceConfigToml } from "../src/compliance/config.ts";
 import {
   AppendableOcel2SqliteSink,
+  RETENTION_PURGE_LEDGER_FILENAME,
   enforceRetentionPolicy,
   readOcel2Sqlite,
-  writeOcel2Sqlite
+  writeOcel2Sqlite,
+  type RetentionPurgeReceipt
 } from "../src/compliance/ocel-sqlite.ts";
 import {
   CANONICAL_O2O_EDGES,
@@ -1212,5 +1214,100 @@ describe("F06: IEEE OCEL 2.0 SQLite WAL storage, lossless round-trip & Art. 12 r
     });
     expect(res4.ok).toBe(false);
     expect(res4.errors.length).toBeGreaterThan(0);
+  });
+
+  test("regression (C2-OCEL-Retention): enforces 180-day event-time floor against backdated mtime and persists hash-chained purge receipts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "zcode-c2-retention-"));
+    try {
+      const dayMs = 86_400_000;
+      const nowMs = Date.now();
+      const todayIso = new Date(nowMs).toISOString();
+      const oldDate = new Date(nowMs - 181 * dayMs);
+
+      // 1. Falsifier: fresh OCEL 2.0 SQLite DB (events timestamped today) with mtime backdated 181 days
+      const freshBuilder = new Ocel2ComplianceBuilder();
+      freshBuilder.upsertObject("sess_fresh", "session", { compliance_profile: "high-risk-annex-iii" }, todayIso);
+      freshBuilder.recordEvent({
+        id: "ev_fresh_1",
+        type: "session_created",
+        time: todayIso,
+        attributes: { note: "fresh-today" },
+        relationships: [{ objectId: "sess_fresh", qualifier: "in_session" }]
+      });
+      const freshDbPath = join(dir, "fresh-backdated.sqlite");
+      writeOcel2Sqlite(freshBuilder.build(), freshDbPath);
+      utimesSync(freshDbPath, oldDate, oldDate);
+
+      const res1 = enforceRetentionPolicy(dir, 180, { nowMs });
+      expect(res1.retained).toContain(freshDbPath);
+      expect(res1.purged).toEqual([]);
+      expect(res1.purgeReceipts).toEqual([]);
+      expect(existsSync(freshDbPath)).toBe(true);
+
+      // 2. Lawful expiration: genuinely expired OCEL 2.0 SQLite DB (events 185 days old + mtime 185 days old)
+      const expiredTimeIso = new Date(nowMs - 185 * dayMs).toISOString();
+      const expiredDate = new Date(nowMs - 185 * dayMs);
+      const expiredBuilder = new Ocel2ComplianceBuilder();
+      expiredBuilder.upsertObject("sess_exp", "session", { compliance_profile: "high-risk-annex-iii" }, expiredTimeIso);
+      expiredBuilder.recordEvent({
+        id: "ev_exp_1",
+        type: "session_created",
+        time: expiredTimeIso,
+        attributes: { note: "expired-185d" },
+        relationships: [{ objectId: "sess_exp", qualifier: "in_session" }]
+      });
+      const expiredDoc = expiredBuilder.build();
+      const expectedHeadHash = expiredDoc.events[0]!.attributes.find((a) => a.name === "pi_hash")?.value ?? null;
+      const expiredDbPath = join(dir, "expired-185d.sqlite");
+      writeOcel2Sqlite(expiredDoc, expiredDbPath);
+      utimesSync(expiredDbPath, expiredDate, expiredDate);
+      for (const ext of ["-wal", "-shm"]) {
+        if (existsSync(`${expiredDbPath}${ext}`)) {
+          utimesSync(`${expiredDbPath}${ext}`, expiredDate, expiredDate);
+        }
+      }
+
+      const res2 = enforceRetentionPolicy(dir, 180, { nowMs });
+      expect(res2.retained).toContain(freshDbPath);
+      expect(res2.purged).toEqual([expiredDbPath]);
+      expect(existsSync(freshDbPath)).toBe(true);
+      expect(existsSync(expiredDbPath)).toBe(false);
+
+      // Durable, tamper-evident purge ledger persisted in dir
+      const ledgerPath = join(dir, RETENTION_PURGE_LEDGER_FILENAME);
+      expect(res2.purgeLedgerPath).toBe(ledgerPath);
+      expect(existsSync(ledgerPath)).toBe(true);
+      const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+      expect(lines).toHaveLength(1);
+      const receipt1 = JSON.parse(lines[0]!) as RetentionPurgeReceipt;
+      expect(receipt1.kind).toBe("ocel_retention_purge_tombstone");
+      expect(receipt1.artifactPath).toBe(expiredDbPath);
+      expect(receipt1.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(receipt1.latestEventTimeIso).toBe(expiredTimeIso);
+      expect(receipt1.eventCount).toBe(1);
+      expect(receipt1.headHash).toBe(expectedHeadHash);
+      expect(receipt1.reason).toBe("EU_AI_ACT_ART12_RETENTION_EXPIRED");
+      expect(receipt1.prevHash).toBe("GENESIS");
+      expect(receipt1.entryHash).toMatch(/^[a-f0-9]{64}$/);
+
+      // 3. Second lawful purge chains prevHash -> receipt1.entryHash
+      const expiredDbPath2 = join(dir, "expired-186d.sqlite");
+      writeOcel2Sqlite(expiredDoc, expiredDbPath2);
+      utimesSync(expiredDbPath2, expiredDate, expiredDate);
+      for (const ext of ["-wal", "-shm"]) {
+        if (existsSync(`${expiredDbPath2}${ext}`)) {
+          utimesSync(`${expiredDbPath2}${ext}`, expiredDate, expiredDate);
+        }
+      }
+      const res3 = enforceRetentionPolicy(dir, 180, { nowMs });
+      expect(res3.purged).toEqual([expiredDbPath2]);
+      const linesAfter = readFileSync(ledgerPath, "utf8").trim().split("\n");
+      expect(linesAfter).toHaveLength(2);
+      const receipt2 = JSON.parse(linesAfter[1]!) as RetentionPurgeReceipt;
+      expect(receipt2.prevHash).toBe(receipt1.entryHash);
+      expect(receipt2.entryHash).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -18,6 +18,7 @@ import {
 } from "../src/compliance/disclosure.ts";
 import { Ocel2ComplianceBuilder, validateOcel2 } from "../src/compliance/ocel2.ts";
 import { containsUnredactedSecretsOrPii } from "../src/compliance/redactor.ts";
+import { runRuntime } from "../src/launcher.ts";
 
 describe("F07: EU AI Act Art. 50(1) direct AI-interaction disclosure", () => {
   test("builds redacted Art. 50 disclosure envelope for regulated profiles and refuses suppression", () => {
@@ -520,6 +521,117 @@ describe("F08: EU AI Act Art. 50(2) machine-readable provenance marking", () => 
         "internal_prov/sess_sym_in.json"
       );
       expect(okInternal.document.session_id).toBe("sess_sym_in");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("regression (C5-Art50-Provenance): runRuntime automatically marks Markdown headers and writes .zcode-provenance sidecar under regulated profiles", async () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-c5-prov-"));
+    try {
+      const wsDir = join(root, "ws");
+      mkdirSync(wsDir, { recursive: true });
+      const runtimeStub = join(root, "write-artifacts.mjs");
+      writeFileSync(
+        runtimeStub,
+        [
+          'import { writeFileSync } from "node:fs";',
+          'writeFileSync("foo.md", "# Generated Doc\\n\\nHello from AI.\\n", "utf8");',
+          'writeFileSync("foo.ts", "export const answer = 42;\\n", "utf8");'
+        ].join("\n"),
+        "utf8"
+      );
+
+      const regCfg = parseComplianceConfigToml('[compliance]\nprofile = "art50-only"\n', { env: {} });
+      const sessionId = "sess_c5_reg_01";
+      const exitCode = await runRuntime(
+        process.execPath,
+        ["-p", "create foo.md and foo.ts"],
+        {},
+        {
+          config: regCfg,
+          providerId: "zai",
+          modelId: "glm-5.3",
+          sessionId
+        },
+        { runtimeScriptPath: runtimeStub, cwd: wsDir }
+      );
+
+      expect(exitCode).toBe(0);
+
+      // 1. Markdown provenance header is embedded automatically
+      const fooMd = readFileSync(join(wsDir, "foo.md"), "utf8");
+      const mdHeader = extractMarkdownProvenanceHeader(fooMd);
+      expect(mdHeader).not.toBeNull();
+      expect(mdHeader!.article).toBe("EU-AI-ACT-Art.50(2)");
+      expect(mdHeader!.sessionId).toBe(sessionId);
+      expect(mdHeader!.provider).toBe("zai");
+      expect(mdHeader!.model).toBe("glm-5.3");
+      expect(mdHeader!.profile).toBe("art50-only");
+
+      // 2. Provenance sidecar is written to .zcode-provenance/<sessionId>.json with exact hashes
+      const sidecarPath = join(wsDir, ".zcode-provenance", `${sessionId}.json`);
+      expect(existsSync(sidecarPath)).toBe(true);
+      const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8")) as {
+        article: string;
+        session_id: string;
+        provider: string;
+        model: string;
+        compliance_profile: string;
+        span_count: number;
+        modified_spans: Array<{ path: string; sha256: string }>;
+      };
+      expect(sidecar.article).toBe("EU-AI-ACT-Art.50(2)");
+      expect(sidecar.session_id).toBe(sessionId);
+      expect(sidecar.provider).toBe("zai");
+      expect(sidecar.model).toBe("glm-5.3");
+      expect(sidecar.compliance_profile).toBe("art50-only");
+      expect(sidecar.span_count).toBe(2);
+
+      const mdSpan = sidecar.modified_spans.find((s) => s.path === "foo.md");
+      const tsSpan = sidecar.modified_spans.find((s) => s.path === "foo.ts");
+      expect(mdSpan?.sha256).toBe(createHash("sha256").update(fooMd, "utf8").digest("hex"));
+      expect(tsSpan?.sha256).toBe(
+        createHash("sha256").update(readFileSync(join(wsDir, "foo.ts"), "utf8"), "utf8").digest("hex")
+      );
+
+      // 3. Standard (non-regulated) profile does not modify Markdown or write sidecar
+      const stdWs = join(root, "ws_std");
+      mkdirSync(stdWs, { recursive: true });
+      const stdCfg = parseComplianceConfigToml('[compliance]\nprofile = "standard"\n', { env: {} });
+      const stdExit = await runRuntime(
+        process.execPath,
+        ["-p", "create foo.md and foo.ts"],
+        {},
+        {
+          config: stdCfg,
+          providerId: "zai",
+          modelId: "glm-5.3",
+          sessionId: "sess_c5_std_01"
+        },
+        { runtimeScriptPath: runtimeStub, cwd: stdWs }
+      );
+      expect(stdExit).toBe(0);
+      expect(extractMarkdownProvenanceHeader(readFileSync(join(stdWs, "foo.md"), "utf8"))).toBeNull();
+      expect(existsSync(join(stdWs, ".zcode-provenance"))).toBe(false);
+
+      // 4. Fail closed when .zcode-provenance is blocked by a regular file
+      const blockedWs = join(root, "ws_blocked");
+      mkdirSync(blockedWs, { recursive: true });
+      writeFileSync(join(blockedWs, ".zcode-provenance"), "not-a-dir", "utf8");
+      const blockedExit = await runRuntime(
+        process.execPath,
+        ["-p", "create foo.md and foo.ts"],
+        {},
+        {
+          config: regCfg,
+          providerId: "zai",
+          modelId: "glm-5.3",
+          sessionId: "sess_c5_blocked_01"
+        },
+        { runtimeScriptPath: runtimeStub, cwd: blockedWs }
+      );
+      expect(blockedExit).not.toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

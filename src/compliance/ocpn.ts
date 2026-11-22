@@ -495,17 +495,29 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
   }
   const prePlaces = new Map<string, Map<string, string[]>>();
   const postPlaces = new Map<string, Map<string, string[]>>();
+  const preArcs = new Map<string, Map<string, OcpnArc[]>>();
+  const postArcs = new Map<string, Map<string, OcpnArc[]>>();
   for (const a of ocpn.arcs) {
     if (a.direction === "place_to_transition") {
       if (!prePlaces.has(a.target)) prePlaces.set(a.target, new Map());
       const m = prePlaces.get(a.target)!;
       if (!m.has(a.objectType)) m.set(a.objectType, []);
       m.get(a.objectType)!.push(a.source);
+
+      if (!preArcs.has(a.target)) preArcs.set(a.target, new Map());
+      const am = preArcs.get(a.target)!;
+      if (!am.has(a.objectType)) am.set(a.objectType, []);
+      am.get(a.objectType)!.push(a);
     } else {
       if (!postPlaces.has(a.source)) postPlaces.set(a.source, new Map());
       const m = postPlaces.get(a.source)!;
       if (!m.has(a.objectType)) m.set(a.objectType, []);
       m.get(a.objectType)!.push(a.target);
+
+      if (!postArcs.has(a.source)) postArcs.set(a.source, new Map());
+      const am = postArcs.get(a.source)!;
+      if (!am.has(a.objectType)) am.set(a.objectType, []);
+      am.get(a.objectType)!.push(a);
     }
   }
 
@@ -640,11 +652,40 @@ export function replayOcpn(ocpn: OcpnModel, doc: DiscoverDocLike): OcpnReplayRes
       linkedByOt.get(ot)!.add(rel.objectId);
     }
 
-    for (const [ot, objIds] of linkedByOt.entries()) {
+    const requiredOts = new Set<string>(tr.objectTypes);
+    for (const ot of prePlaces.get(tr.id)?.keys() ?? []) requiredOts.add(ot);
+    for (const ot of postPlaces.get(tr.id)?.keys() ?? []) requiredOts.add(ot);
+
+    const allOts = new Set<string>(requiredOts);
+    for (const ot of linkedByOt.keys()) allOts.add(ot);
+
+    for (const ot of allOts) {
       const ctr = perTypeCounters.get(ot);
       if (!ctr) continue;
       const pres = prePlaces.get(tr.id)?.get(ot) ?? [];
       const posts = postPlaces.get(tr.id)?.get(ot) ?? [];
+      const objIds = linkedByOt.get(ot);
+
+      // Missing synchronized object-type binding: transition requires ot, event omitted it
+      if (!objIds || objIds.size === 0) {
+        if (requiredOts.has(ot)) {
+          const penalty = Math.max(1, pres.length);
+          ctr.missing += penalty;
+          ctr.consumed += penalty;
+        }
+        continue;
+      }
+
+      // Non-variable arc multiplicity violation: |b(ot)| > 1 on a variable=false arc
+      const pArcs = preArcs.get(tr.id)?.get(ot) ?? [];
+      const qArcs = postArcs.get(tr.id)?.get(ot) ?? [];
+      const nonVarCount =
+        pArcs.filter((a) => !a.variable).length + qArcs.filter((a) => !a.variable).length;
+      if (objIds.size > 1 && nonVarCount > 0) {
+        const excess = (objIds.size - 1) * nonVarCount;
+        ctr.missing += excess;
+        ctr.consumed += excess;
+      }
 
       for (const oid of objIds) {
         for (const p of pres) {

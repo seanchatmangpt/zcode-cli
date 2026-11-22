@@ -11,7 +11,8 @@ import {
   formatOcpnDot,
   formatOcpnMermaid,
   replayOcpn,
-  validateOcpnSoundness
+  validateOcpnSoundness,
+  type OcpnModel
 } from "../src/compliance/ocpn.ts";
 
 function buildSessionDoc(opts: {
@@ -393,5 +394,116 @@ describe("F13 OC-DFG Discovery & Object-Centric Petri Nets (Chicago)", () => {
       ]
     });
     expect(kingmanEq.rho).toBeLessThan(0.5);
+  });
+
+  test("regression C1-OCPN-Semantics: replayOcpn enforces non-variable arc multiplicity and missing-type synchronization", () => {
+    const model: OcpnModel = {
+      schema: "zcode.ocpn/1",
+      objectTypes: ["session", "tool_call"],
+      places: [
+        { id: "p_session_src", objectType: "session", role: "source" },
+        { id: "p_session_snk", objectType: "session", role: "sink" },
+        { id: "p_tool_call_src", objectType: "tool_call", role: "source" },
+        { id: "p_tool_call_snk", objectType: "tool_call", role: "sink" }
+      ],
+      transitions: [
+        { id: "t1", activity: "tool_exec", silent: false, objectTypes: ["session", "tool_call"] }
+      ],
+      arcs: [
+        { id: "a1", source: "p_session_src", target: "t1", objectType: "session", direction: "place_to_transition", variable: false },
+        { id: "a2", source: "t1", target: "p_session_snk", objectType: "session", direction: "transition_to_place", variable: false },
+        { id: "a3", source: "p_tool_call_src", target: "t1", objectType: "tool_call", direction: "place_to_transition", variable: false },
+        { id: "a4", source: "t1", target: "p_tool_call_snk", objectType: "tool_call", direction: "transition_to_place", variable: false }
+      ],
+      sourcePlaces: { session: "p_session_src", tool_call: "p_tool_call_src" },
+      sinkPlaces: { session: "p_session_snk", tool_call: "p_tool_call_snk" },
+      soundness: {
+        sound: true,
+        perObjectType: {
+          session: { sound: true, sourcePlace: "p_session_src", sinkPlace: "p_session_snk", unreachableFromSource: [], deadEndsToSink: [], issues: [] },
+          tool_call: { sound: true, sourcePlace: "p_tool_call_src", sinkPlace: "p_tool_call_snk", unreachableFromSource: [], deadEndsToSink: [], issues: [] }
+        },
+        issues: []
+      },
+      diagnostics: [],
+      warnings: [],
+      reworkCycles: [],
+      fileCollisions: [],
+      sojournByObjectType: {}
+    };
+
+    const ts = "2026-08-02T10:00:00.000Z";
+
+    // Positive control: conforming 1-to-1 synchronized binding achieves fitness=1, missing=0
+    const conforming = replayOcpn(model, {
+      objects: [
+        { id: "s1", type: "session", attributes: [] },
+        { id: "tc1", type: "tool_call", attributes: [] }
+      ],
+      events: [
+        {
+          id: "e_ok",
+          type: "tool_exec",
+          time: ts,
+          relationships: [
+            { objectId: "s1", qualifier: "in_session" },
+            { objectId: "tc1", qualifier: "about_tool_call" }
+          ]
+        }
+      ]
+    });
+    expect(conforming.missing).toBe(0);
+    expect(conforming.fitness).toBe(1);
+    expect(conforming.soundTermination).toBe(true);
+
+    // (a) Non-variable arc multiplicity violation: 2 tool_call objects on variable=false arc
+    const multiViolation = replayOcpn(model, {
+      objects: [
+        { id: "s1", type: "session", attributes: [] },
+        { id: "tc1", type: "tool_call", attributes: [] },
+        { id: "tc2", type: "tool_call", attributes: [] }
+      ],
+      events: [
+        {
+          id: "e_multi",
+          type: "tool_exec",
+          time: ts,
+          relationships: [
+            { objectId: "s1", qualifier: "in_session" },
+            { objectId: "tc1", qualifier: "about_tool_call" },
+            { objectId: "tc2", qualifier: "about_tool_call" }
+          ]
+        }
+      ]
+    });
+    expect(multiViolation.missing).toBeGreaterThan(0);
+    expect(multiViolation.fitness).toBeLessThan(1);
+    expect(multiViolation.soundTermination).toBe(false);
+    expect(multiViolation.perObjectType.tool_call!.missing).toBeGreaterThan(0);
+    expect(multiViolation.perObjectType.tool_call!.fitness).toBeLessThan(1);
+    expect(multiViolation.perObjectType.session!.missing).toBe(0);
+
+    // (b) Missing synchronized object type: event omits 'session'
+    const missingSync = replayOcpn(model, {
+      objects: [
+        { id: "tc1", type: "tool_call", attributes: [] }
+      ],
+      events: [
+        {
+          id: "e_missing_session",
+          type: "tool_exec",
+          time: ts,
+          relationships: [
+            { objectId: "tc1", qualifier: "about_tool_call" }
+          ]
+        }
+      ]
+    });
+    expect(missingSync.missing).toBeGreaterThan(0);
+    expect(missingSync.fitness).toBeLessThan(1);
+    expect(missingSync.soundTermination).toBe(false);
+    expect(missingSync.perObjectType.session!.missing).toBeGreaterThan(0);
+    expect(missingSync.perObjectType.session!.fitness).toBeLessThan(1);
+    expect(missingSync.perObjectType.tool_call!.missing).toBe(0);
   });
 });

@@ -108,7 +108,11 @@ import {
   type UserQuestionAnswerResult,
   type UserQuestion
 } from "./interactions.ts";
-import { PermissionPreview } from "./permission-view.ts";
+import {
+  PermissionPreview,
+  resolvePermissionOversightFromEnv,
+  type PermissionOversightOptions
+} from "./permission-view.ts";
 import { PermissionRequestQueue } from "./permission-request-queue.ts";
 import { createRuntimePluginReferenceLister } from "./plugin-references.ts";
 import {
@@ -3401,24 +3405,37 @@ class ZCodeTui {
         payload: choice.response
       })));
     }
-    const selected = await this.showChoice({
-      title: `Permission · ${toolName}`,
-      prompt: asString(request.reason) ?? `${toolName} requests permission to continue.`,
-      items,
-      signal,
-      numberShortcuts: true,
-      content: this.permissionPreview(toolName, request.input, asString(request.riskLevel))
-    });
-    if (!selected) return { decision: "deny", reason: "Cancelled by user" };
-    if (selected.value === "deny_feedback") {
-      const reason = await this.showTextPrompt({
-        title: `Deny · ${toolName}`,
-        prompt: "Tell ZCode what should change before retrying.",
-        signal
+    const preview = this.permissionPreview(toolName, request.input, asString(request.riskLevel));
+    while (true) {
+      const selected = await this.showChoice({
+        title: `Permission · ${toolName}`,
+        prompt: asString(request.reason) ?? `${toolName} requests permission to continue.`,
+        items,
+        signal,
+        numberShortcuts: true,
+        content: preview
       });
-      return { decision: "deny", reason: reason?.trim() || "Denied by user" };
+      if (!selected) return { decision: "deny", reason: "Cancelled by user" };
+      if (selected.value === "deny_feedback") {
+        const reason = await this.showTextPrompt({
+          title: `Deny · ${toolName}`,
+          prompt: "Tell ZCode what should change before retrying.",
+          signal
+        });
+        return { decision: "deny", reason: reason?.trim() || "Denied by user" };
+      }
+      const payload = isRecord(selected.payload) ? selected.payload : undefined;
+      const decision = asString(payload?.decision) ?? selected.value;
+      const dwell = preview.evaluateDecision(decision);
+      if (!dwell.allowed) {
+        this.addNotice(
+          dwell.reason ?? "Review dwell guard active — verify action before approving.",
+          "warning"
+        );
+        continue;
+      }
+      return selected.payload ?? { decision: "deny", reason: "Denied by user" };
     }
-    return selected.payload ?? { decision: "deny", reason: "Denied by user" };
   }
 
   private async requestUserQuestions(input: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -3631,8 +3648,13 @@ class ZCodeTui {
     };
   }
 
-  private permissionPreview(toolName: string, input: unknown, riskLevel?: string): Component {
-    return new PermissionPreview(this.theme, toolName, input, riskLevel);
+  private permissionPreview(
+    toolName: string,
+    input: unknown,
+    riskLevel?: string,
+    oversight?: PermissionOversightOptions
+  ): PermissionPreview {
+    return createPermissionPreview(this.theme, toolName, input, riskLevel, process.env, oversight);
   }
 
   private async showSelection(selection: Record<string, unknown>): Promise<void> {
@@ -5783,6 +5805,18 @@ class ZCodeTui {
       this.resolveDone();
     }
   }
+}
+
+export function createPermissionPreview(
+  theme: ZCodeTheme,
+  toolName: string,
+  input: unknown,
+  riskLevel?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  oversight?: PermissionOversightOptions
+): PermissionPreview {
+  const resolvedOversight = oversight ?? resolvePermissionOversightFromEnv(env);
+  return new PermissionPreview(theme, toolName, input, riskLevel, resolvedOversight);
 }
 
 export async function runTui(options: TuiOptions): Promise<void> {

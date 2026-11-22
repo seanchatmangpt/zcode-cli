@@ -589,6 +589,8 @@ export interface EuDeclarationOfConformity {
     repository: string;
     license: string;
   };
+  sole_responsibility_statement: string;
+  conformity_statement: string;
   runtime_lock: {
     schemaVersion: number;
     appVersion: string;
@@ -599,12 +601,24 @@ export interface EuDeclarationOfConformity {
   };
   git_head_sha: string;
   conformity_assessment_procedure: string;
+  conformity_assessment: {
+    verdict: "CONFORMITY_ADMITTED";
+    standing: ConformityAssessmentResult["standing"];
+    logs_analyzed: number;
+    qms_clauses: number;
+  };
   qms_manifest_sha256: string;
   standards_applied: string[];
   deployer_requirements: {
     overseer_id: string;
     log_retention_days: number;
     monitoring_enabled: boolean;
+  };
+  place_of_issue: string;
+  signatory: {
+    name: string;
+    function: string;
+    signature: string;
   };
   provenance_trailer?: string;
   issued_at: string;
@@ -616,6 +630,14 @@ export function generateEuDeclarationOfConformity(options: {
   cwd?: string;
   configPath?: string;
   env?: NodeJS.ProcessEnv;
+  logsDir?: string;
+  conformityAssessment?: ConformityAssessmentResult;
+  placeOfIssue?: string;
+  signatory?: {
+    name?: string;
+    function?: string;
+    signature?: string;
+  };
 }): EuDeclarationOfConformity {
   const pkgRoot = options.packageRoot ?? findPackageRoot();
   const cwd = options.cwd ?? process.cwd();
@@ -648,6 +670,37 @@ export function generateEuDeclarationOfConformity(options: {
     sha512: string;
   };
   const qms = validateQmsManifest(pkgRoot);
+  if (!qms.ok || !qms.manifestSha256) {
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `ANNEX_V_QMS_REFUSED: cannot emit EU Declaration of Conformity; QMS manifest is missing or invalid (clauses=${qms.clauseCount}, missing=${qms.missingPaths.join(", ")}).`,
+      "admission_vacuous"
+    );
+  }
+
+  const assessment =
+    options.conformityAssessment ??
+    runConformityAssessment({
+      logsDir: options.logsDir,
+      packageRoot: pkgRoot,
+      cwd,
+      configPath: options.configPath,
+      env
+    });
+  if (
+    assessment.schema !== "zcode.conformity-assessment/1" ||
+    assessment.verdict !== "CONFORMITY_ADMITTED" ||
+    assessment.exitCode !== 0 ||
+    !assessment.qms.ok
+  ) {
+    const detail = assessment.reasons.length > 0 ? assessment.reasons.join("; ") : `verdict=${assessment.verdict}`;
+    throw new ComplianceRefusalError(
+      "INVALID_COMPLIANCE_CONFIG",
+      `ANNEX_V_CONFORMITY_REFUSED: cannot emit EU Declaration of Conformity without an admitted Annex VI conformity assessment (${detail}).`,
+      "admission_vacuous"
+    );
+  }
+
   let gitHeadSha = "0".repeat(40);
   try {
     const head = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -667,6 +720,20 @@ export function generateEuDeclarationOfConformity(options: {
     model: lock.appVersion
   });
 
+  const placeOfIssue = options.placeOfIssue?.trim() || env.ZCODE_DOC_PLACE_OF_ISSUE?.trim() || "European Union";
+  const signatoryName =
+    options.signatory?.name?.trim() ||
+    env.ZCODE_DOC_SIGNATORY_NAME?.trim() ||
+    cfg.deployer.overseer_id ||
+    pkg.author ||
+    "zcode-cli maintainers";
+  const signatoryFunction =
+    options.signatory?.function?.trim() || env.ZCODE_DOC_SIGNATORY_FUNCTION?.trim() || "Authorized Compliance Officer";
+  const signatureDigest = createHash("sha256")
+    .update(`${gitHeadSha}:${qms.manifestSha256}:${lock.sha512}`, "utf8")
+    .digest("hex");
+  const signature = options.signatory?.signature?.trim() || env.ZCODE_DOC_SIGNATURE?.trim() || `sha256:${signatureDigest}`;
+
   const doc: EuDeclarationOfConformity = {
     schema: "zcode.annex-v-doc/1",
     regulation: "Regulation (EU) 2024/1689",
@@ -682,9 +749,19 @@ export function generateEuDeclarationOfConformity(options: {
       repository: pkg.repository?.url ?? "https://github.com/kingsword09/zcode-cli",
       license: pkg.license ?? "MIT"
     },
+    sole_responsibility_statement:
+      "This EU declaration of conformity is issued under the sole responsibility of the provider.",
+    conformity_statement:
+      "The AI system described above is in conformity with Regulation (EU) 2024/1689 (EU AI Act).",
     runtime_lock: lock,
     git_head_sha: gitHeadSha,
     conformity_assessment_procedure: "Annex VI (Internal Control) — Art. 43",
+    conformity_assessment: {
+      verdict: "CONFORMITY_ADMITTED",
+      standing: assessment.standing,
+      logs_analyzed: assessment.logsAnalyzed,
+      qms_clauses: qms.clauseCount
+    },
     qms_manifest_sha256: qms.manifestSha256,
     standards_applied: [
       "Regulation (EU) 2024/1689 (Arts. 9-15, 17, 26-27, 43, 47, 50, 72, 73)",
@@ -696,6 +773,12 @@ export function generateEuDeclarationOfConformity(options: {
       overseer_id: cfg.deployer.overseer_id ?? "",
       log_retention_days: cfg.deployer.log_retention_days,
       monitoring_enabled: cfg.deployer.monitoring_enabled
+    },
+    place_of_issue: placeOfIssue,
+    signatory: {
+      name: signatoryName,
+      function: signatoryFunction,
+      signature
     },
     ...(trailer ? { provenance_trailer: trailer } : {}),
     issued_at: new Date().toISOString()

@@ -64,9 +64,11 @@ import {
   type ResolvedComplianceConfig
 } from "./compliance/config.ts";
 import {
+  applyRuntimeArt50Provenance,
   buildArt50DisclosureEnvelope,
   emitArt50DisclosureEvent,
-  formatGitProvenanceTrailer
+  formatGitProvenanceTrailer,
+  snapshotWorkspaceFiles
 } from "./compliance/disclosure.ts";
 import {
   complianceTapEnabled,
@@ -431,7 +433,7 @@ function tuiRuntimeFailureMessage(code: number, state: TuiRuntimeDiagnosticState
   return `Error: ZCode runtime exited with status ${code}.${diagnostic}\n`;
 }
 
-interface RuntimeComplianceContext {
+export interface RuntimeComplianceContext {
   config: ResolvedComplianceConfig;
   providerId: string;
   modelId: string;
@@ -462,7 +464,7 @@ function augmentOcelWithArt50Disclosure(
   written: { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string },
   ctx: RuntimeComplianceContext,
   channel: "stream-json" | "headless-json" | "app-server" | "tui"
-): void {
+): string {
   const rawDoc = JSON.parse(readFileSync(written.ocelPath, "utf8")) as Ocel2Document;
   const sessionId = written.sessionId || ctx.sessionId;
   const redactOpts = {
@@ -536,16 +538,18 @@ function augmentOcelWithArt50Disclosure(
   const upgradedText = JSON.stringify(upgraded);
   atomicWriteFile(written.ocelPath, upgradedText);
 
+  const lastEv = upgraded.events[upgraded.events.length - 1];
+  const headHash =
+    String(lastEv?.attributes.find((a) => a.name === "pi_hash")?.value ?? written.head);
+
   if (existsSync(written.receiptPath)) {
     const receipt = JSON.parse(readFileSync(written.receiptPath, "utf8")) as Record<string, unknown>;
-    const lastEv = upgraded.events[upgraded.events.length - 1];
-    const headHash =
-      lastEv?.attributes.find((a) => a.name === "pi_hash")?.value ?? written.head;
     receipt.ocel_file_sha256 = sha256TextHex(upgradedText);
     receipt.event_count = upgraded.events.length;
     receipt.head_hash = headHash;
     atomicWriteFile(written.receiptPath, JSON.stringify(receipt, null, 2));
   }
+  return headHash;
 }
 
 function emitOversightRefusalAudit(
@@ -625,16 +629,21 @@ function emitOversightRefusalAudit(
   }
 }
 
-async function runRuntime(
+export async function runRuntime(
   node: string,
   args: string[],
   extraEnv: NodeJS.ProcessEnv = {},
-  complianceCtx?: RuntimeComplianceContext
+  complianceCtx?: RuntimeComplianceContext,
+  options?: { runtimeScriptPath?: string; cwd?: string }
 ): Promise<number> {
+  const workspaceDir = options?.cwd ?? process.cwd();
+  const scriptPath = options?.runtimeScriptPath ?? runtimePath;
   const tuiInvocation = isTuiRuntimeInvocation(args);
   const regulated = Boolean(complianceCtx && isRegulatedProfile(complianceCtx.config.compliance.profile));
   const isStreamJson = ocelSourceForArgs(args) === STREAM_SOURCE;
   const isJsonMode = isHeadlessPromptArgs(args) && args.includes("--json");
+  const beforeWorkspaceSnapshot =
+    regulated && complianceCtx ? snapshotWorkspaceFiles(workspaceDir) : undefined;
 
   let disclosureEnvelope: ReturnType<typeof buildArt50DisclosureEnvelope> | undefined;
   if (regulated && complianceCtx) {
@@ -676,8 +685,8 @@ async function runRuntime(
   }
 
   const pipeStdoutForJson = !ocel && regulated && isJsonMode && Boolean(disclosureEnvelope);
-  const child = spawnChild(node, [runtimePath, ...args], {
-    cwd: process.cwd(),
+  const child = spawnChild(node, [scriptPath, ...args], {
+    cwd: workspaceDir,
     env: runtimeEnvironment(extraEnv),
     stdio:
       ocel || pipeStdoutForJson
@@ -764,12 +773,14 @@ async function runRuntime(
         process.stdout.write(rawOut);
       }
     }
+    let ocelHeadHash: string | undefined;
     if (ocel && ocelDrained) {
       await ocelDrained;
       try {
         const written = ocel.finish();
+        ocelHeadHash = written.head;
         if (regulated && complianceCtx) {
-          augmentOcelWithArt50Disclosure(
+          ocelHeadHash = augmentOcelWithArt50Disclosure(
             written,
             complianceCtx,
             isStreamJson ? "stream-json" : tapSource === "zcode_app_server" ? "app-server" : "headless-json"
@@ -778,6 +789,32 @@ async function runRuntime(
         process.stderr.write(`OCEL: ${written.events} events -> ${written.ocelPath}\n`);
       } catch (error) {
         process.stderr.write(`OCEL tap failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    }
+    if (regulated && complianceCtx && beforeWorkspaceSnapshot) {
+      try {
+        applyRuntimeArt50Provenance({
+          workspaceDir,
+          beforeSnapshot: beforeWorkspaceSnapshot,
+          sessionId: complianceCtx.sessionId,
+          profile: complianceCtx.config.compliance.profile,
+          provider: complianceCtx.providerId,
+          model: complianceCtx.modelId,
+          ocelHeadHash,
+          cliVersion: readDistributionVersion() ?? "0.0.0",
+          redactPii: complianceCtx.config.compliance.redact_pii,
+          redactOptions: {
+            redactPii: complianceCtx.config.compliance.redact_pii,
+            redactEnv: complianceCtx.config.compliance.redact_env,
+            env: process.env
+          }
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`Art. 50(2) provenance marking failed: ${msg}\n`);
+        if (code === 0) {
+          return error instanceof ComplianceRefusalError ? error.exitCode : 1;
+        }
       }
     }
     return code;

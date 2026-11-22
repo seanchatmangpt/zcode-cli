@@ -119,6 +119,7 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
 
   let current: PowlNode = await opts.source.ingestFrontier();
   validatePowlTree(current);
+  let lastFrontierSignature = frontierActivitySignature(current);
   const cycles: OcelPowlRunResult[] = [];
   const receipts: TransitionReceipt[] = [];
   const commitsCreated: string[] = [];
@@ -282,8 +283,21 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     }
 
     if (c < maxCycles) {
-      current = propagateTargetScopes(deriveFollowUpPowl(run, c + 1), knownTargetScopes);
-      validatePowlTree(current);
+      // Closed-loop recursion R_t -> O*_{t+1}: re-ingest frontier after recordOutcome
+      // so persisted receipts and updated standings feed into the next cycle.
+      const refreshedFrontier = await opts.source.ingestFrontier();
+      validatePowlTree(refreshedFrontier);
+      for (const [k, v] of collectTargetScopes(refreshedFrontier)) {
+        knownTargetScopes.set(k, v);
+      }
+      const refreshedSignature = frontierActivitySignature(refreshedFrontier);
+      if (refreshedSignature !== lastFrontierSignature) {
+        current = refreshedFrontier;
+        lastFrontierSignature = refreshedSignature;
+      } else {
+        current = propagateTargetScopes(deriveFollowUpPowl(run, c + 1), knownTargetScopes);
+        validatePowlTree(current);
+      }
     }
   }
 
@@ -398,6 +412,24 @@ function plannedWriteRels(
     return [`ontology/${t.activityId ?? t.id}.ttl`];
   }
   return null;
+}
+
+function frontierActivitySignature(node: PowlNode): string {
+  const ids: string[] = [];
+  const walk = (n: PowlNode): void => {
+    if (n.kind === "activity") {
+      ids.push(`${n.id}:${n.label}`);
+    } else if (n.kind === "xor") {
+      for (const b of n.branches) walk(b);
+    } else if (n.kind === "loop") {
+      walk(n.doBranch);
+      walk(n.redoBranch);
+    } else if (n.kind === "partial_order") {
+      for (const c of n.children) walk(c);
+    }
+  };
+  walk(node);
+  return ids.join("|");
 }
 
 function collectTargetScopes(

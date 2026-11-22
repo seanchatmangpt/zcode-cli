@@ -31,6 +31,152 @@ export interface PermissionOversightOptions {
   overseerId?: string;
 }
 
+export interface PermissionDwellDecisionResult {
+  allowed: boolean;
+  held: boolean;
+  abRiskFlag: boolean;
+  remainingMs: number;
+  elapsedMs: number;
+  minReviewMs: number;
+  reason?: string;
+}
+
+const DEFAULT_HIGH_RISK_MIN_REVIEW_MS = 1000;
+
+function isApprovalDecision(decision: string): boolean {
+  const normalized = decision.trim().toLowerCase();
+  return (
+    normalized === "allow" ||
+    normalized === "allow_always" ||
+    normalized === "modify" ||
+    normalized === "approve"
+  );
+}
+
+export function resolvePermissionOversightFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  overrides?: Partial<PermissionOversightOptions>
+): PermissionOversightOptions | undefined {
+  const rawProfile = env.ZCODE_COMPLIANCE_PROFILE?.trim();
+  const normalizedProfile = rawProfile?.toLowerCase();
+  const hasRegulatedProfile = Boolean(rawProfile && normalizedProfile !== "standard");
+  const rawMinReview = env.ZCODE_MIN_REVIEW_MS?.trim();
+  const rawOverseer = env.ZCODE_OVERSEER_ID?.trim();
+
+  if (!hasRegulatedProfile && !rawMinReview && !rawOverseer && !overrides) {
+    return undefined;
+  }
+
+  let minReviewMs: number | undefined = overrides?.minReviewMs;
+  if (minReviewMs === undefined) {
+    if (rawMinReview !== undefined && rawMinReview.length > 0) {
+      const parsed = Number(rawMinReview);
+      minReviewMs = Number.isFinite(parsed) && parsed >= 0 ? parsed : Number.NaN;
+    } else if (
+      normalizedProfile === "high-risk-annex-iii" ||
+      normalizedProfile === "high-risk-annex-i"
+    ) {
+      minReviewMs = DEFAULT_HIGH_RISK_MIN_REVIEW_MS;
+    }
+  }
+
+  const nowFn = overrides?.nowMs ?? Date.now;
+  return {
+    complianceProfile: overrides?.complianceProfile ?? (hasRegulatedProfile ? rawProfile : undefined),
+    overseerId: overrides?.overseerId ?? (rawOverseer || undefined),
+    minReviewMs,
+    presentedAtMs: overrides?.presentedAtMs ?? nowFn(),
+    nowMs: overrides?.nowMs,
+    elapsedReviewMs: overrides?.elapsedReviewMs,
+    blastRadius: overrides?.blastRadius,
+    blastRadiusDetail: overrides?.blastRadiusDetail,
+    abRiskFlag: overrides?.abRiskFlag,
+    consecutiveFastApprovals: overrides?.consecutiveFastApprovals
+  };
+}
+
+export function evaluatePermissionDwellGuard(
+  oversight: PermissionOversightOptions | undefined,
+  decision: string,
+  elapsedMsOverride?: number
+): PermissionDwellDecisionResult {
+  if (!isApprovalDecision(decision)) {
+    return {
+      allowed: true,
+      held: false,
+      abRiskFlag: false,
+      remainingMs: 0,
+      elapsedMs: elapsedMsOverride ?? 0,
+      minReviewMs: oversight?.minReviewMs ?? 0
+    };
+  }
+
+  const rawMinReviewMs = oversight?.minReviewMs;
+  if (rawMinReviewMs === undefined) {
+    return {
+      allowed: true,
+      held: false,
+      abRiskFlag: false,
+      remainingMs: 0,
+      elapsedMs: elapsedMsOverride ?? 0,
+      minReviewMs: 0
+    };
+  }
+
+  if (!Number.isFinite(rawMinReviewMs) || rawMinReviewMs < 0) {
+    return {
+      allowed: false,
+      held: true,
+      abRiskFlag: true,
+      remainingMs: 0,
+      elapsedMs: 0,
+      minReviewMs: rawMinReviewMs,
+      reason: "Review dwell guard active: invalid min_review_ms (fail-closed)"
+    };
+  }
+
+  if (rawMinReviewMs === 0) {
+    return {
+      allowed: true,
+      held: false,
+      abRiskFlag: false,
+      remainingMs: 0,
+      elapsedMs: elapsedMsOverride ?? 0,
+      minReviewMs: 0
+    };
+  }
+
+  const nowFn = oversight?.nowMs ?? Date.now;
+  const rawElapsed =
+    elapsedMsOverride ??
+    oversight?.elapsedReviewMs ??
+    (oversight?.presentedAtMs !== undefined ? nowFn() - oversight.presentedAtMs : 0);
+  const invalidElapsed = !Number.isFinite(rawElapsed) || rawElapsed < 0;
+  const elapsedMs = invalidElapsed ? 0 : rawElapsed;
+  const remainingMs = Math.max(0, rawMinReviewMs - elapsedMs);
+
+  if (invalidElapsed || remainingMs > 0) {
+    return {
+      allowed: false,
+      held: true,
+      abRiskFlag: true,
+      remainingMs,
+      elapsedMs,
+      minReviewMs: rawMinReviewMs,
+      reason: `Review dwell guard active: ${remainingMs}ms remaining of min_review_ms ${rawMinReviewMs}ms`
+    };
+  }
+
+  return {
+    allowed: true,
+    held: false,
+    abRiskFlag: false,
+    remainingMs: 0,
+    elapsedMs,
+    minReviewMs: rawMinReviewMs
+  };
+}
+
 export function inferBlastRadius(
   toolName: string,
   input: unknown,
@@ -99,13 +245,25 @@ function limited(value: string): string {
 }
 
 export class PermissionPreview implements Component {
+  private blockedApprovalCount: number;
+
   constructor(
     private readonly theme: ZCodeTheme,
     private readonly toolName: string,
     private readonly input: unknown,
     private readonly riskLevel?: string,
     private readonly oversight?: PermissionOversightOptions
-  ) {}
+  ) {
+    this.blockedApprovalCount = oversight?.consecutiveFastApprovals ?? 0;
+  }
+
+  evaluateDecision(decision: string, elapsedMs?: number): PermissionDwellDecisionResult {
+    const result = evaluatePermissionDwellGuard(this.oversight, decision, elapsedMs);
+    if (result.held) {
+      this.blockedApprovalCount += 1;
+    }
+    return result;
+  }
 
   invalidate(): void {}
 
@@ -184,14 +342,18 @@ export class PermissionPreview implements Component {
       }
     }
 
+    const effectiveFastApprovals = Math.max(
+      oversight.consecutiveFastApprovals ?? 0,
+      this.blockedApprovalCount
+    );
     const showAbFlag =
       oversight.abRiskFlag === true ||
       invalidMinReview ||
       (rawMinReviewMs !== undefined && Number.isFinite(rawMinReviewMs) && rawMinReviewMs > 0 && remainingMs > 0) ||
-      (oversight.consecutiveFastApprovals ?? 0) >= 3;
+      effectiveFastApprovals >= 3;
     if (showAbFlag) {
       const abStyle =
-        (oversight.consecutiveFastApprovals ?? 0) >= 3 ? this.theme.error : this.theme.warning;
+        effectiveFastApprovals >= 3 ? this.theme.error : this.theme.warning;
       host.addChild(
         new Text(
           abStyle("⚠ AB_RISK_FLAG · Automation-bias dwell guard active — verify action before approving"),

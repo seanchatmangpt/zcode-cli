@@ -8,8 +8,15 @@ import {
   ReceiptSink,
   RepoVerifierCourtAdapter,
   runFoundryLoop,
-  SjiraWorkOrderSource
+  SjiraWorkOrderSource,
+  type TransitionReceipt,
+  type WorkOrderSourceAdapter
 } from "../src/adapters/index.ts";
+import {
+  admitAfterIntegrity,
+  checkReceiptIntegrity,
+  resolveExternalValidator
+} from "../scripts/validate-receipts.ts";
 
 function initTempGitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "zcode-hitl-free-"));
@@ -346,6 +353,116 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
           )
         ).toBe(true);
       }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("C7-Foundry-Recursion: re-ingests frontier R_t -> O*_{t+1} and emits Chatman-5 ALOOP v2 DFCM receipt", async () => {
+    const repo = initTempGitRepo();
+    const outDir = join(repo, ".sjira-out");
+    const dfcmReceiptPath = join(outDir, "dfcm-receipt.json");
+
+    try {
+      let ingestCount = 0;
+      let mutatedByOutcome = false;
+      const recorded: TransitionReceipt[] = [];
+
+      const source: WorkOrderSourceAdapter = {
+        name: "c7-recursion-source",
+        async preflightVerify() {
+          return { ok: true, exitCode: 0, detail: "ok" };
+        },
+        async ingestFrontier() {
+          ingestCount += 1;
+          return {
+            kind: "partial_order",
+            id: `frontier-pass-${ingestCount}`,
+            children: [
+              {
+                kind: "activity",
+                id: mutatedByOutcome ? "WO-CYCLE-2" : "WO-CYCLE-1",
+                label: mutatedByOutcome ? "Cycle 2 frontier after R_1" : "Cycle 1 frontier",
+                objectType: "WorkOrder",
+                targetFile: "state.txt"
+              }
+            ],
+            order: []
+          };
+        },
+        async recordOutcome(receipt: TransitionReceipt) {
+          recorded.push(receipt);
+          mutatedByOutcome = true;
+        }
+      };
+
+      const sink = new ReceiptSink({
+        ledgerPath: join(outDir, "sink-ledger.jsonl"),
+        outDir,
+        dfcmReceiptPath,
+        cwd: repo
+      });
+
+      const court = new RepoVerifierCourtAdapter({
+        commands: [
+          [
+            "node",
+            "-e",
+            "const fs=require('fs'); process.exit(fs.readFileSync('state.txt','utf8').trim()==='ok'?0:1)"
+          ]
+        ]
+      });
+
+      const result = await runFoundryLoop({
+        source,
+        courts: [court],
+        sink,
+        workspaceDir: repo,
+        dryRun: false,
+        maxCycles: 2,
+        untilDrained: true,
+        transactionalRollback: true,
+        executor: async (t) => {
+          if (t.activityId === "WO-CYCLE-1") {
+            writeFileSync(join(repo, "state.txt"), "still-broken\n");
+            return { ok: true, exitCode: 0, detail: "cycle-1-broken" };
+          }
+          writeFileSync(join(repo, "state.txt"), "ok\n");
+          return { ok: true, exitCode: 0, detail: "cycle-2-fixed" };
+        }
+      });
+
+      // (1) Closed-loop recursion R_t -> O*_{t+1}: ingestFrontier called >= 2 times
+      expect(ingestCount).toBeGreaterThanOrEqual(2);
+      expect(recorded.length).toBeGreaterThanOrEqual(2);
+      expect(result.converged).toBe(true);
+      expect(result.aggregateStanding).toBe("ALIVE");
+      expect(result.exitCode).toBe(0);
+      expect(result.cycles.length).toBe(2);
+
+      // (2) Chatman-5 / ALOOP v2 DFCM receipt admitted by validate-receipts.ts
+      expect(existsSync(dfcmReceiptPath)).toBe(true);
+      const raw = readFileSync(dfcmReceiptPath, "utf8");
+      const integrity = checkReceiptIntegrity(dfcmReceiptPath, {
+        raw,
+        shaExists: (sha) => {
+          const probe = spawnSync("git", ["-C", repo, "cat-file", "-t", sha], {
+            encoding: "utf8"
+          });
+          return probe.status === 0 && probe.stdout.trim() === "commit";
+        }
+      });
+      expect(integrity).toEqual([]);
+
+      const external = resolveExternalValidator();
+      const admitted = admitAfterIntegrity({
+        path: dfcmReceiptPath,
+        raw,
+        external,
+        allowIntegrityOnly: external.path === null
+      });
+      expect(admitted.ok).toBe(true);
+      expect(admitted.exitCode).toBe(0);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
