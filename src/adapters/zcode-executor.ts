@@ -99,6 +99,10 @@ export function createZcodeAgentExecutor(
     ];
 
     const safeId = (t.activityId ?? t.id).replace(/[^a-zA-Z0-9._-]+/g, "_");
+    // Re-mkdir per transition: transactional rollback may wipe logDir mid-loop.
+    if (opts.logDir) {
+      mkdirSync(opts.logDir, { recursive: true });
+    }
     const logStream = opts.logDir
       ? createWriteStream(join(opts.logDir, `${safeId}.log`), { flags: "a" })
       : null;
