@@ -2,7 +2,7 @@
 // Provenance: CastleOcel vocabulary read from beam4pm lib/beam4pm_castle_ocel.ex
 // (closed vocabulary per its moduledoc: "It shares the OCEL wire shapes but NO
 // event names with BeamPM.GallOcel"). zcode side: src/generated/ocel.ts
-// EVENT_TYPES (33) / OBJECT_TYPES (15). The drift test
+// EVENT_TYPES (31) / OBJECT_TYPES (15). The drift test
 // test/ocel-vocab-manifest.test.ts refuses any classification that no longer
 // matches the live registries, so a new type cannot land unclassified.
 // Pack demo place_order/ship_order/order/item quarantined (process-intelligence-pack
@@ -16,7 +16,6 @@ export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "delib
   message_removed: "disjoint",
   message_upserted: "disjoint",
   model_streaming: "disjoint",
-  part_delta: "disjoint",
   part_removed: "disjoint",
   part_started: "disjoint",
   part_upserted: "disjoint",
@@ -26,7 +25,6 @@ export const EVENT_CLASSIFICATION: Record<string, "shared" | "disjoint" | "delib
   provider_select: "disjoint",
   receipt_persist: "disjoint",
   reobserve: "disjoint",
-  result: "disjoint",
   rewind_triggered: "disjoint",
   session_closed: "disjoint",
   session_created: "disjoint",

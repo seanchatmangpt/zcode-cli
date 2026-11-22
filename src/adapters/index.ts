@@ -240,19 +240,13 @@ export function adapterOptionsFromTomlDoc(
 
   const igniter = asRecord(adapters.ggen_igniter);
   if (igniter) {
-    // require_sync_check is normative. Legacy require_git_diff_zero only maps
-    // the boolean "skip gate" sense — never runs git-diff as the drift gate.
-    const requireSync =
-      igniter.require_sync_check !== undefined
-        ? asBool(igniter.require_sync_check, true)
-        : igniter.require_git_diff_zero !== undefined
-          ? asBool(igniter.require_git_diff_zero, true)
-          : true;
+    // require_sync_check is normative. Legacy require_git_diff_zero is refused
+    // (ELIMINATE-2): do not alias the git-diff clean-room fallacy into the loader.
     options.ggen_igniter = {
       enabled: asBool(igniter.enabled, true),
       allowedMutationGlobs: asStringArray(igniter.allowed_mutation_globs),
       cleanRoomSyncCmd: asStringArray(igniter.clean_room_sync_cmd),
-      requireSyncCheck: requireSync,
+      requireSyncCheck: asBool(igniter.require_sync_check, true),
       forbidGeneratedDirs: asBool(igniter.forbid_generated_dirs, true)
     };
   }
@@ -279,12 +273,8 @@ export function adapterOptionsFromTomlDoc(
     const enabled = asBool(uiLayout.enabled, true) && suiteEnabled;
     const taffyCmd = asStringArray(uiLayout.taffy_cmd);
     const playwrightGlob = asString(uiLayout.playwright_court_glob);
-    // require_clean_room is normative; require_clean_room_diff is legacy alias
-    // (meant sync --check, not git diff — see ui-layout-court.ts).
-    const requireClean =
-      uiLayout.require_clean_room !== undefined
-        ? asBool(uiLayout.require_clean_room, true)
-        : asBool(uiLayout.require_clean_room_diff, true);
+    // require_clean_room is normative. Legacy require_clean_room_diff is refused
+    // (ELIMINATE-2): do not keep the clean-index / git-diff metaphor in the loader.
     const viewports = asNumberArray(uiLayout.viewports);
     options.ui_layout = {
       enabled,
@@ -293,7 +283,7 @@ export function adapterOptionsFromTomlDoc(
       playwrightCmd: playwrightGlob
         ? ["bunx", "playwright", "test", playwrightGlob]
         : undefined,
-      requireCleanRoom: requireClean,
+      requireCleanRoom: asBool(uiLayout.require_clean_room, true),
       ...(viewports ? { viewports } : {})
     };
   }

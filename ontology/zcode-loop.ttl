@@ -50,13 +50,10 @@ zl:Qualifier-on_epoch a pi:Qualifier ; pi:qualifierId "on_epoch" .
 zl:Qualifier-about_subject a pi:Qualifier ; pi:qualifierId "about_subject" .
 zl:Qualifier-about_base a pi:Qualifier ; pi:qualifierId "about_base" .
 
-# ===== event types (one per wire event) =====
-# Completeness tradeoff (discovery FILTER_BIAS, deliberate): every wire name has a
-# pi:EventType so EVENT_TYPES is a closed wire alphabet. RuntimeEvents for
-# part.delta / result are pi:Unmapped (no MappingRule) — the Tap drops them and
-# they never enter the sealed log. Prefer this over deleting the EventTypes
-# (would hide known wire names) or mapping them (would flood the log with
-# token deltas / duplicate the turn.completed outcome envelope).
+# ===== event types (one per sealed wire event) =====
+# part.delta / result are omitted from EVENT_TYPES (ELIMINATE-3): Tap drops
+# names with no MappingRule; phantom Unmapped EventTypes are alphabet noise.
+# PACK_DEMO_ALPHABET (order_hook/place_order/…) stays quarantined in gen-ocel.ts.
 zl:EventType-session-created a pi:EventType ; pi:typeId "session_created" .
 zl:EventType-session-resumed a pi:EventType ; pi:typeId "session_resumed" .
 zl:EventType-session-updated a pi:EventType ; pi:typeId "session_updated" .
@@ -70,8 +67,6 @@ zl:EventType-turn-failed a pi:EventType ; pi:typeId "turn_failed" .
 zl:EventType-message-upserted a pi:EventType ; pi:typeId "message_upserted" .
 zl:EventType-message-removed a pi:EventType ; pi:typeId "message_removed" .
 zl:EventType-part-started a pi:EventType ; pi:typeId "part_started" .
-zl:EventType-part-delta a pi:EventType ; pi:typeId "part_delta" ;
-  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits part_delta into the sealed log (see unmappedReason on RuntimeEvent-*-part-delta)." .
 zl:EventType-part-upserted a pi:EventType ; pi:typeId "part_upserted" .
 zl:EventType-part-removed a pi:EventType ; pi:typeId "part_removed" .
 zl:EventType-model-streaming a pi:EventType ; pi:typeId "model_streaming" .
@@ -83,8 +78,6 @@ zl:EventType-userInput-resolved a pi:EventType ; pi:typeId "user_input_resolved"
 zl:EventType-checkpoint-created a pi:EventType ; pi:typeId "checkpoint_created" .
 zl:EventType-rewind-triggered a pi:EventType ; pi:typeId "rewind_triggered" .
 zl:EventType-streamRecovery-updated a pi:EventType ; pi:typeId "stream_recovery_updated" .
-zl:EventType-result a pi:EventType ; pi:typeId "result" ;
-  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits result into the sealed log (see unmappedReason on RuntimeEvent-Stream-result)." .
 
 # ===== e2o relations (path into the raw record) =====
 zl:Rel-Stream-session a pi:E2ORelation ; pi:relatesObjectType zl:ObjectType-session ; pi:hasQualifier zl:Qualifier-in_session ; pi:objectIdPath "sessionId" .
@@ -148,7 +141,6 @@ zl:RuntimeEvent-Stream-message-removed a pi:RuntimeEvent ; pi:runtimeEventName "
 zl:Rule-Stream-part-started a pi:MappingRule ; pi:ruleId "stream-part_started" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "part.started" ;
   pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-part-started a pi:RuntimeEvent ; pi:runtimeEventName "part.started" ; pi:emittedBy zl:Source-StreamJson .
-zl:RuntimeEvent-Stream-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "token-level content delta; surrounding part.upserted/tool.updated carry the process step. EventType-part-delta kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-Stream-part-upserted a pi:MappingRule ; pi:ruleId "stream-part_upserted" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "part.upserted" ;
   pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-part-upserted a pi:RuntimeEvent ; pi:runtimeEventName "part.upserted" ; pi:emittedBy zl:Source-StreamJson .
@@ -182,7 +174,6 @@ zl:RuntimeEvent-Stream-rewind-triggered a pi:RuntimeEvent ; pi:runtimeEventName 
 zl:Rule-Stream-streamRecovery-updated a pi:MappingRule ; pi:ruleId "stream-stream_recovery_updated" ; pi:fromSource zl:Source-StreamJson ; pi:sourceEvent "streamRecovery.updated" ;
   pi:emitsEventType zl:EventType-streamRecovery-updated ; pi:hasRelation zl:Rel-Stream-session , zl:Rel-Stream-turn , zl:Rel-Stream-tool_call , zl:Rel-Stream-work_order , zl:Rel-Stream-epoch , zl:Rel-Stream-subject , zl:Rel-Stream-base .
 zl:RuntimeEvent-Stream-streamRecovery-updated a pi:RuntimeEvent ; pi:runtimeEventName "streamRecovery.updated" ; pi:emittedBy zl:Source-StreamJson .
-zl:RuntimeEvent-Stream-result a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "result" ; pi:emittedBy zl:Source-StreamJson ; pi:unmappedReason "end-of-run summary envelope; duplicates turn.completed and adds no process step. EventType-result kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-App-session-created a pi:MappingRule ; pi:ruleId "app-session_created" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "session.created" ;
   pi:emitsEventType zl:EventType-session-created ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-session-created a pi:RuntimeEvent ; pi:runtimeEventName "session.created" ; pi:emittedBy zl:Source-AppServer .
@@ -222,7 +213,6 @@ zl:RuntimeEvent-App-message-removed a pi:RuntimeEvent ; pi:runtimeEventName "mes
 zl:Rule-App-part-started a pi:MappingRule ; pi:ruleId "app-part_started" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "part.started" ;
   pi:emitsEventType zl:EventType-part-started ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-part-started a pi:RuntimeEvent ; pi:runtimeEventName "part.started" ; pi:emittedBy zl:Source-AppServer .
-zl:RuntimeEvent-App-part-delta a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName "part.delta" ; pi:emittedBy zl:Source-AppServer ; pi:unmappedReason "token-level content delta; surrounding part.upserted/tool.updated carry the process step. EventType-part-delta kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)." .
 zl:Rule-App-part-upserted a pi:MappingRule ; pi:ruleId "app-part_upserted" ; pi:fromSource zl:Source-AppServer ; pi:sourceEvent "part.upserted" ;
   pi:emitsEventType zl:EventType-part-upserted ; pi:hasRelation zl:Rel-App-session , zl:Rel-App-turn , zl:Rel-App-work_order , zl:Rel-App-epoch , zl:Rel-App-subject , zl:Rel-App-base .
 zl:RuntimeEvent-App-part-upserted a pi:RuntimeEvent ; pi:runtimeEventName "part.upserted" ; pi:emittedBy zl:Source-AppServer .

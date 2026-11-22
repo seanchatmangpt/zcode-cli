@@ -14,7 +14,12 @@ const dirs: string[] = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), "zcode-ocel-")); dirs.push(d); return d; };
 afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
-const unmapped = new Set(declaredRuntimeEvents().filter((e) => e.source === STREAM_SOURCE && e.unmappedReason).map((e) => e.name));
+// Former Unmapped names + ELIMINATE-3 omitted wire alphabet (Tap drops; no sealed EventType).
+const unmapped = new Set([
+  ...declaredRuntimeEvents().filter((e) => e.source === STREAM_SOURCE && e.unmappedReason).map((e) => e.name),
+  "result",
+  "part.delta"
+]);
 const schemas = JSON.parse(readFileSync(join(repoRoot, "src", "generated", "schemas.json"), "utf8"));
 
 function record(name: string, lines: string[], chunk: number) {
@@ -200,9 +205,14 @@ describe("event-shape contract (fails when the runtime stream shape changes)", (
     for (const r of tool) expect(typeof r.payload.toolCallId).toBe("string");
     expect(fx.records.some((r) => r.type === "session.updated" && typeof r.payload.requestId === "string")).toBe(true);
   });
-  test("every fixture wire type is declared by the ontology", () => {
+  test("every fixture wire type is declared by the ontology (except omitted alphabet)", () => {
     const declared = new Set(declaredRuntimeEvents().filter((e) => e.source === STREAM_SOURCE).map((e) => e.name));
-    for (const fx of fixtures()) for (const r of fx.records) expect(declared.has(r.type)).toBe(true);
+    for (const fx of fixtures()) {
+      for (const r of fx.records) {
+        if (unmapped.has(r.type)) continue;
+        expect(declared.has(r.type)).toBe(true);
+      }
+    }
   });
 });
 

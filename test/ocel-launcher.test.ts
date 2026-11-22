@@ -81,11 +81,20 @@ describe("runtime turn contract fixture", () => {
   const path = process.env.ZCODE_CONTRACT_FIXTURE ?? join(repoRoot, "test", "fixtures", "runtime-turn.contract.json");
   const contract = JSON.parse(readFileSync(path, "utf8"));
   test("every record keeps its event type and the tap records exactly the mapped events", () => {
+    // ELIMINATE-3: result / part.delta stay on the wire fixture but are omitted from the sealed alphabet.
+    const omitted = new Set(["result", "part.delta"]);
     const declared = new Map(declaredRuntimeEvents().filter((e) => e.source === contract.source).map((e) => [e.name, e]));
     const types = contract.records.map((r: any) => r.type);
     expect(types).toEqual(contract.expectedTypes);
-    for (const t of types) expect(declared.has(t)).toBe(true);
-    const mapped = contract.records.filter((r: any) => !declared.get(r.type)!.unmappedReason).length;
+    for (const t of types) {
+      if (omitted.has(t)) continue;
+      expect(declared.has(t)).toBe(true);
+    }
+    const mapped = contract.records.filter((r: any) => {
+      if (omitted.has(r.type)) return false;
+      const d = declared.get(r.type);
+      return d && !d.unmappedReason;
+    }).length;
     const dir = mkdtempSync(join(tmpdir(), "zcode-contract-"));
     try {
       const rec = new OcelRecorder(contract.source, dir);

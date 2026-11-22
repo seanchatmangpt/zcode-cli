@@ -15,7 +15,7 @@ describe("ontology coverage", () => {
   for (const source of [STREAM_SOURCE, APP_SERVER_SOURCE]) {
     test(`${source}: every runtime event is mapped by a generated rule or Unmapped with a reason`, () => {
       const events = declared.filter((e) => e.source === source);
-      expect(events.length).toBeGreaterThanOrEqual(25);
+      expect(events.length).toBeGreaterThanOrEqual(24);
       for (const e of events) {
         const rules = RULES.filter((r) => r.source === source && r.name === e.name);
         if (e.unmappedReason) {
@@ -47,10 +47,12 @@ describe("ontology coverage", () => {
 describe.skipIf(!toolchain("vendor/zcode.cjs", !runtimeMissing))("runtime drift gate (vendor/zcode.cjs)", () => {
   const events = runtimeMissing ? undefined : readRuntimeEvents();
 
-  test("wire enum equals the app-server runtime events; stream adds the result envelope", () => {
-    const wire = events!.wire.slice().sort();
-    expect(declared.filter((e) => e.source === APP_SERVER_SOURCE).map((e) => e.name).sort()).toEqual(wire);
-    expect(declared.filter((e) => e.source === STREAM_SOURCE).map((e) => e.name).sort()).toEqual([...wire, "result"].sort());
+  test("sealed alphabet equals vendor wire minus omitted part.delta/result", () => {
+    // ELIMINATE-3: part.delta + result are dropped (no EventType / Unmapped RuntimeEvent).
+    const omitted = new Set(["part.delta", "result"]);
+    const sealed = events!.wire.filter((w) => !omitted.has(w)).slice().sort();
+    expect(declared.filter((e) => e.source === APP_SERVER_SOURCE).map((e) => e.name).sort()).toEqual(sealed);
+    expect(declared.filter((e) => e.source === STREAM_SOURCE).map((e) => e.name).sort()).toEqual(sealed);
   });
 
   test("every internal session event is documented and folds to a covered wire event", () => {

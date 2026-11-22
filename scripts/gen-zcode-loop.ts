@@ -8,18 +8,11 @@ import { readRuntimeEvents, wireOf } from "./zcode-events.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Envelope-only event that stream-json appends after the last turn event (not in the wire enum).
-const STREAM_ONLY = ["result"];
-
-// Wire events deliberately kept out of the OCEL log, with the reason.
-// Completeness tradeoff: EventType still emitted for wire-alphabet closure;
-// RuntimeEvent is pi:Unmapped so Tap drops the name (FILTER_BIAS deliberate).
-const UNMAPPED: Record<string, string> = {
-  "part.delta":
-    "token-level content delta; surrounding part.upserted/tool.updated carry the process step. EventType-part-delta kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate).",
-  result:
-    "end-of-run summary envelope; duplicates turn.completed and adds no process step. EventType-result kept for wire-alphabet completeness; Tap drops this name (FILTER_BIAS deliberate)."
-};
+// Wire names omitted from the sealed OCEL alphabet (ELIMINATE-3).
+// Tap already drops names with no MappingRule; do not keep phantom EventTypes /
+// Unmapped RuntimeEvents for token deltas or the stream-json result envelope.
+// PACK_DEMO_ALPHABET guard in gen-ocel.ts remains the pack-demo quarantine.
+const OMITTED_WIRE: ReadonlySet<string> = new Set(["part.delta", "result"]);
 
 type Rel = { object: string; qualifier: string; path: string };
 const OBJECTS = ["session", "turn", "tool_call", "model_request", "subagent", "permission"] as const;
@@ -134,7 +127,7 @@ function emitGallWorkHook(w: (s?: string) => void): void {
 }
 
 const events = readRuntimeEvents();
-const wires = [...events.wire, ...STREAM_ONLY];
+const wires = events.wire.filter((wire) => !OMITTED_WIRE.has(wire));
 
 const out: string[] = [];
 const w = (s = "") => out.push(s);
@@ -179,28 +172,11 @@ for (const o of IDENTITY_OBJECTS) {
   w(`zl:Qualifier-${IDENTITY_QUALIFIERS[o]} a pi:Qualifier ; pi:qualifierId ${q(IDENTITY_QUALIFIERS[o])} .`);
 }
 w();
-w("# ===== event types (one per wire event) =====");
-w("# Completeness tradeoff (discovery FILTER_BIAS, deliberate): every wire name has a");
-w("# pi:EventType so EVENT_TYPES is a closed wire alphabet. RuntimeEvents for");
-w("# part.delta / result are pi:Unmapped (no MappingRule) — the Tap drops them and");
-w("# they never enter the sealed log. Prefer this over deleting the EventTypes");
-w("# (would hide known wire names) or mapping them (would flood the log with");
-w("# token deltas / duplicate the turn.completed outcome envelope).");
+w("# ===== event types (one per sealed wire event) =====");
+w("# part.delta / result are omitted from EVENT_TYPES (ELIMINATE-3): Tap drops");
+w("# names with no MappingRule; phantom Unmapped EventTypes are alphabet noise.");
+w("# PACK_DEMO_ALPHABET (order_hook/place_order/…) stays quarantined in gen-ocel.ts.");
 for (const wire of wires) {
-  if (wire === "part.delta") {
-    w(`zl:EventType-${local(wire)} a pi:EventType ; pi:typeId ${q(snake(wire))} ;`);
-    w(
-      '  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits part_delta into the sealed log (see unmappedReason on RuntimeEvent-*-part-delta)." .'
-    );
-    continue;
-  }
-  if (wire === "result") {
-    w(`zl:EventType-${local(wire)} a pi:EventType ; pi:typeId ${q(snake(wire))} ;`);
-    w(
-      '  rdfs:comment "Wire-alphabet completeness only: RuntimeEvent is Unmapped; Tap never emits result into the sealed log (see unmappedReason on RuntimeEvent-Stream-result)." .'
-    );
-    continue;
-  }
   w(`zl:EventType-${local(wire)} a pi:EventType ; pi:typeId ${q(snake(wire))} .`);
 }
 w();
@@ -208,7 +184,7 @@ w();
 const sources = [
   { key: "Stream", iri: "zl:Source-StreamJson", prefix: "", wires, identity: true },
   // App identity feasible: ocel-tap bindLeaseIdentityObjects mirrors facts into params.*.
-  { key: "App", iri: "zl:Source-AppServer", prefix: "params.", wires: events.wire, identity: true }
+  { key: "App", iri: "zl:Source-AppServer", prefix: "params.", wires, identity: true }
 ];
 w("# ===== e2o relations (path into the raw record) =====");
 for (const s of sources)
@@ -232,10 +208,6 @@ for (const s of sources) {
     : "";
   for (const wire of s.wires) {
     const ev = `zl:RuntimeEvent-${s.key}-${local(wire)}`;
-    if (UNMAPPED[wire]) {
-      w(`${ev} a pi:RuntimeEvent , pi:Unmapped ; pi:runtimeEventName ${q(wire)} ; pi:emittedBy ${s.iri} ; pi:unmappedReason ${q(UNMAPPED[wire])} .`);
-      continue;
-    }
     const baseRels = objectsFor(wire).map((o) => `zl:Rel-${s.key}-${o}`).join(" , ");
     const rels = identityRels ? `${baseRels} , ${identityRels}` : baseRels;
     w(`zl:Rule-${s.key}-${local(wire)} a pi:MappingRule ; pi:ruleId ${q(`${s.key.toLowerCase()}-${snake(wire)}`)} ; pi:fromSource ${s.iri} ; pi:sourceEvent ${q(wire)} ;`);

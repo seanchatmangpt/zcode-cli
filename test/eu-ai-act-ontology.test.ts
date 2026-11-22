@@ -184,7 +184,7 @@ describe("F03 EU AI Act & AIRO ontology integrity (zero-mock Chicago)", () => {
 
     // Preserve closed generated OCEL vocabulary counts
     // (pack demo place_order/ship_order + order/item quarantined; +base/epoch/subject)
-    expect(EVENT_TYPES.length).toBe(33);
+    expect(EVENT_TYPES.length).toBe(31);
     expect(OBJECT_TYPES.length).toBe(15);
   });
 });

@@ -7,16 +7,12 @@ import { join, resolve } from "node:path";
 import {
   ReceiptSink,
   RepoVerifierCourtAdapter,
+  isDfcmStubNonAdmit,
   runFoundryLoop,
   SjiraWorkOrderSource,
   type TransitionReceipt,
   type WorkOrderSourceAdapter
 } from "../src/adapters/index.ts";
-import {
-  admitAfterIntegrity,
-  checkReceiptIntegrity,
-  resolveExternalValidator
-} from "../scripts/validate-receipts.ts";
 
 function initTempGitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "zcode-hitl-free-"));
@@ -358,7 +354,7 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
     }
   }, 30_000);
 
-  test("C7-Foundry-Recursion: re-ingests frontier R_t -> O*_{t+1} and emits Chatman-5 ALOOP v2 DFCM receipt", async () => {
+  test("C7-Foundry-Recursion: re-ingests frontier R_t -> O*_{t+1} and emits fail-closed DFCM stub", async () => {
     const repo = initTempGitRepo();
     const outDir = join(repo, ".sjira-out");
     const dfcmReceiptPath = join(outDir, "dfcm-receipt.json");
@@ -440,29 +436,15 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
       expect(result.exitCode).toBe(0);
       expect(result.cycles.length).toBe(2);
 
-      // (2) Chatman-5 / ALOOP v2 DFCM receipt admitted by validate-receipts.ts
+      // (2) Cycle-close DFCM is zcode.dfcm.receipt/1 stub — non-admit, not ALOOP v2.
       expect(existsSync(dfcmReceiptPath)).toBe(true);
-      const raw = readFileSync(dfcmReceiptPath, "utf8");
-      const integrity = checkReceiptIntegrity(dfcmReceiptPath, {
-        raw,
-        shaExists: (sha) => {
-          const probe = spawnSync("git", ["-C", repo, "cat-file", "-t", sha], {
-            encoding: "utf8"
-          });
-          return probe.status === 0 && probe.stdout.trim() === "commit";
-        }
-      });
-      expect(integrity).toEqual([]);
-
-      const external = resolveExternalValidator();
-      const admitted = admitAfterIntegrity({
-        path: dfcmReceiptPath,
-        raw,
-        external,
-        allowIntegrityOnly: external.path === null
-      });
-      expect(admitted.ok).toBe(true);
-      expect(admitted.exitCode).toBe(0);
+      const dfcm = JSON.parse(readFileSync(dfcmReceiptPath, "utf8")) as Record<string, unknown>;
+      expect(dfcm.schema).toBe("zcode.dfcm.receipt/1");
+      expect(dfcm.admit).toBe(false);
+      expect(dfcm.non_admit).toBe(true);
+      expect(dfcm.authority).toBe("NONE");
+      expect(dfcm.work_order_id).toBeUndefined();
+      expect(isDfcmStubNonAdmit(dfcm)).toBe(true);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

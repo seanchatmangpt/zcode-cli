@@ -47,6 +47,17 @@ export function isNoopCleanRoomCmd(cmd: string[] | undefined | null): boolean {
   return bin === "true" || bin === "/bin/true" || bin === "/usr/bin/true";
 }
 
+/**
+ * Refuse `git*` as a clean-room sync cmd (ELIMINATE-2).
+ * `git diff --exit-code` is diagnostic-only via collectGitDiffDiagnostic — never the gate.
+ */
+export function isGitSyncCmd(cmd: string[] | undefined | null): boolean {
+  if (!cmd || cmd.length === 0) return false;
+  const bin = cmd[0]!;
+  const base = bin.includes("/") ? bin.slice(bin.lastIndexOf("/") + 1) : bin;
+  return base === "git" || base.startsWith("git");
+}
+
 export function isIgniterCheckCmd(cmd: string[]): boolean {
   if (!cmd.includes("--check")) return false;
   return cmd.some((c) => c === "mix" || c.includes("ggen_igniter"));
@@ -95,6 +106,16 @@ export function evaluateCleanRoomDrift(cmd: string[], result: RunResult): CleanR
       noopStub: true,
       diagnostics: [
         "clean-room LOUD_SKIP: noop sync cmd (true) is not Jobs/C4 — use mix ggen_igniter.sync --check or ggen sync run --dry-run"
+      ]
+    };
+  }
+
+  if (isGitSyncCmd(cmd)) {
+    return {
+      kind: "refuse",
+      exitCode: 1,
+      diagnostics: [
+        `clean-room refused: git* sync cmd is the clean-room fallacy (got ${JSON.stringify(cmd)}); use mix ggen_igniter.sync --check or ggen sync run --dry-run`
       ]
     };
   }

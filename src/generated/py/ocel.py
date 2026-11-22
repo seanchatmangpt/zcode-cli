@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-EVENT_TYPES = ["checkpoint_created", "execution_crash", "falsifier_run", "message_removed", "message_upserted", "model_streaming", "part_delta", "part_removed", "part_started", "part_upserted", "permission_requested", "permission_resolved", "provider_replace", "provider_select", "receipt_persist", "reobserve", "result", "rewind_triggered", "session_closed", "session_created", "session_resumed", "session_title_updated", "session_updated", "stream_recovery_updated", "tool_updated", "turn_completed", "turn_failed", "turn_started", "turn_steer_drained", "turn_steer_queued", "user_input_requested", "user_input_resolved", "worker_claim"]
+EVENT_TYPES = ["checkpoint_created", "execution_crash", "falsifier_run", "message_removed", "message_upserted", "model_streaming", "part_removed", "part_started", "part_upserted", "permission_requested", "permission_resolved", "provider_replace", "provider_select", "receipt_persist", "reobserve", "rewind_triggered", "session_closed", "session_created", "session_resumed", "session_title_updated", "session_updated", "stream_recovery_updated", "tool_updated", "turn_completed", "turn_failed", "turn_started", "turn_steer_drained", "turn_steer_queued", "user_input_requested", "user_input_resolved", "worker_claim"]
 OBJECT_TYPES = ["authority", "base", "epoch", "lease", "model_request", "permission", "provider", "receipt", "session", "subagent", "subject", "tool_call", "turn", "work_order", "worker"]
 SUPPORTED_HASHES = ["blake2b256", "sha256"]
 SOURCES = [

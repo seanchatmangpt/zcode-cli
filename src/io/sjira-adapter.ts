@@ -148,7 +148,6 @@ export type SjiraAdapterErrorCode =
   | "EMPTY_FRONTIER"
   | "PO_CYCLE"
   | "IGNITER_SYNC_FAILED"
-  | "IGNITER_DIRTY_TREE"
   | "VERIFY_CMD_FAILED"
   | "STANDING_PROMOTION_REFUSED";
 

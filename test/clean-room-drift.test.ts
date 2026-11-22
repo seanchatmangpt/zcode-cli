@@ -23,6 +23,19 @@ describe("clean-room-drift", () => {
     expect(v.noopStub).toBe(true);
   });
 
+  test("falsifier: git* sync cmd refuses (never pass on clean index)", () => {
+    for (const cmd of [
+      ["git", "diff", "--exit-code"],
+      ["/usr/bin/git", "status", "--porcelain"],
+      ["git", "diff", "--quiet"]
+    ]) {
+      const v = evaluateCleanRoomDrift(cmd, { status: 0, stdout: "", stderr: "" });
+      expect(v.kind).toBe("refuse");
+      expect(v.exitCode).toBe(1);
+      expect(v.diagnostics.join(" ")).toMatch(/git\* sync cmd|clean-room fallacy/);
+    }
+  });
+
   test("igniter --check exit 0 → pass", () => {
     const v = evaluateCleanRoomDrift([...DEFAULT_CLEAN_ROOM_CHECK_CMD], {
       status: 0,
