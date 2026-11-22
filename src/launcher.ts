@@ -83,6 +83,7 @@ import {
   propagateSubagentOversightContext,
   type PolicyCeiling
 } from "./compliance/oversight.ts";
+import { evaluateDeclareRules } from "./compliance/declare-conformance.ts";
 import { redactComplianceText } from "./compliance/redactor.ts";
 import { missingCodingPlanKey } from "./prompt-preflight.ts";
 import {
@@ -585,6 +586,7 @@ function augmentOcelWithArt50Disclosure(
   };
   const firstTime = rawDoc.events[0]?.time ?? new Date().toISOString();
   const baseMs = Number.isFinite(Date.parse(firstTime)) ? Date.parse(firstTime) : Date.now();
+  const hasSessionCreated = rawDoc.events.some((e) => e.type === "session_created");
 
   const builder = new Ocel2ComplianceBuilder({ config: ctx.config, redactOptions: redactOpts });
   if (!rawDoc.events.some((e) => e.type === "art50_disclosure_emitted")) {
@@ -595,7 +597,7 @@ function augmentOcelWithArt50Disclosure(
       model: ctx.modelId,
       channel,
       workerNoticeAcknowledged: ctx.config.deployer.worker_notice_acknowledged,
-      timestamp: new Date(baseMs - 1).toISOString(),
+      timestamp: new Date(hasSessionCreated ? baseMs + 1 : baseMs - 1).toISOString(),
       redactPii: ctx.config.compliance.redact_pii,
       redactOptions: redactOpts
     });
@@ -910,6 +912,49 @@ export async function runRuntime(
         process.stderr.write(`Art. 50(2) provenance marking failed: ${msg}\n`);
         if (code === 0) {
           return error instanceof ComplianceRefusalError ? error.exitCode : 1;
+        }
+      }
+    }
+    if (regulated && complianceCtx && writtenOcel) {
+      try {
+        const ocelDoc = JSON.parse(readFileSync(writtenOcel.ocelPath, "utf8")) as Ocel2Document;
+        const declareReport = evaluateDeclareRules(ocelDoc);
+        const mandatoryViolations = declareReport.results.filter(
+          (r) => r.mandatory && r.status === "VIOLATED"
+        );
+        if (mandatoryViolations.length > 0) {
+          const violatedSummary = mandatoryViolations.map((r) => ({
+            id: r.id,
+            template: r.template,
+            article: r.article,
+            detail: r.detail,
+            counterexample_event_ids: r.counterexample_event_ids
+          }));
+          if (existsSync(writtenOcel.receiptPath)) {
+            const receipt = JSON.parse(
+              readFileSync(writtenOcel.receiptPath, "utf8")
+            ) as Record<string, unknown>;
+            receipt.declare_conformance = {
+              schema: declareReport.schema,
+              standing: "REFUSED",
+              refusal_code: "DECLARE_CONFORMANCE_VIOLATION",
+              violated_rules: violatedSummary
+            };
+            atomicWriteFile(writtenOcel.receiptPath, JSON.stringify(receipt, null, 2));
+          }
+          const ruleIds = mandatoryViolations.map((r) => r.id).join(", ");
+          process.stderr.write(
+            `DECLARE conformance refusal (${ruleIds}): ${mandatoryViolations.map((r) => r.detail).join(" | ")}\n`
+          );
+          if (code === 0) {
+            return 1;
+          }
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`DECLARE conformance evaluation failed: ${msg}\n`);
+        if (code === 0) {
+          return 1;
         }
       }
     }

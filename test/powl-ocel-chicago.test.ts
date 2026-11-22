@@ -9,6 +9,7 @@ import {
   deriveFollowUpPowl,
   executePowlWithTokenReplay,
   runAutonomicLoop,
+  tokenConservationHolds,
   validateDisjointWriteScopes,
   validatePowlTree,
   verifyStructuralSoundness,
@@ -352,5 +353,136 @@ describe("Chicago-style (zero-mock, real subprocess + filesystem) POWL v2 + OCEL
     expect(rWideIrreducible.wfNetValid).not.toBe(false);
     expect(rWideIrreducible.truncated).toBe(true);
     expect(rWideIrreducible.standing).toBe("UNKNOWN");
+  });
+
+  test("G02: HTN-FOND oneof crystallizes Control Surface escalation when undecidable and executes selected branch when oracle resolves", async () => {
+    const oneOfNode: PowlNode = {
+      kind: "oneof",
+      id: "fond-env-branch",
+      reason: "environment-controlled nondeterministic deployment outcome",
+      branches: [
+        { kind: "activity", id: "branch_a", label: "Branch A", objectType: "Artifact" },
+        { kind: "activity", id: "branch_b", label: "Branch B", objectType: "Artifact" }
+      ]
+    };
+
+    const net = compilePowlToWorkflowNet(oneOfNode);
+    const soundness = verifyStructuralSoundness(net);
+    expect(soundness.wfNetValid).not.toBe(false);
+    expect(soundness.optionToComplete).toBe(true);
+    expect(soundness.properCompletion).toBe(true);
+    expect(soundness.noDeadTransitions).toBe(true);
+
+    // 1. Undecidable (no Control Surface oracle): must NOT greedily fire branch_a; must crystallize escalation.
+    const firedUndecided: string[] = [];
+    const escalated = await executePowlWithTokenReplay(oneOfNode, async (t) => {
+      firedUndecided.push(t.activityId!);
+      return runRealSubprocess(process.execPath, ["-v"]);
+    });
+
+    expect(firedUndecided).toEqual([]);
+    expect(escalated.replay.soundTermination).toBe(false);
+    expect(tokenConservationHolds(escalated.replay)).toBe(true);
+    expect(escalated.refusalCode).toBe("CONTROL_SURFACE_ESCALATION");
+    expect(escalated.controlSurfaceEscalations).toHaveLength(1);
+    expect(escalated.controlSurfaceEscalations[0]!.oneOfId).toBe("fond-env-branch");
+    expect(escalated.controlSurfaceEscalations[0]!.status).toBe("CRYSTALLIZED");
+    expect(escalated.ocel.events.some((e) => e.type === "control_surface_escalation")).toBe(true);
+    expect(escalated.ocel.objects.some((o) => o.id === "cs:fond-env-branch" && o.type === "ControlSurface")).toBe(true);
+
+    // 2. Resolved by external Control Surface oracle to branch index 1 (branch_b)
+    const firedResolved: string[] = [];
+    const resolved = await executePowlWithTokenReplay(
+      oneOfNode,
+      async (t) => {
+        firedResolved.push(t.activityId!);
+        return runRealSubprocess(process.execPath, ["-v"]);
+      },
+      { resolveOneOf: (id) => (id === "fond-env-branch" ? 1 : undefined) }
+    );
+
+    expect(firedResolved).toEqual(["branch_b"]);
+    expect(resolved.replay.soundTermination).toBe(true);
+    expect(resolved.replay.fitness).toBe(1);
+    expect(resolved.controlSurfaceEscalations).toHaveLength(0);
+    expect(resolved.ocel.events.some((e) => e.type === "control_surface_resolved")).toBe(true);
+  });
+
+  test("G03: Provisional Voucher + Cure-Obligation Debt pair blocks sound termination until discharged", async () => {
+    const seqPowl: PowlNode = {
+      kind: "partial_order",
+      id: "voucher-debt-flow",
+      children: [
+        { kind: "activity", id: "issue_step", label: "Provisional step", objectType: "Artifact" },
+        { kind: "activity", id: "cure_step", label: "Cure step", objectType: "Artifact" }
+      ],
+      order: [["issue_step", "cure_step"]]
+    };
+
+    // 1. Unsettled cure obligation debt -> blocks soundTermination fail-closed
+    const unsettled = await executePowlWithTokenReplay(seqPowl, async (t) => {
+      const sub = await runRealSubprocess(process.execPath, ["-v"]);
+      if (t.activityId === "issue_step") {
+        return {
+          ...sub,
+          ok: false,
+          provisionalVoucher: {
+            voucherId: "v-001",
+            cureObligationId: "cure-001",
+            reason: "provisional artifact requires downstream verification"
+          }
+        };
+      }
+      return sub;
+    });
+
+    expect(unsettled.voucherDebt.voucherIssued).toBe(1);
+    expect(unsettled.voucherDebt.cureObligationDischarged).toBe(0);
+    expect(unsettled.voucherDebt.openCureObligations).toEqual(["cure-001"]);
+    expect(unsettled.voucherDebt.invariantHolds).toBe(false);
+    expect(unsettled.replay.soundTermination).toBe(false);
+    expect(unsettled.refusalCode).toBe("UNSETTLED_CURE_OBLIGATION_DEBT");
+    expect(unsettled.ocel.events.some((e) => e.type === "voucher_issued")).toBe(true);
+    expect(unsettled.ocel.events.some((e) => e.type === "cure_obligation_unsettled")).toBe(true);
+
+    // 2. Discharged cure obligation debt -> soundTermination === true
+    const settled = await executePowlWithTokenReplay(seqPowl, async (t) => {
+      const sub = await runRealSubprocess(process.execPath, ["-v"]);
+      if (t.activityId === "issue_step") {
+        return {
+          ...sub,
+          ok: false,
+          provisionalVoucher: {
+            voucherId: "v-002",
+            cureObligationId: "cure-002",
+            reason: "provisional artifact requires downstream verification"
+          }
+        };
+      }
+      return {
+        ...sub,
+        dischargesCureObligationId: "cure-002"
+      };
+    });
+
+    expect(settled.voucherDebt.voucherIssued).toBe(1);
+    expect(settled.voucherDebt.cureObligationDischarged).toBe(1);
+    expect(settled.voucherDebt.openCureObligations).toEqual([]);
+    expect(settled.voucherDebt.invariantHolds).toBe(true);
+    expect(settled.replay.soundTermination).toBe(true);
+    expect(settled.replay.fitness).toBe(1);
+    expect(settled.refusalCode).toBeUndefined();
+    expect(settled.ocel.events.some((e) => e.type === "voucher_issued")).toBe(true);
+    expect(settled.ocel.events.some((e) => e.type === "cure_obligation_discharged")).toBe(true);
+    expect(
+      settled.ocel.objects.some(
+        (o) => o.id === "voucher:v-002" && o.attributes.at(-1)?.value === "SETTLED"
+      )
+    ).toBe(true);
+    expect(
+      settled.ocel.objects.some(
+        (o) => o.id === "debt:cure-002" && o.attributes.at(-1)?.value === "DISCHARGED"
+      )
+    ).toBe(true);
   });
 });

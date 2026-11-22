@@ -5,7 +5,7 @@ import {
   validateOcpnSoundness,
   type OcpnModel
 } from "../src/compliance/ocpn.ts";
-import type { DiscoverDocLike, OcDfgModel } from "../src/compliance/ocel-discover.ts";
+import { discoverOcDfg, type DiscoverDocLike, type OcDfgModel } from "../src/compliance/ocel-discover.ts";
 
 function makeMinimalOcDfg(
   byObjectType: OcDfgModel["byObjectType"],
@@ -315,6 +315,85 @@ describe("03-OCPN-Semantics ERRC improvements", () => {
       expect(unobsRes.soundTermination).toBe(false);
       expect(unobsRes.fitness).toBeLessThan(1);
       expect(unobsRes.fitness).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe("G05-OCPN-Convergence: variable arcs derive from convergence, not divergence", () => {
+    test("purely convergent batch event gets variable=true and replays with fitness=1; purely divergent 1-to-1 events get variable=false", () => {
+      // 1. Purely convergent: 1 event linked to 2 tool_call objects (convergence=1, divergence=0)
+      const convergentLog: DiscoverDocLike = {
+        objects: [
+          { id: "tc1", type: "tool_call", attributes: [] },
+          { id: "tc2", type: "tool_call", attributes: [] }
+        ],
+        events: [
+          {
+            id: "e_batch",
+            type: "batch_tool",
+            time: "2026-08-03T14:00:00.000Z",
+            relationships: [
+              { objectId: "tc1", qualifier: "about_tool_call" },
+              { objectId: "tc2", qualifier: "about_tool_call" }
+            ]
+          }
+        ]
+      };
+
+      const convDfg = discoverOcDfg(convergentLog);
+      expect(convDfg.convergence).toHaveLength(1);
+      expect(convDfg.divergence).toHaveLength(0);
+
+      const convOcpn = discoverOcpn(convDfg, { requiredObjectTypes: ["tool_call"] });
+      const batchArcs = convOcpn.arcs.filter(
+        (a) => a.objectType === "tool_call" && (a.source === "t_batch_tool" || a.target === "t_batch_tool")
+      );
+      expect(batchArcs.length).toBeGreaterThanOrEqual(2);
+      expect(batchArcs.every((a) => a.variable === true)).toBe(true);
+
+      const convReplay = replayOcpn(convOcpn, convergentLog);
+      expect(convReplay.missing).toBe(0);
+      expect(convReplay.fitness).toBe(1);
+      expect(convReplay.soundTermination).toBe(true);
+
+      // 2. Purely divergent: 1 session object participating in 2 separate 1-to-1 events with differing tool_calls (convergence=0, divergence=1)
+      const divergentLog: DiscoverDocLike = {
+        objects: [
+          { id: "s1", type: "session", attributes: [] },
+          { id: "tc1", type: "tool_call", attributes: [] },
+          { id: "tc2", type: "tool_call", attributes: [] }
+        ],
+        events: [
+          {
+            id: "e1",
+            type: "single_tool",
+            time: "2026-08-03T14:01:00.000Z",
+            relationships: [
+              { objectId: "s1", qualifier: "in_session" },
+              { objectId: "tc1", qualifier: "about_tool_call" }
+            ]
+          },
+          {
+            id: "e2",
+            type: "single_tool",
+            time: "2026-08-03T14:02:00.000Z",
+            relationships: [
+              { objectId: "s1", qualifier: "in_session" },
+              { objectId: "tc2", qualifier: "about_tool_call" }
+            ]
+          }
+        ]
+      };
+
+      const divDfg = discoverOcDfg(divergentLog);
+      expect(divDfg.convergence).toHaveLength(0);
+      expect(divDfg.divergence.some((d) => d.activity === "single_tool" && d.objectType === "session")).toBe(true);
+
+      const divOcpn = discoverOcpn(divDfg, { requiredObjectTypes: ["session", "tool_call"] });
+      const singleArcs = divOcpn.arcs.filter(
+        (a) => a.source === "t_single_tool" || a.target === "t_single_tool"
+      );
+      expect(singleArcs.length).toBeGreaterThanOrEqual(4);
+      expect(singleArcs.every((a) => a.variable === false)).toBe(true);
     });
   });
 });

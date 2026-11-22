@@ -8,6 +8,7 @@
  *   zcode foundry --all [--live | --dry-run]
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
@@ -39,6 +40,25 @@ function parseAllReposFromToml(tomlPath: string): string[] {
 
 function splitVerifyCmd(raw: string): string[] {
   return raw.trim().split(/\s+/).filter(Boolean);
+}
+
+function detectDefaultTargetFile(repoDir: string): string {
+  for (const preferred of ["package.json", "README.md", "Cargo.toml", "mix.exs", "pyproject.toml"]) {
+    if (existsSync(join(repoDir, preferred))) {
+      return preferred;
+    }
+  }
+  if (existsSync(join(repoDir, ".git"))) {
+    const ls = spawnSync("git", ["ls-files"], { cwd: repoDir, encoding: "utf8" });
+    if (ls.status === 0) {
+      const first = ls.stdout
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .find((s) => s.length > 0 && !s.startsWith(".git/") && !s.startsWith("vendor/") && !s.startsWith("node_modules/"));
+      if (first) return first;
+    }
+  }
+  return `ontology/FINISH-${basename(repoDir).toUpperCase()}.ttl`;
 }
 
 export async function runFoundryCommand(args: string[]): Promise<number | undefined> {
@@ -140,7 +160,8 @@ export async function runFoundryCommand(args: string[]): Promise<number | undefi
               id: `FINISH-${basename(repoDir).toUpperCase()}`,
               label: `Finish and verify ${basename(repoDir)} cleanly without HITL`,
               objectType: "WorkOrder",
-              standing: "UNKNOWN"
+              standing: "UNKNOWN",
+              targetFile: detectDefaultTargetFile(repoDir)
             })}\n`
           );
         }
@@ -206,6 +227,7 @@ export async function runFoundryCommand(args: string[]): Promise<number | undefi
       autoCommitAlive,
       priorDiagnostics,
       executor,
+      candidatesPath: effectiveCandidates,
       outputDir: join(outDir, "ocel")
     });
 

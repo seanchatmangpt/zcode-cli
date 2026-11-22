@@ -502,6 +502,39 @@ describe("M4 Art. 15 Adversarial Security Court & Dataset Provenance (zero-mock 
       expect(delCode).toBe(1);
       expect(stderrBuf).toContain("PROVENANCE_SEAL_FAILED");
       expect(stderrBuf).toContain("missing on disk");
+
+      // Case 3: unsealed export_path injection must NEVER bypass seal_sha256 or modified_spans verification
+      stdoutBuf = "";
+      stderrBuf = "";
+      const sealedFile = join(dir, "sealed.ts");
+      writeFileSync(sealedFile, "export const original = true;\n", "utf8");
+      const origSpanSha = sha256File(sealedFile);
+      writeSealedSidecar("sess_prov_1.json", [{ path: "sealed.ts", sha256: origSpanSha }]);
+      // Tamper with sealed workspace file AND inject unrelated unsealed export_path into the sidecar
+      writeFileSync(sealedFile, "export const original = false; // tampered\n", "utf8");
+      const sidecarPath = join(provDir, "sess_prov_1.json");
+      const injectedSidecar = JSON.parse(readFileSync(sidecarPath, "utf8")) as Record<string, unknown>;
+      injectedSidecar.export_path = "unrelated.json";
+      writeFileSync(sidecarPath, JSON.stringify(injectedSidecar, null, 2), "utf8");
+
+      const injectCode = await runComplianceCommand(["ocel", "verify", "--in", logPath]);
+      expect(injectCode).toBe(1);
+      const injectParsed = JSON.parse(stdoutBuf) as { valid: boolean; errors: string[] };
+      expect(injectParsed.valid).toBe(false);
+      expect(stderrBuf).toContain("PROVENANCE_SEAL_FAILED");
+      expect(injectParsed.errors.some((e) => e.includes("SHA-256 mismatch"))).toBe(true);
+      expect(injectParsed.errors.some((e) => e.includes("export_path"))).toBe(true);
+
+      // Case 4: unsealed export_path injection with corrupted seal_sha256 must also fail closed
+      stdoutBuf = "";
+      stderrBuf = "";
+      injectedSidecar.seal_sha256 = "0".repeat(64);
+      writeFileSync(sidecarPath, JSON.stringify(injectedSidecar, null, 2), "utf8");
+      const corruptSealCode = await runComplianceCommand(["ocel", "verify", "--in", logPath]);
+      expect(corruptSealCode).toBe(1);
+      const corruptParsed = JSON.parse(stdoutBuf) as { valid: boolean; errors: string[] };
+      expect(corruptParsed.valid).toBe(false);
+      expect(corruptParsed.errors.some((e) => e.includes("seal_sha256 mismatch"))).toBe(true);
     } finally {
       process.stdout.write = origStdoutWrite;
       process.stderr.write = origStderrWrite;

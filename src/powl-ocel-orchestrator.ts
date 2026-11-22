@@ -56,10 +56,22 @@ export type PowlPartialOrder = {
   order: ReadonlyArray<readonly [string, string]>;
 };
 
+export type PowlOneOf = {
+  kind: "oneof";
+  id: string;
+  /** Undecidable environment / HTN-FOND nondeterministic branches (ferroplan -> POWL v2). */
+  branches: PowlNode[];
+  /** Optional rationale describing why branch selection is environment-controlled / undecidable. */
+  reason?: string;
+  /** Optional explicit 0-based branch index resolved by an external Control Surface oracle. */
+  resolvedBranchIndex?: number;
+};
+
 export type PowlNode =
   | PowlActivity
   | { kind: "tau"; id: string }
   | { kind: "xor"; id: string; branches: PowlNode[] }
+  | PowlOneOf
   | { kind: "loop"; id: string; doBranch: PowlNode; redoBranch: PowlNode; maxIterations?: number }
   | PowlPartialOrder;
 
@@ -157,7 +169,7 @@ function collectSubtreeWriteScope(node: PowlNode): SubtreeWriteScope {
     return { hasMutating: false, hasEmptyMutating: false, scopes: [] };
   }
   const children: PowlNode[] =
-    node.kind === "xor"
+    node.kind === "xor" || node.kind === "oneof"
       ? node.branches
       : node.kind === "loop"
         ? [node.doBranch, node.redoBranch]
@@ -235,6 +247,19 @@ export function validatePowlTree(root: PowlNode): void {
     if (node.kind === "xor") {
       if (node.branches.length < 2) throw new Error(`POWL XOR "${node.id}" requires >= 2 branches`);
       node.branches.forEach(walk);
+    } else if (node.kind === "oneof") {
+      if (node.branches.length < 2) throw new Error(`POWL ONEOF "${node.id}" requires >= 2 branches`);
+      if (
+        node.resolvedBranchIndex !== undefined &&
+        (!Number.isInteger(node.resolvedBranchIndex) ||
+          node.resolvedBranchIndex < 0 ||
+          node.resolvedBranchIndex >= node.branches.length)
+      ) {
+        throw new Error(
+          `POWL ONEOF "${node.id}": resolvedBranchIndex ${node.resolvedBranchIndex} out of range [0, ${node.branches.length - 1}]`
+        );
+      }
+      node.branches.forEach(walk);
     } else if (node.kind === "loop") {
       walk(node.doBranch);
       walk(node.redoBranch);
@@ -295,6 +320,12 @@ export interface Transition {
   activityId?: string;
   /** For loop exit τ transitions: the owning PowlLoop node id. */
   loopExitFor?: string;
+  /** For HTN-FOND oneof branch gate τ transitions: the owning PowlOneOf node id. */
+  oneOfId?: string;
+  /** 0-based branch index within the owning PowlOneOf node. */
+  oneOfBranchIndex?: number;
+  /** Optional rationale for why this oneof branch is undecidable. */
+  oneOfReason?: string;
   objectType: string;
   targetFile?: string;
   activityKind?: ActivityKind;
@@ -380,6 +411,27 @@ export function compilePowlToWorkflowNet(root: PowlNode): WorkflowNet {
     if (node.kind === "xor") {
       for (const branch of node.branches) {
         compile(branch, startP, endP);
+      }
+      return;
+    }
+    if (node.kind === "oneof") {
+      for (let idx = 0; idx < node.branches.length; idx += 1) {
+        const branch = node.branches[idx]!;
+        const branchStart = newPlace(`oneof_${node.id}_b${idx}`);
+        addTransition(
+          {
+            id: newTransitionId("oneof", `${node.id}_b${idx}`),
+            label: `τ_oneof(${node.id}[${idx}])`,
+            silent: true,
+            oneOfId: node.id,
+            oneOfBranchIndex: idx,
+            ...(node.reason !== undefined ? { oneOfReason: node.reason } : {}),
+            objectType: "ControlSurface"
+          },
+          [startP],
+          [branchStart]
+        );
+        compile(branch, branchStart, endP);
       }
       return;
     }
@@ -962,6 +1014,26 @@ export class AimdWipController {
   }
 }
 
+export interface ProvisionalVoucherSpec {
+  voucherId: string;
+  cureObligationId: string;
+  reason?: string;
+}
+
+export interface ControlSurfaceEscalation {
+  oneOfId: string;
+  branchCount: number;
+  reason?: string;
+  status: "CRYSTALLIZED";
+}
+
+export interface VoucherDebtSummary {
+  voucherIssued: number;
+  cureObligationDischarged: number;
+  openCureObligations: string[];
+  invariantHolds: boolean;
+}
+
 export interface ExecutionOutcome {
   ok: boolean;
   /** True when failure is transient transport backpressure (429 / UND_ERR_CONNECT_TIMEOUT). */
@@ -976,6 +1048,12 @@ export interface ExecutionOutcome {
   tpmHeadroomRatio?: number;
   /** Optional stable failure signature for bounded retry accounting. */
   errorSignature?: string;
+  /** Issue a Provisional Voucher paired with a mandatory Cure-Obligation Debt. */
+  provisionalVoucher?: ProvisionalVoucherSpec;
+  /** Discharge a previously issued Cure-Obligation Debt by id. */
+  dischargesCureObligationId?: string;
+  /** Discharge multiple previously issued Cure-Obligation Debts by id. */
+  dischargesCureObligations?: string[];
 }
 
 export type TransitionExecutor = (t: Transition) => Promise<ExecutionOutcome>;
@@ -989,6 +1067,8 @@ export interface OcelPowlRunOptions {
   maxRetriesPerSignature?: number;
   stepTimeoutMs?: number;
   retryLimiter?: SignatureRetryLimiter;
+  /** Optional external Control Surface oracle for resolving HTN-FOND `oneof` branches (0-based index). */
+  resolveOneOf?: (oneOfId: string, branchCount: number, reason?: string) => number | undefined;
 }
 
 export interface OcelPowlRunResult {
@@ -1006,6 +1086,8 @@ export interface OcelPowlRunResult {
   bottlenecks: Array<{ transitionId: string; serviceMs: number }>;
   refusalCode?: string;
   rolledBackCount?: number;
+  controlSurfaceEscalations: ControlSurfaceEscalation[];
+  voucherDebt: VoucherDebtSummary;
 }
 
 
@@ -1092,6 +1174,7 @@ export async function executePowlWithTokenReplay(
   /** Loop ids → max do-iterations (default 1: do once, then τ_exit). */
   const loopMaxIterations = new Map<string, number>();
   const loopDoCompletions = new Map<string, number>();
+  const oneOfResolvedIndices = new Map<string, number>();
   const walkLoops = (node: PowlNode) => {
     if (node.kind === "loop") {
       loopMaxIterations.set(node.id, Math.max(1, node.maxIterations ?? 1));
@@ -1100,11 +1183,31 @@ export async function executePowlWithTokenReplay(
       walkLoops(node.redoBranch);
     } else if (node.kind === "xor") {
       node.branches.forEach(walkLoops);
+    } else if (node.kind === "oneof") {
+      if (node.resolvedBranchIndex !== undefined) {
+        oneOfResolvedIndices.set(node.id, node.resolvedBranchIndex);
+      }
+      node.branches.forEach(walkLoops);
     } else if (node.kind === "partial_order") {
       node.children.forEach(walkLoops);
     }
   };
   walkLoops(root);
+
+  const controlSurfaceEscalations: ControlSurfaceEscalation[] = [];
+  const voucherLedger = new Map<
+    string,
+    {
+      voucherId: string;
+      cureObligationId: string;
+      issuedByTransitionId: string;
+      discharged: boolean;
+      dischargedByTransitionId?: string;
+      reason?: string;
+    }
+  >();
+  let voucherIssuedCount = 0;
+  let cureObligationDischargedCount = 0;
 
   const bottlenecks: Array<{ transitionId: string; serviceMs: number }> = [];
   const executedActivities: string[] = [];
@@ -1131,6 +1234,7 @@ export async function executePowlWithTokenReplay(
       const enabledAll = net.transitions.filter((t) => isEnabled(t));
       for (const t of enabledAll) {
         if (!t.silent) continue;
+        if (t.oneOfId !== undefined) continue;
         const lid = t.loopExitFor;
         if (lid && redoArmedLoops.has(lid)) continue;
         const contested = enabledAll.some((o) => o.id !== t.id && sharesPre(t, o));
@@ -1192,10 +1296,78 @@ export async function executePowlWithTokenReplay(
       progress = true;
     }
 
+    // HTN-FOND `oneof` undecidable environment branches: never resolve greedily.
+    // Either an external Control Surface oracle provides a valid branch index,
+    // or we fail-closed and crystallize a Control Surface escalation event.
+    const enabledOneOfById = new Map<string, Transition[]>();
+    for (const t of net.transitions) {
+      if (t.oneOfId === undefined || !isEnabled(t)) continue;
+      if (!enabledOneOfById.has(t.oneOfId)) enabledOneOfById.set(t.oneOfId, []);
+      enabledOneOfById.get(t.oneOfId)!.push(t);
+    }
+    for (const [oneOfId, branchTransitions] of enabledOneOfById) {
+      const sortedBranches = [...branchTransitions].sort(
+        (a, b) => (a.oneOfBranchIndex ?? 0) - (b.oneOfBranchIndex ?? 0)
+      );
+      const reason = sortedBranches[0]?.oneOfReason;
+      const oracleIdx =
+        options.resolveOneOf?.(oneOfId, sortedBranches.length, reason) ??
+        oneOfResolvedIndices.get(oneOfId);
+      const chosen =
+        oracleIdx !== undefined && Number.isInteger(oracleIdx)
+          ? sortedBranches.find((t) => t.oneOfBranchIndex === oracleIdx)
+          : undefined;
+      const csObj = ensureObject(`cs:${oneOfId}`, "ControlSurface");
+      csObj.relationships.push({ objectId: wfObj.id, qualifier: "governs" });
+      if (chosen) {
+        csObj.attributes.push({ name: "standing", value: "RESOLVED", time: new Date().toISOString() });
+        emitEvent(
+          "control_surface_resolved",
+          [
+            { name: "oneof_id", value: oneOfId },
+            { name: "branch_index", value: String(chosen.oneOfBranchIndex ?? 0) },
+            { name: "branch_count", value: String(sortedBranches.length) },
+            ...(reason ? [{ name: "reason", value: reason }] : [])
+          ],
+          [
+            { objectId: wfObj.id, qualifier: "workflow" },
+            { objectId: csObj.id, qualifier: "resolves" }
+          ]
+        );
+        fireSilent(chosen);
+        progress = true;
+      } else {
+        csObj.attributes.push({ name: "standing", value: "ESCALATED", time: new Date().toISOString() });
+        controlSurfaceEscalations.push({
+          oneOfId,
+          branchCount: sortedBranches.length,
+          ...(reason !== undefined ? { reason } : {}),
+          status: "CRYSTALLIZED"
+        });
+        haltedOnFailure = true;
+        refusalCode = "CONTROL_SURFACE_ESCALATION";
+        emitEvent(
+          "control_surface_escalation",
+          [
+            { name: "oneof_id", value: oneOfId },
+            { name: "branch_count", value: String(sortedBranches.length) },
+            { name: "status", value: "CRYSTALLIZED" },
+            ...(reason ? [{ name: "reason", value: reason }] : [])
+          ],
+          [
+            { objectId: wfObj.id, qualifier: "workflow" },
+            { objectId: csObj.id, qualifier: "escalates" }
+          ]
+        );
+        return false;
+      }
+    }
+
     // Silent XOR (or silent redo τ) with no visible competitor: fire exactly one.
     if (!net.transitions.some((t) => !t.silent && isEnabled(t))) {
       const enabledSilent = net.transitions.filter((t) => {
         if (!t.silent || !isEnabled(t)) return false;
+        if (t.oneOfId !== undefined) return false;
         const lid = t.loopExitFor;
         if (lid && redoArmedLoops.has(lid)) return false;
         return true;
@@ -1331,22 +1503,95 @@ export async function executePowlWithTokenReplay(
           }
         };
 
-        if (res?.ok) {
+        const issueProvisionalVoucher = (voucher: ProvisionalVoucherSpec) => {
+          const voucherObj = ensureObject(`voucher:${voucher.voucherId}`, "ProvisionalVoucher");
+          const debtObj = ensureObject(`debt:${voucher.cureObligationId}`, "CureObligationDebt");
+          voucherObj.relationships.push({ objectId: wfObj.id, qualifier: "part_of" });
+          debtObj.relationships.push({ objectId: wfObj.id, qualifier: "part_of" });
+          debtObj.relationships.push({ objectId: voucherObj.id, qualifier: "paired_with" });
+          voucherObj.attributes.push({ name: "standing", value: "PROVISIONAL", time: new Date().toISOString() });
+          debtObj.attributes.push({ name: "standing", value: "OPEN", time: new Date().toISOString() });
+          voucherLedger.set(voucher.cureObligationId, {
+            voucherId: voucher.voucherId,
+            cureObligationId: voucher.cureObligationId,
+            issuedByTransitionId: t.id,
+            discharged: false,
+            ...(voucher.reason !== undefined ? { reason: voucher.reason } : {})
+          });
+          voucherIssuedCount += 1;
+          emitEvent(
+            "voucher_issued",
+            [
+              { name: "voucher_id", value: voucher.voucherId },
+              { name: "cure_obligation_id", value: voucher.cureObligationId },
+              { name: "transition", value: t.id },
+              ...(voucher.reason ? [{ name: "reason", value: voucher.reason }] : [])
+            ],
+            [
+              { objectId: wfObj.id, qualifier: "workflow" },
+              { objectId: voucherObj.id, qualifier: "issues" },
+              { objectId: debtObj.id, qualifier: "incurs_debt" }
+            ]
+          );
+        };
+
+        const dischargeCureObligations = (ids: string[]) => {
+          for (const obligationId of ids) {
+            const entry = voucherLedger.get(obligationId);
+            if (!entry || entry.discharged) continue;
+            entry.discharged = true;
+            entry.dischargedByTransitionId = t.id;
+            cureObligationDischargedCount += 1;
+            const voucherObj = ensureObject(`voucher:${entry.voucherId}`, "ProvisionalVoucher");
+            const debtObj = ensureObject(`debt:${entry.cureObligationId}`, "CureObligationDebt");
+            voucherObj.attributes.push({ name: "standing", value: "SETTLED", time: new Date().toISOString() });
+            debtObj.attributes.push({ name: "standing", value: "DISCHARGED", time: new Date().toISOString() });
+            emitEvent(
+              "cure_obligation_discharged",
+              [
+                { name: "voucher_id", value: entry.voucherId },
+                { name: "cure_obligation_id", value: entry.cureObligationId },
+                { name: "transition", value: t.id }
+              ],
+              [
+                { objectId: wfObj.id, qualifier: "workflow" },
+                { objectId: voucherObj.id, qualifier: "settles" },
+                { objectId: debtObj.id, qualifier: "discharges" }
+              ]
+            );
+          }
+        };
+
+        const hasProvisionalVoucher = Boolean(res?.provisionalVoucher && !stepError);
+        if (res?.ok || hasProvisionalVoucher) {
           snap?.dispose();
           for (const p of net.post.get(t.id) ?? []) {
             marking.set(p, (marking.get(p) ?? 0) + 1);
             produced += 1;
           }
-          if (res.redo) pendingRedo = true;
+          if (res?.redo) pendingRedo = true;
           executedActivities.push(t.activityId ?? t.label);
+          if (res?.provisionalVoucher) {
+            issueProvisionalVoucher(res.provisionalVoucher);
+          }
+          const toDischarge: string[] = [];
+          if (res?.dischargesCureObligationId) toDischarge.push(res.dischargesCureObligationId);
+          if (res?.dischargesCureObligations) toDischarge.push(...res.dischargesCureObligations);
+          if (toDischarge.length > 0) {
+            dischargeCureObligations(toDischarge);
+          }
           const adj = aimd.onSuccess(serviceMs, {
-            ttftMs: res.ttftMs,
-            rpmHeadroomRatio: res.rpmHeadroomRatio,
-            tpmHeadroomRatio: res.tpmHeadroomRatio,
+            ttftMs: res?.ttftMs,
+            rpmHeadroomRatio: res?.rpmHeadroomRatio,
+            tpmHeadroomRatio: res?.tpmHeadroomRatio,
             interArrivalMs
           });
           const kingmanSnap = aimd.getKingmanSnapshot();
-          artObj.attributes.push({ name: "standing", value: "ALIVE", time: new Date().toISOString() });
+          artObj.attributes.push({
+            name: "standing",
+            value: res?.ok ? "ALIVE" : "PROVISIONAL",
+            time: new Date().toISOString()
+          });
           emitEvent(
             "transition_completed",
             [
@@ -1357,7 +1602,7 @@ export async function executePowlWithTokenReplay(
               { name: "cs2", value: kingmanSnap.cs2.toFixed(4) },
               { name: "rho", value: kingmanSnap.rho.toFixed(4) },
               { name: "lambda_alive", value: kingmanSnap.estimate.lambdaAlivePerSec.toFixed(4) },
-              ...(res.ttftMs !== undefined ? [{ name: "ttft_ms", value: String(res.ttftMs) }] : [])
+              ...(res?.ttftMs !== undefined ? [{ name: "ttft_ms", value: String(res.ttftMs) }] : [])
             ],
             [
               { objectId: wfObj.id, qualifier: "workflow" },
@@ -1525,11 +1770,40 @@ export async function executePowlWithTokenReplay(
     remaining += Math.max(0, count);
   }
 
+  const openCureObligations = [...voucherLedger.values()]
+    .filter((entry) => !entry.discharged)
+    .map((entry) => entry.cureObligationId);
+  const voucherDebt: VoucherDebtSummary = {
+    voucherIssued: voucherIssuedCount,
+    cureObligationDischarged: cureObligationDischargedCount,
+    openCureObligations,
+    invariantHolds:
+      openCureObligations.length === 0 && voucherIssuedCount === cureObligationDischargedCount
+  };
+  if (!voucherDebt.invariantHolds) {
+    if (!refusalCode) refusalCode = "UNSETTLED_CURE_OBLIGATION_DEBT";
+    emitEvent(
+      "cure_obligation_unsettled",
+      [
+        { name: "open_count", value: String(openCureObligations.length) },
+        { name: "open_obligations", value: openCureObligations.join(",") }
+      ],
+      [
+        { objectId: wfObj.id, qualifier: "workflow" },
+        ...openCureObligations.map((id) => ({ objectId: `debt:${id}`, qualifier: "blocks" }))
+      ]
+    );
+  }
+
   const fitness =
     0.5 * (1 - (consumed > 0 ? missing / consumed : 0)) +
     0.5 * (1 - (produced > 0 ? remaining / produced : 0));
   const soundTermination =
-    missing === 0 && remaining === 0 && !negativeMarking && !haltedOnFailure;
+    missing === 0 &&
+    remaining === 0 &&
+    !negativeMarking &&
+    !haltedOnFailure &&
+    voucherDebt.invariantHolds;
 
   const replay: ReplayMetrics = { produced, consumed, missing, remaining, fitness, soundTermination };
   const alignment = alignTraceAStar(net, executedActivities);
@@ -1545,6 +1819,9 @@ export async function executePowlWithTokenReplay(
     objectTypes: [
       { name: "Workflow", attributes: [{ name: "standing", type: "string" }] },
       { name: "Artifact", attributes: [{ name: "standing", type: "string" }] },
+      { name: "ControlSurface", attributes: [{ name: "standing", type: "string" }] },
+      { name: "ProvisionalVoucher", attributes: [{ name: "standing", type: "string" }] },
+      { name: "CureObligationDebt", attributes: [{ name: "standing", type: "string" }] },
       { name: "workspace_snapshot", attributes: [] }
     ],
     eventTypes: [
@@ -1605,6 +1882,48 @@ export async function executePowlWithTokenReplay(
           { name: "signature", type: "string" },
           { name: "detail", type: "string" }
         ]
+      },
+      {
+        name: "control_surface_escalation",
+        attributes: [
+          { name: "oneof_id", type: "string" },
+          { name: "branch_count", type: "string" },
+          { name: "status", type: "string" },
+          { name: "reason", type: "string" }
+        ]
+      },
+      {
+        name: "control_surface_resolved",
+        attributes: [
+          { name: "oneof_id", type: "string" },
+          { name: "branch_index", type: "string" },
+          { name: "branch_count", type: "string" },
+          { name: "reason", type: "string" }
+        ]
+      },
+      {
+        name: "voucher_issued",
+        attributes: [
+          { name: "voucher_id", type: "string" },
+          { name: "cure_obligation_id", type: "string" },
+          { name: "transition", type: "string" },
+          { name: "reason", type: "string" }
+        ]
+      },
+      {
+        name: "cure_obligation_discharged",
+        attributes: [
+          { name: "voucher_id", type: "string" },
+          { name: "cure_obligation_id", type: "string" },
+          { name: "transition", type: "string" }
+        ]
+      },
+      {
+        name: "cure_obligation_unsettled",
+        attributes: [
+          { name: "open_count", type: "string" },
+          { name: "open_obligations", type: "string" }
+        ]
       }
     ],
     objects: [...objects.values()],
@@ -1649,7 +1968,9 @@ export async function executePowlWithTokenReplay(
           wasm4pmCompatChecked,
           bottlenecks,
           ...(refusalCode ? { refusalCode } : {}),
-          ...(rolledBackCount > 0 ? { rolledBackCount } : {})
+          ...(rolledBackCount > 0 ? { rolledBackCount } : {}),
+          controlSurfaceEscalations,
+          voucherDebt
         },
         null,
         2
@@ -1669,7 +1990,9 @@ export async function executePowlWithTokenReplay(
     equilibriumWip: aimd.peakEquilibriumWip,
     bottlenecks,
     ...(refusalCode ? { refusalCode } : {}),
-    ...(rolledBackCount > 0 ? { rolledBackCount } : {})
+    ...(rolledBackCount > 0 ? { rolledBackCount } : {}),
+    controlSurfaceEscalations,
+    voucherDebt
   };
 }
 

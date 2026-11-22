@@ -1,6 +1,10 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { createPermissionPreview } from "../packages/zcode-tui/src/index.ts";
+import { runRuntime } from "../src/launcher.ts";
 import {
   getSessionAutomationBiasMonitor,
   PermissionPreview,
@@ -78,8 +82,11 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
     expect(enforceOversightArgs(["--permission-mode", "acceptEdits"], highRiskCfg, {}).allowed).toBe(true);
     expect(enforceOversightArgs(["--permission-mode=plan"], highRiskCfg, {}).allowed).toBe(true);
     expect(
-      enforceOversightArgs(["--prompt", "--dangerously-skip-permissions", "--", "--mode", "yolo"], highRiskCfg, {})
-        .allowed
+      enforceOversightArgs(
+        ["--prompt", "--dangerously-skip-permissions", "--", "--mode", "yolo"],
+        highRiskCfg,
+        { ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "1", ZCODE_OVERSEER_ID: "alice-eu" }
+      ).allowed
     ).toBe(true);
     expect(enforceOversightArgs(["--mode"], highRiskCfg, {}).allowed).toBe(true);
     expect(enforceOversightArgs(["--mode", "yolo"], stdCfg, {}).allowed).toBe(true);
@@ -628,5 +635,149 @@ describe("F09: EU AI Act Art. 14 Human Oversight Hardening", () => {
     expect(sharedMonitor.consecutiveFastApprovals).toBe(0);
 
     resetSessionAutomationBiasMonitor(sessionId);
+  });
+
+  test("regression (G07-G08-Art14): enforceOversightArgs refuses unattested headless flags under high-risk profiles and admits with explicit attestation + overseer_id", () => {
+    const highRiskCfg = parseComplianceConfigToml(
+      '[compliance]\nprofile = "high-risk-annex-iii"\n[deployer]\noverseer_id = "alice-eu"\n',
+      { env: {} }
+    );
+    const annexICfg = parseComplianceConfigToml(
+      '[compliance]\nprofile = "high-risk-annex-i"\n[deployer]\noverseer_id = "alice-eu"\n',
+      { env: {} }
+    );
+    const art50Cfg = parseComplianceConfigToml(
+      '[compliance]\nprofile = "art50-only"\nallow_yolo = false\n',
+      { env: {} }
+    );
+
+    const headlessArgLists: string[][] = [
+      ["-p", "run shell command"],
+      ["-phello"],
+      ["--prompt", "run shell command"],
+      ["--prompt=run shell command"],
+      ["--output-format", "stream-json"],
+      ["--output-format=stream-json"],
+      ["-p", "run shell command", "--output-format", "stream-json"]
+    ];
+
+    for (const cfg of [highRiskCfg, annexICfg]) {
+      for (const argv of headlessArgLists) {
+        for (const badEnv of [
+          {},
+          { ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "1" },
+          { ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "1", ZCODE_OVERSEER_ID: "   " },
+          { ZCODE_OVERSEER_ID: "alice-eu" },
+          { ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "0", ZCODE_OVERSEER_ID: "alice-eu" }
+        ]) {
+          let caught: unknown;
+          try {
+            enforceOversightArgs(argv, cfg, badEnv);
+          } catch (e) {
+            caught = e;
+          }
+          expect(caught).toBeInstanceOf(ComplianceRefusalError);
+          expect((caught as ComplianceRefusalError).code).toBe("OVERSIGHT_POLICY_REFUSED");
+          expect((caught as ComplianceRefusalError).exitCode).toBe(1);
+        }
+
+        // Admitted when both ZCODE_HEADLESS_OVERSIGHT_ATTESTED=1 and non-empty ZCODE_OVERSEER_ID are set
+        expect(
+          enforceOversightArgs(argv, cfg, {
+            ZCODE_HEADLESS_OVERSIGHT_ATTESTED: "1",
+            ZCODE_OVERSEER_ID: "alice-eu"
+          }).allowed
+        ).toBe(true);
+      }
+    }
+
+    // Non-high-risk regulated profile (art50-only) still allows headless flags without attestation
+    for (const argv of headlessArgLists) {
+      expect(enforceOversightArgs(argv, art50Cfg, {}).allowed).toBe(true);
+    }
+  });
+
+  test("regression (G07-G08-Declare): runRuntime evaluates DECLARE rules post-session and fails closed on mandatory violation", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "zcode-declare-rt-"));
+    const ocelDir = join(tmp, "ocel");
+    const workDir = join(tmp, "work");
+    const prevOcelDir = process.env.ZCODE_OCEL_DIR;
+    const prevOcel = process.env.ZCODE_OCEL;
+    try {
+      process.env.ZCODE_OCEL_DIR = ocelDir;
+      process.env.ZCODE_OCEL = "1";
+      const cfg = parseComplianceConfigToml(
+        '[compliance]\nprofile = "high-risk-annex-iii"\n[deployer]\noverseer_id = "alice-eu"\n',
+        { env: {} }
+      );
+
+      // 1) Violating runtime: emits tool.updated without preceding permission.resolved (violates DEC-PREC-ART14)
+      const violatingScript = join(tmp, "violating-runtime.mjs");
+      writeFileSync(
+        violatingScript,
+        [
+          'const evs = [',
+          '  { type: "session.created", eventId: "ev_1", timestamp: "2026-11-22T07:00:00.000Z", sessionId: "sess_decl_bad" },',
+          '  { type: "turn.started", eventId: "ev_2", timestamp: "2026-11-22T07:00:01.000Z", sessionId: "sess_decl_bad", turnId: "turn_1" },',
+          '  { type: "tool.updated", eventId: "ev_3", timestamp: "2026-11-22T07:00:02.000Z", sessionId: "sess_decl_bad", turnId: "turn_1", payload: { toolCallId: "tc_1", toolName: "Bash", status: "running" } },',
+          '  { type: "turn.completed", eventId: "ev_4", timestamp: "2026-11-22T07:00:03.000Z", sessionId: "sess_decl_bad", turnId: "turn_1" }',
+          '];',
+          'for (const e of evs) process.stdout.write(JSON.stringify(e) + "\\n");'
+        ].join("\n")
+      );
+
+      const badExit = await runRuntime(
+        process.execPath,
+        ["-p", "test", "--output-format", "stream-json"],
+        {},
+        { config: cfg, providerId: "test", modelId: "test", sessionId: "sess_decl_bad" },
+        { runtimeScriptPath: violatingScript, cwd: tmp }
+      );
+      expect(badExit).toBe(1);
+
+      const receiptFiles = readdirSync(ocelDir).filter((f) => f.endsWith(".receipt.json"));
+      expect(receiptFiles.length).toBeGreaterThanOrEqual(1);
+      const receipt = JSON.parse(readFileSync(join(ocelDir, receiptFiles[0]!), "utf8")) as {
+        declare_conformance?: {
+          standing: string;
+          refusal_code: string;
+          violated_rules: Array<{ id: string }>;
+        };
+      };
+      expect(receipt.declare_conformance?.standing).toBe("REFUSED");
+      expect(receipt.declare_conformance?.refusal_code).toBe("DECLARE_CONFORMANCE_VIOLATION");
+      expect(receipt.declare_conformance?.violated_rules.some((r) => r.id === "DEC-PREC-ART14")).toBe(true);
+
+      // 2) Conforming runtime: permission.resolved precedes tool.updated
+      const okScript = join(tmp, "conforming-runtime.mjs");
+      writeFileSync(
+        okScript,
+        [
+          'const evs = [',
+          '  { type: "session.created", eventId: "ev_10", timestamp: "2026-11-22T07:01:00.000Z", sessionId: "sess_decl_ok" },',
+          '  { type: "turn.started", eventId: "ev_11", timestamp: "2026-11-22T07:01:01.000Z", sessionId: "sess_decl_ok", turnId: "turn_1" },',
+          '  { type: "permission.resolved", eventId: "ev_12", timestamp: "2026-11-22T07:01:02.000Z", sessionId: "sess_decl_ok", turnId: "turn_1", payload: { requestId: "perm_1", decision: "allow" } },',
+          '  { type: "tool.updated", eventId: "ev_13", timestamp: "2026-11-22T07:01:03.000Z", sessionId: "sess_decl_ok", turnId: "turn_1", payload: { toolName: "Bash", status: "running" } },',
+          '  { type: "turn.completed", eventId: "ev_14", timestamp: "2026-11-22T07:01:04.000Z", sessionId: "sess_decl_ok", turnId: "turn_1" }',
+          '];',
+          'for (const e of evs) process.stdout.write(JSON.stringify(e) + "\\n");'
+        ].join("\n")
+      );
+
+      const okExit = await runRuntime(
+        process.execPath,
+        ["-p", "test", "--output-format", "stream-json"],
+        {},
+        { config: cfg, providerId: "test", modelId: "test", sessionId: "sess_decl_ok" },
+        { runtimeScriptPath: okScript, cwd: tmp }
+      );
+      expect(okExit).toBe(0);
+    } finally {
+      if (prevOcelDir === undefined) delete process.env.ZCODE_OCEL_DIR;
+      else process.env.ZCODE_OCEL_DIR = prevOcelDir;
+      if (prevOcel === undefined) delete process.env.ZCODE_OCEL;
+      else process.env.ZCODE_OCEL = prevOcel;
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

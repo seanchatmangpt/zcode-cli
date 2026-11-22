@@ -111,16 +111,37 @@ export function enforceOversightArgs(
   }
 
   let observedMode: string | undefined;
+  let headlessFlag: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--") break;
 
-    if (VALUE_TAKING_NON_MODE_FLAGS.has(arg)) {
+    if (arg === "-p" || arg === "--prompt") {
+      headlessFlag ??= arg;
       i++;
       continue;
     }
+    if (arg.startsWith("--prompt=")) {
+      headlessFlag ??= "--prompt";
+      continue;
+    }
     if (arg.startsWith("-p") && arg.length > 2 && !arg.startsWith("--")) {
+      headlessFlag ??= "-p";
+      continue;
+    }
+    if (arg === "--output-format" || arg.startsWith("--output-format=")) {
+      const inline = arg.startsWith("--output-format=");
+      const val = inline ? arg.slice("--output-format=".length) : args[i + 1];
+      if (!inline && val !== undefined) i++;
+      if (val !== undefined && val.trim().toLowerCase() === "stream-json") {
+        headlessFlag ??= "--output-format stream-json";
+      }
+      continue;
+    }
+
+    if (VALUE_TAKING_NON_MODE_FLAGS.has(arg)) {
+      i++;
       continue;
     }
 
@@ -196,6 +217,18 @@ export function enforceOversightArgs(
         observedMode = val.trim();
       }
       continue;
+    }
+  }
+
+  if (isHighRiskProfile(profile) && headlessFlag !== undefined) {
+    const attested = env.ZCODE_HEADLESS_OVERSIGHT_ATTESTED?.trim() === "1";
+    const overseerId = (env.ZCODE_OVERSEER_ID ?? "").trim();
+    if (!attested || !overseerId) {
+      throw new ComplianceRefusalError(
+        "OVERSIGHT_POLICY_REFUSED",
+        `Headless/non-TUI flag '${headlessFlag}' under high-risk profile '${profile}' requires ZCODE_HEADLESS_OVERSIGHT_ATTESTED=1 and non-empty ZCODE_OVERSEER_ID (EU AI Act Art. 14).`,
+        "R_missing_authority"
+      );
     }
   }
 

@@ -37,6 +37,12 @@ All Client feedback, change requests, and approvals enter exclusively through **
 
 **Prohibited Channels:** WhatsApp, SMS, Slack DMs, and ad-hoc phone calls are out-of-band and do not create binding work orders or SLA clocks.
 
+## 5. Civic, Church & Patronage Addendum (CindyCat — Front Door #2)
+When a church, 501(c)(3), or civic engagement is underwritten by a third-party patron through **CindyCat — Her Patronage Restored** (woman-owned house; manifest: [`brands/cindycat.brand.toml`](../../brands/cindycat.brand.toml)), this SOW incorporates by reference the **CindyCat Patronage Specification & Reverse Gloo Addendum** ([`docs/gtm/cindycat-patronage-spec-and-reverse-gloo.md`](./cindycat-patronage-spec-and-reverse-gloo.md)), enforcing all three patronage non-negotiables:
+1. **Zero-Custody Direct-to-Vendor Settlement:** Direct patron-to-vendor settlement via Stripe Connect or direct invoicing (`0%` custody, `0.00%` skimming / zero transaction rent).
+2. **Embedded Third-Party Payer Clause:** Patron payment satisfies Client's `$5,000/week` Monday prepaid obligation dollar-for-dollar without granting Patron any ownership, access, or governance rights over Client-EIN accounts or data.
+3. **Automated `>$250` IRS Written Acknowledgment (`IRC §170(f)(8)`):** Contemporaneous written acknowledgment automatically emitted for every patronage tranche `>= $250` with beneficiary EIN, date, amount, and explicit goods-or-services statement.
+
 ---
 
 **Accepted & Sealed:**  

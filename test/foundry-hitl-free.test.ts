@@ -699,4 +699,205 @@ describe("HITL-free foundry loop (Chicago zero-mock)", () => {
     });
     expect(badExitFindings.filter((f) => f.rule === "MALFORMED_REPLAY_COMMAND").length).toBe(2);
   });
+
+  test("G06-G12 Saga LIFO compensation + lifecycleSavepoint reverts T1 git commit and file edits when T2 fails court", async () => {
+    const repo = initMultiWoGitRepo();
+    const initialHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repo,
+      encoding: "utf8"
+    }).trim();
+    const outDir = join(repo, ".sjira-out");
+    const candidatesPath = join(repo, "candidates.jsonl");
+    writeFileSync(
+      candidatesPath,
+      [
+        JSON.stringify({
+          id: "T1",
+          label: "Mutate a.txt and pass",
+          objectType: "WorkOrder",
+          standing: "UNKNOWN",
+          targetFile: "a.txt"
+        }),
+        JSON.stringify({
+          id: "T2",
+          label: "Mutate b.txt and fail court",
+          objectType: "WorkOrder",
+          standing: "UNKNOWN",
+          targetFile: "b.txt",
+          dependsOn: ["T1"]
+        })
+      ].join("\n") + "\n"
+    );
+
+    try {
+      const source = new SjiraWorkOrderSource({
+        cwd: repo,
+        candidatesPath,
+        ledgerPath: join(outDir, "ledger.jsonl"),
+        outDir,
+        enforceMinGgenAncestor: false
+      });
+      // Court passes when b.txt === "ok" (so T1 passes after mutating a.txt, T2 fails after mutating b.txt to "bad")
+      const court = new RepoVerifierCourtAdapter({
+        commands: [
+          [
+            "node",
+            "-e",
+            "const fs=require('fs'); process.exit(fs.readFileSync('b.txt','utf8').trim()==='ok' ? 0 : 1)"
+          ]
+        ]
+      });
+
+      const result = await runFoundryLoop({
+        source,
+        courts: [court],
+        workspaceDir: repo,
+        dryRun: false,
+        maxCycles: 1,
+        untilDrained: true,
+        transactionalRollback: true,
+        autoCommitAlive: true,
+        executor: async (t) => {
+          const actId = t.activityId ?? t.id;
+          if (actId === "T1") {
+            writeFileSync(join(repo, "a.txt"), "mutated-by-t1\n");
+            return { ok: true, exitCode: 0, detail: "t1-ok" };
+          }
+          if (actId === "T2") {
+            writeFileSync(join(repo, "b.txt"), "bad\n");
+            return { ok: true, exitCode: 0, detail: "t2-breaks-court" };
+          }
+          return { ok: false, exitCode: 1, detail: `unexpected:${actId}` };
+        }
+      });
+
+      expect(result.aggregateStanding).toBe("REFUSED");
+      expect(result.commitsCreated).toEqual([]);
+      expect(result.compensatedSteps).toContain("T1");
+      const headAfter = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repo,
+        encoding: "utf8"
+      }).trim();
+      expect(headAfter).toBe(initialHead);
+      expect(readFileSync(join(repo, "a.txt"), "utf8").trim()).toBe("broken");
+      expect(readFileSync(join(repo, "b.txt"), "utf8").trim()).toBe("ok");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("G06-G12 R_t -> O*_{t+1} persists ALIVE standing to candidates.jsonl and advances frontier without deriveFollowUpPowl fallback", async () => {
+    const repo = initMultiWoGitRepo();
+    const outDir = join(repo, ".sjira-out");
+    const candidatesPath = join(repo, "candidates.jsonl");
+    writeFileSync(
+      candidatesPath,
+      [
+        JSON.stringify({
+          id: "WO-A",
+          label: "Fix a.txt",
+          objectType: "WorkOrder",
+          standing: "UNKNOWN",
+          targetFile: "a.txt"
+        }),
+        JSON.stringify({
+          id: "WO-B",
+          label: "Fix b.txt",
+          objectType: "WorkOrder",
+          standing: "UNKNOWN",
+          targetFile: "b.txt",
+          dependsOn: ["WO-A"]
+        })
+      ].join("\n") + "\n"
+    );
+
+    try {
+      const source = new SjiraWorkOrderSource({
+        cwd: repo,
+        candidatesPath,
+        ledgerPath: join(outDir, "ledger.jsonl"),
+        outDir,
+        enforceMinGgenAncestor: false
+      });
+      const court = new RepoVerifierCourtAdapter({
+        commands: [
+          [
+            "node",
+            "-e",
+            "const fs=require('fs'); process.exit(fs.readFileSync('a.txt','utf8').trim()==='ok' && fs.readFileSync('b.txt','utf8').trim()==='ok' ? 0 : 1)"
+          ]
+        ]
+      });
+
+      const executedByCycle: string[] = [];
+      let bAttempts = 0;
+      const result = await runFoundryLoop({
+        source,
+        courts: [court],
+        workspaceDir: repo,
+        dryRun: false,
+        maxCycles: 2,
+        untilDrained: true,
+        transactionalRollback: true,
+        autoCommitAlive: false,
+        executor: async (t) => {
+          const actId = t.activityId ?? t.id;
+          executedByCycle.push(actId);
+          if (actId === "WO-A") {
+            writeFileSync(join(repo, "a.txt"), "ok\n");
+            return { ok: true, exitCode: 0, detail: "a-ok" };
+          }
+          if (actId === "WO-B") {
+            bAttempts += 1;
+            if (bAttempts === 1) {
+              writeFileSync(join(repo, "b.txt"), "broken-b\n");
+              return { ok: true, exitCode: 0, detail: "b-fail-first" };
+            }
+            writeFileSync(join(repo, "b.txt"), "ok\n");
+            return { ok: true, exitCode: 0, detail: "b-ok-second" };
+          }
+          return { ok: false, exitCode: 1, detail: `unexpected:${actId}` };
+        }
+      });
+
+      expect(result.converged).toBe(true);
+      expect(result.aggregateStanding).toBe("ALIVE");
+      expect(result.cycles.length).toBe(2);
+      // Cycle 1 ran WO-A (ALIVE) and WO-B (REFUSED); Cycle 2 advanced frontier to only WO-B (no WO-A repeat, no synthetic remediate-2-*).
+      expect(executedByCycle).toEqual(["WO-A", "WO-B", "WO-B"]);
+
+      const persisted = readFileSync(candidatesPath, "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as { id: string; standing: string });
+      expect(persisted.find((c) => c.id === "WO-A")?.standing).toBe("ALIVE");
+      expect(persisted.find((c) => c.id === "WO-B")?.standing).toBe("ALIVE");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("G06-G12 default foundry candidates.jsonl includes valid targetFile scope for --live mode", () => {
+    const repo = initTempGitRepo();
+    try {
+      const binPath = resolve(import.meta.dir, "../bin/zcode.ts");
+      const r = spawnSync("bun", [binPath, "foundry", "--dry-run", "--repo", repo], {
+        cwd: resolve(import.meta.dir, ".."),
+        encoding: "utf8",
+        timeout: 15_000
+      });
+      expect(r.status).toBe(2);
+      const autoCandidatesPath = join(repo, ".sjira", "foundry-out", "candidates.jsonl");
+      expect(existsSync(autoCandidatesPath)).toBe(true);
+      const row = JSON.parse(readFileSync(autoCandidatesPath, "utf8").trim()) as {
+        id: string;
+        targetFile?: string;
+      };
+      expect(typeof row.targetFile).toBe("string");
+      expect(row.targetFile!.length).toBeGreaterThan(0);
+      expect(row.targetFile).toBe("state.txt");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 25_000);
 });

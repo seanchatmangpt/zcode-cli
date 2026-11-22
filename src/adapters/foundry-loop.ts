@@ -20,7 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -77,6 +77,8 @@ export interface FoundryLoopOptions {
    * returns ok. Live callers inject createZcodeAgentExecutor(...).
    */
   executor?: (t: Transition) => Promise<ExecutionOutcome>;
+  /** Optional candidates.jsonl path for R_t -> O*_{t+1} standing persistence. */
+  candidatesPath?: string;
   outputDir?: string;
 }
 
@@ -89,6 +91,7 @@ export interface FoundryLoopResult {
   converged: boolean;
   retryBudgetExhausted: boolean;
   commitsCreated: string[];
+  compensatedSteps: string[];
 }
 
 /**
@@ -113,7 +116,8 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       powlRootId: "preflight-refused",
       converged: false,
       retryBudgetExhausted: false,
-      commitsCreated: []
+      commitsCreated: [],
+      compensatedSteps: []
     };
   }
 
@@ -123,6 +127,17 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   const cycles: OcelPowlRunResult[] = [];
   const receipts: TransitionReceipt[] = [];
   const commitsCreated: string[] = [];
+  const compensatedSteps: string[] = [];
+  const committedSteps: Array<{
+    transitionId: string;
+    label: string;
+    commitSha: string | null;
+    preHeadSha: string | undefined;
+  }> = [];
+  const completedAliveIds = new Set<string>();
+  const effectiveCandidatesPath =
+    opts.candidatesPath ??
+    (opts.source as { paths?: { candidatesPath?: string } }).paths?.candidatesPath;
   const maxCycles = opts.maxCycles ?? 1;
   const untilDrained = opts.untilDrained ?? true;
   const useRollback = opts.transactionalRollback ?? !opts.dryRun;
@@ -132,6 +147,15 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
   let converged = false;
   let retryBudgetExhausted = false;
   let rollbackFault: { transitionId: string; detail: string } | null = null;
+  let lifecycleSavepoint: WorkspaceSnapshotHandle | null = null;
+  if (useRollback && existsSync(opts.workspaceDir)) {
+    try {
+      lifecycleSavepoint = captureWorkspaceSnapshot(opts.workspaceDir);
+    } catch {
+      // Defer to per-transition snapshot capture so transition-scoped diagnostics still record.
+      lifecycleSavepoint = null;
+    }
+  }
 
   const defaultExecutor = async (t: Transition): Promise<ExecutionOutcome> => {
     if (opts.dryRun) {
@@ -251,10 +275,17 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
 
           // Verified ALIVE transition: optionally commit atomically on canonical branch.
           priorDiagnostics.delete(t.activityId ?? t.id);
+          let commitSha: string | null = null;
           if (opts.autoCommitAlive && !opts.dryRun && existsSync(join(opts.workspaceDir, ".git"))) {
-            const sha = commitAliveTransition(opts.workspaceDir, t);
-            if (sha) commitsCreated.push(sha);
+            commitSha = commitAliveTransition(opts.workspaceDir, t);
+            if (commitSha) commitsCreated.push(commitSha);
           }
+          committedSteps.push({
+            transitionId: t.activityId ?? t.id,
+            label: t.label,
+            commitSha,
+            preHeadSha: preHead
+          });
           return res;
         } finally {
           snapshot?.dispose();
@@ -292,7 +323,14 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       };
       receipts.push(receipt);
       cycleReceipts.push(receipt);
+      if (receipt.standing === "ALIVE") {
+        completedAliveIds.add(workOrderId);
+      }
       await opts.source.recordOutcome(receipt);
+    }
+
+    if (effectiveCandidatesPath && completedAliveIds.size > 0) {
+      persistAliveStandingsToCandidates(effectiveCandidatesPath, completedAliveIds);
     }
 
     if (rollbackFault) {
@@ -318,14 +356,23 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
       // Closed-loop recursion R_t -> O*_{t+1}: re-ingest frontier after recordOutcome
       // so persisted receipts and updated standings feed into the next cycle.
       const refreshedFrontier = await opts.source.ingestFrontier();
-      validatePowlTree(refreshedFrontier);
-      for (const [k, v] of collectTargetScopes(refreshedFrontier)) {
-        knownTargetScopes.set(k, v);
-      }
-      const refreshedSignature = frontierActivitySignature(refreshedFrontier);
-      if (refreshedSignature !== lastFrontierSignature) {
-        current = refreshedFrontier;
-        lastFrontierSignature = refreshedSignature;
+      const nextFrontier =
+        completedAliveIds.size > 0
+          ? pruneCompletedActivities(refreshedFrontier, completedAliveIds)
+          : refreshedFrontier;
+      if (nextFrontier) {
+        validatePowlTree(nextFrontier);
+        for (const [k, v] of collectTargetScopes(nextFrontier)) {
+          knownTargetScopes.set(k, v);
+        }
+        const refreshedSignature = frontierActivitySignature(nextFrontier);
+        if (refreshedSignature !== lastFrontierSignature) {
+          current = nextFrontier;
+          lastFrontierSignature = refreshedSignature;
+        } else {
+          current = propagateTargetScopes(deriveFollowUpPowl(run, c + 1), knownTargetScopes);
+          validatePowlTree(current);
+        }
       } else {
         current = propagateTargetScopes(deriveFollowUpPowl(run, c + 1), knownTargetScopes);
         validatePowlTree(current);
@@ -372,6 +419,33 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     exitCode = 2;
   }
 
+  // Saga LIFO compensation + lifecycleSavepoint rollback on terminal REFUSED / BLOCKED.
+  try {
+    if (useRollback && (aggregateStanding === "REFUSED" || aggregateStanding === "BLOCKED")) {
+      for (let i = committedSteps.length - 1; i >= 0; i -= 1) {
+        const entry = committedSteps[i]!;
+        compensatedSteps.push(entry.transitionId);
+        if (entry.commitSha && entry.preHeadSha && existsSync(join(opts.workspaceDir, ".git"))) {
+          if (revertGitCommitToPreHead(opts.workspaceDir, entry.preHeadSha)) {
+            const idx = commitsCreated.lastIndexOf(entry.commitSha);
+            if (idx !== -1) commitsCreated.splice(idx, 1);
+          }
+        }
+      }
+      if (lifecycleSavepoint) {
+        try {
+          lifecycleSavepoint.rollback(`lifecycle_${aggregateStanding.toLowerCase()}`, "__lifecycle__", true);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          priorDiagnostics.set("__lifecycle__", `lifecycle savepoint rollback failed: ${msg}`);
+        }
+      }
+    }
+  } finally {
+    lifecycleSavepoint?.dispose();
+    lifecycleSavepoint = null;
+  }
+
   // Net compile sanity (Gall: structural soundness of the simple system)
   compilePowlToWorkflowNet(current);
 
@@ -383,8 +457,76 @@ export async function runFoundryLoop(opts: FoundryLoopOptions): Promise<FoundryL
     powlRootId: cycles[0]?.workflowId ?? current.id,
     converged,
     retryBudgetExhausted,
-    commitsCreated
+    commitsCreated,
+    compensatedSteps
   };
+}
+
+function revertGitCommitToPreHead(workspaceDir: string, preHeadSha: string): boolean {
+  const res = spawnSync("git", ["reset", "--hard", preHeadSha], {
+    cwd: workspaceDir,
+    encoding: "utf8"
+  });
+  return res.status === 0;
+}
+
+function persistAliveStandingsToCandidates(
+  candidatesPath: string,
+  aliveIds: ReadonlySet<string>
+): boolean {
+  if (!existsSync(candidatesPath) || aliveIds.size === 0) return false;
+  const raw = readFileSync(candidatesPath, "utf8");
+  const lines = raw.split(/\r?\n/);
+  let changed = false;
+  const updated = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return line;
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof obj.id === "string" && aliveIds.has(obj.id) && obj.standing !== "ALIVE") {
+        obj.standing = "ALIVE";
+        changed = true;
+        return JSON.stringify(obj);
+      }
+    } catch {
+      // Preserve unparseable lines verbatim.
+    }
+    return line;
+  });
+  if (changed) {
+    writeFileSync(candidatesPath, updated.join("\n"));
+  }
+  return changed;
+}
+
+function pruneCompletedActivities(
+  node: PowlNode,
+  completedIds: ReadonlySet<string>
+): PowlNode | null {
+  if (node.kind === "activity") {
+    return completedIds.has(node.id) ? null : node;
+  }
+  if (node.kind === "partial_order") {
+    const remaining: PowlNode[] = [];
+    const remainingIds = new Set<string>();
+    for (const child of node.children) {
+      const pruned = pruneCompletedActivities(child, completedIds);
+      if (pruned) {
+        remaining.push(pruned);
+        remainingIds.add(pruned.id);
+      }
+    }
+    if (remaining.length === 0) return null;
+    const prunedOrder = node.order.filter(([u, v]) => remainingIds.has(u) && remainingIds.has(v));
+    return { ...node, children: remaining, order: prunedOrder };
+  }
+  if (node.kind === "xor") {
+    const branches = node.branches
+      .map((b) => pruneCompletedActivities(b, completedIds))
+      .filter((b): b is PowlNode => b !== null);
+    return branches.length > 0 ? { ...node, branches } : null;
+  }
+  return node;
 }
 
 function readGitHead(workspaceDir: string): string | undefined {

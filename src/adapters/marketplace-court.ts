@@ -17,6 +17,7 @@ export const PUBLIC_ONTOLOGY_PREFIXES = [
   "xsd:",
   "owl:",
   "sh:",
+  "shui:",
   "time:",
   "org:",
   "odrl:",
@@ -33,6 +34,8 @@ export const PUBLIC_ONTOLOGY_PREFIXES = [
   "urn:sha256:",
   "http://www.w3.org/",
   "https://www.w3.org/",
+  "http://www.w3.org/ns/shacl-ui#",
+  "http://www.w3.org/ns/shacl-ui/",
   "http://schema.org/",
   "https://schema.org/"
 ] as const;
@@ -120,20 +123,20 @@ export class MarketplaceCourtAdapter implements TransitionCourtAdapter {
       }
 
       const privateRq = join(dir, "gates", "000_forbid_private_namespaces.rq");
-      if (existsSync(privateRq)) {
-        const runner =
-          this.opts.runPrivateNsGate ??
-          ((rq, cwd) => {
-            // Default: structural scan of ontology for private IRIs when no Oxigraph hook.
-            return structuralPrivateNamespaceScan(cwd, rq);
-          });
-        const r = runner(privateRq, dir);
-        if (r.status !== 0) {
-          diagnostics.push(`private-namespace gate failed: ${(r.stderr || r.stdout).slice(0, 400)}`);
-          return refuse(diagnostics, digests);
-        }
-        digests["private_ns_gate"] = sha256(r.stdout || "ok");
+      const r = existsSync(privateRq)
+        ? (
+            this.opts.runPrivateNsGate ??
+            ((rq, cwd) => {
+              // Default: structural scan of ontology for private IRIs when no Oxigraph hook.
+              return structuralPrivateNamespaceScan(cwd, rq);
+            })
+          )(privateRq, dir)
+        : structuralPrivateNamespaceScan(dir, privateRq);
+      if (r.status !== 0) {
+        diagnostics.push(`private-namespace gate failed: ${(r.stderr || r.stdout).slice(0, 400)}`);
+        return refuse(diagnostics, digests);
       }
+      digests["private_ns_gate"] = sha256(r.stdout || "ok");
     }
 
     if (this.opts.forbidConsumerPacksTable) {

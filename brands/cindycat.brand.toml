@@ -1,0 +1,161 @@
+# CindyCat — Her Patronage Restored (Front Door #2, Woman-Owned House).
+# Gate 2 lock deliverable alongside brands/fourth-watch.brand.toml per docs/ecosystem-spec-27.1.1.md.
+# Ethical & commercial invariants: 0% custody, 0.00% skimming (zero transaction rent),
+# Luke 10:7 (flat craftsmanship fee), Matthew 6:3-4 (quiet patronage), Reverse Gloo.
+# Honesty: no 120 Hz / WebGPU / zero-DOM / 4-Cloud RAID GA / @fnox/* GA shipping.
+# CTA host: cos.fnox.io only (never revops.fnox.io).
+
+[brand]
+id = "cindycat"
+name = "CindyCat — Her Patronage Restored"
+short_name = "CindyCat"
+tagline = "Her Patronage Restored — Zero-Custody Civic & Church Stewardship"
+front_door = "front-door-2"
+ownership = "woman-owned-house"
+domain = "cindycat.org"
+intake_airlock = "https://cos.fnox.io/drop/:lease_id"
+intake_policy = "self-serve-airlock-only"
+discovery_calls = false
+target_verticals = ["church-anchor", "civic-patronage", "family-office", "woman-owned-house"]
+
+[messaging.triad]
+patronage = """
+Her Patronage Restored: 0% custody and 0.00% skimming on every dollar routed to
+church and civic infrastructure. Direct-to-vendor settlement via Stripe Connect
+or direct invoicing ensures patronage funds never touch platform operating accounts.
+"""
+craftsmanship = """
+Luke 10:7 — the worker is worthy of wages, never transaction rent. Monetization
+runs strictly on flat fees for craftsmanship and horizontal engineering, with
+zero neshek, zero percentage skim, and zero FinCEN money-transmitter custody.
+"""
+stewardship = """
+Matthew 6:3-4 — quiet patronage without vanity donor walls or performative
+charity. Reverse Gloo flips church-tech extraction on its head: 90% income tithe
+is the only goal, backed by an embedded third-party payer clause and automated
+>$250 IRS written acknowledgment under IRC §170(f)(8).
+"""
+
+[messaging.patronage]
+zero_custody_direct_settlement = true
+settlement_rails = ["stripe-connect-direct", "direct-to-vendor-invoicing"]
+embedded_third_party_payer_clause = true
+irs_written_acknowledgment_threshold_usd = 250
+irs_statutory_citation = "IRC §170(f)(8)"
+scripture_anchors = ["Luke 10:7", "Matthew 6:3-4"]
+reverse_gloo_goal = "90% income tithe is the only goal"
+spec_ref = "docs/gtm/cindycat-patronage-spec-and-reverse-gloo.md"
+
+[messaging.voice]
+register = "quiet-steadfast-restorative"
+prohibited_patterns = [
+  "book a demo",
+  "schedule a call",
+  "calendly.com",
+  "hop on a quick call",
+  "platform fee",
+  "processing skim",
+  "donor leaderboard",
+  "revops.fnox.io",
+  "120 Hz",
+  "120Hz",
+  "WebGPU GA",
+  "WebGPU shipping",
+  "zero-DOM shipping",
+  "4-Cloud RAID GA",
+  "@fnox/react",
+  "@fnox/* GA",
+  "@fnox package GA",
+]
+# Body prose only — no https/http/www (POST_EXTERNAL_LINK). Featured URL lives
+# in [messaging.cta].featured_url_template and surfaces in the first comment.
+required_cta = """
+Drop a read-only patronage or church-infrastructure packet at Featured
+/drop/:lease_id on cos.fnox.io. 0% custody, 0.00% skimming, direct-to-vendor
+settlement, and automated >$250 IRC §170(f)(8) written acknowledgment.
+"""
+
+[messaging.cta]
+featured_host = "cos.fnox.io"
+featured_path = "/drop/:lease_id"
+featured_url_template = "https://cos.fnox.io/drop/:lease_id"
+intake_policy = "self-serve-airlock-only"
+discovery_calls = false
+forbidden_hosts = ["revops.fnox.io"]
+drop_gated_note = "Featured CTA: SlotLease-gated until live cos /readyz 200 ∧ 2× durable LOW-only; host stays cos.fnox.io only."
+
+[messaging.commercial]
+custody_pct = 0.0
+skimming_pct = 0.0
+transaction_rent_pct = 0.0
+tithe_goal_pct = 90.0
+custom_redline_duty_usd = 25000
+target_verticals = ["church-anchor", "civic-patronage", "family-office", "woman-owned-house"]
+
+[messaging.redaction_court]
+forbid_private_client_names = true
+forbid_local_user_paths = true
+forbid_bearer_tokens = true
+forbid_external_links_in_post_body = true
+forbid_calendar_links = true
+require_public_anonymize = true
+
+# Top-level twin for castle::publish::brand::BrandManifest.redaction_court
+[redaction_court]
+forbid_private_client_names = true
+forbid_local_user_paths = true
+forbid_bearer_tokens = true
+forbid_external_links_in_post_body = true
+forbid_calendar_links = true
+require_public_anonymize = true
+
+[extensions.honesty]
+webgpu_120hz_status = "doc-only-not-shipping"
+zero_dom_status = "doc-only-not-shipping"
+raid_4cloud_status = "target-not-proven"
+intake_host_of_record = "cos.fnox.io"
+gate_lock = "Gate 2 (Dec 19-28, 2026) — Front Door #2"
+forbid_shipping_claims = [
+  "120Hz",
+  "120 Hz",
+  "WebGPU",
+  "zero-DOM",
+  "4-Cloud RAID GA",
+  "@fnox/* GA",
+  "@fnox package GA",
+]
+
+[tokens.dtcg]
+spec_version = "2025.10"
+surface_target = "css-theme-spacing"
+surface_target_note = "BrandTheme emits Tailwind @theme spacing. Zero-DOM WebGPU/Taffy AOT is aspirational, not this cut's shipping surface."
+
+[tokens.color]
+bg_linen = { value = "#FAF7F2", type = "color", description = "Primary warm parchment canvas" }
+bg_vellum = { value = "#F1EAE0", type = "color", description = "Elevated card & patronage ledger surface" }
+border_stone = { value = "#D6CBB8", type = "color", description = "1px hairline structural divider" }
+text_primary = { value = "#1C1917", type = "color", description = "High-contrast primary copy (warm charcoal)" }
+text_muted = { value = "#57534E", type = "color", description = "Secondary metadata & IRC §170(f)(8) receipt hashes" }
+accent_terracotta = { value = "#9A3412", type = "color", description = "Primary house seal & patronage highlight" }
+accent_olive = { value = "#3F6212", type = "color", description = "Stewardship & zero-custody verification accent" }
+status_alive = { value = "#15803D", type = "color", description = "Verified ALIVE / settled direct-to-vendor standing" }
+status_refused = { value = "#B91C1C", type = "color", description = "Fail-closed REFUSED standing" }
+status_partial = { value = "#B45309", type = "color", description = "PARTIAL_ALIVE / bounded caution" }
+
+[tokens.typography]
+font_display = { value = "Cormorant Garamond, Source Serif 4, Georgia, serif", type = "fontFamily" }
+font_body = { value = "Source Serif 4, Georgia, serif", type = "fontFamily" }
+font_mono = { value = "IBM Plex Mono, ui-monospace, monospace", type = "fontFamily" }
+scale_h1_px = { value = 48, type = "dimension" }
+scale_h2_px = { value = 32, type = "dimension" }
+scale_body_px = { value = 24, type = "dimension", description = "Carousel body floor (≥24pt LinkedIn court); UI body ≥18" }
+scale_caption_px = { value = 16, type = "dimension", description = "Caption floor = base ≥16 (no sub-16 UI type)" }
+base_min_px = { value = 16, type = "dimension", description = "Statutory / iOS auto-zoom floor" }
+
+[tokens.spacing]
+unit_px = { value = 8, type = "dimension" }
+touch_target_min_px = { value = 44, type = "dimension", description = "Apple HIG floor (tap ≥44); prefer 48 for primary CTAs" }
+touch_target_comfortable_px = { value = 48, type = "dimension" }
+carousel_width_px = { value = 1080, type = "dimension" }
+carousel_height_px = { value = 1350, type = "dimension" }
+safe_margin_px = { value = 72, type = "dimension" }

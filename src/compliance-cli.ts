@@ -289,7 +289,13 @@ function verifyWorkspaceProvenanceSidecars(
       ? exportPathMatches || matchesModifiedSpan
       : sidecar.artifact_sha256 !== undefined || sidecar.sha256 !== undefined || matchesModifiedSpan;
 
-    if (hasExportPath ? !matchesArtifact : !matchesSession && !matchesArtifact) continue;
+    if (!matchesSession && !matchesArtifact) continue;
+
+    if (hasExportPath && !exportPathMatches) {
+      errors.push(
+        `PROVENANCE_SEAL_FAILED: provenance sidecar '${name}' has unsealed or mismatched export_path '${String(sidecar.export_path)}' (expected '${inPath}').`
+      );
+    }
 
     // Unconditionally require schema_version === "1.0" and string seal_sha256 over the canonical
     // unsealed ProvenanceSidecarDocument fields

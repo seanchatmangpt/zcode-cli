@@ -18,7 +18,10 @@ import {
   SjiraWorkOrderSource,
   runFoundryLoop
 } from "../src/adapters/index.ts";
-import { structuralPrivateNamespaceScan } from "../src/adapters/marketplace-court.ts";
+import {
+  PUBLIC_ONTOLOGY_PREFIXES,
+  structuralPrivateNamespaceScan
+} from "../src/adapters/marketplace-court.ts";
 import { aggregateStanding, exitCodeForStanding } from "../src/adapters/receipt-sink.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures/sjira/candidates.jsonl");
@@ -274,6 +277,48 @@ describe("Chicago Gall foundry loop (zero-mock)", () => {
     const spoofRes = structuralPrivateNamespaceScan(spoofPack, rqPath);
     expect(spoofRes.status).toBe(1);
     expect(spoofRes.stderr).toContain("http://evil.example/http://www.w3.org/");
+  });
+
+  test("G01-Truex-Shui: admits shui: SHACL 1.2 UI and fails closed when 000_forbid_private_namespaces.rq is absent", async () => {
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("shui:");
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("http://www.w3.org/ns/shacl-ui#");
+    expect(PUBLIC_ONTOLOGY_PREFIXES).toContain("http://www.w3.org/ns/shacl-ui/");
+
+    const root = mkdtempSync(join(tmpdir(), "chicago-truex-shui-"));
+    const packDir = join(root, "packs", "ui-pack");
+    const ontDir = join(packDir, "ontology");
+    mkdirSync(ontDir, { recursive: true });
+    writeFileSync(
+      join(packDir, "pack.toml"),
+      '[pack]\nname = "ui-pack"\nversion = "0.1.0"\ndescription = "shui"\n'
+    );
+    // No gates/000_forbid_private_namespaces.rq exists in packDir.
+
+    // 1. Clean W3C SHACL 1.2 UI ontology passes verifyPostTransition
+    writeFileSync(
+      join(ontDir, "ui.ttl"),
+      "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+        "@prefix shui: <http://www.w3.org/ns/shacl-ui#> .\n" +
+        "<urn:uuid:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa> shui:editor <http://www.w3.org/ns/shacl-ui/TextFieldEditor> .\n"
+    );
+    const court = new MarketplaceCourtAdapter({
+      packDirs: [packDir],
+      requireDoubleCapsuleCheck: false
+    });
+    const cleanVerdict = await court.verifyPostTransition(root);
+    expect(cleanVerdict.exitCode).toBe(0);
+    expect(cleanVerdict.standing).toBe("ALIVE");
+    expect(cleanVerdict.artifactDigests.private_ns_gate).toBeTruthy();
+
+    // 2. Private namespace in pack ontology fails closed even without 000_forbid_private_namespaces.rq
+    writeFileSync(
+      join(ontDir, "leak.ttl"),
+      "@prefix zl: <https://zcode.dev/ontology/zcode-loop#> .\nzl:Event a <http://www.w3.org/2000/01/rdf-schema#Class> .\n"
+    );
+    const leakVerdict = await court.verifyPostTransition(root);
+    expect(leakVerdict.exitCode).toBe(1);
+    expect(leakVerdict.standing).toBe("REFUSED");
+    expect(leakVerdict.diagnostics.join("\n")).toContain("https://zcode.dev/ontology/zcode-loop#");
   });
 
   test("ERRC RAISE: ReceiptSink populates consequence/replay, fails closed on missing git HEAD, and preserves UNSUPPORTED (exit 3)", () => {

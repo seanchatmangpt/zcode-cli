@@ -458,8 +458,8 @@ export function discoverOcpn(
   }
 
   const variableKeySet = new Set<string>();
-  for (const div of ocdfg.divergence) {
-    variableKeySet.add(`${div.activity}::${div.objectType}`);
+  for (const conv of ocdfg.convergence) {
+    variableKeySet.add(`${conv.activity}::${conv.objectType}`);
   }
 
   const places: OcpnPlace[] = [];
