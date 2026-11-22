@@ -211,7 +211,10 @@ const constructThat = (
       exitCode: outcome.exitCode ?? 0,
       signal: null,
       outputTail: outcome.outputTail ?? `turn output for ${request.epochId}`,
-      durationMs: outcome.durationMs ?? 5
+      durationMs: outcome.durationMs ?? 5,
+      ...(outcome.ocelReceiptPath !== undefined ? { ocelReceiptPath: outcome.ocelReceiptPath } : {}),
+      ...(outcome.ocelPath !== undefined ? { ocelPath: outcome.ocelPath } : {}),
+      ...(outcome.ocelSessionId !== undefined ? { ocelSessionId: outcome.ocelSessionId } : {})
     };
   };
 };
@@ -981,6 +984,70 @@ describe("gall-work end-to-end against a mocked fabric", () => {
     expect(quals.has("worker")).toBe(true);
     expect(quals.has("subject")).toBe(true);
     expect(doc.events.some((event) => event.type === "receipt_persist")).toBe(true);
+    rmSync(ocelDir, { recursive: true, force: true });
+  });
+
+  test("seal-time dual-log join sidecar indexes stream↔gall by lease identity", async () => {
+    const { fabric, worktree, baseHead } = harness;
+    const ocelDir = mkdtempSync(join(tmpdir(), "gall-work-ocel-join-"));
+    const streamSession = "stream-sess-dual-join";
+    const streamOcelPath = join(ocelDir, `${streamSession}.jsonocel`);
+    // Placeholder stream seal — join indexes basenames; no merge/rehash.
+    writeFileSync(streamOcelPath, '{"events":[],"objects":[]}\n');
+    const descriptorPath = join(worktree, "..", "lease-descriptor-dual-join.json");
+    writeFileSync(
+      descriptorPath,
+      JSON.stringify({
+        ...leaseDescriptor(worktree),
+        epoch_id: epochId,
+        worker_id: workerId,
+        base_sha: baseHead
+      })
+    );
+    fabric.script([
+      { tool: "claim_next", respond: () => ({ ok: true, payload: claimPayload(worktree, baseHead) }) },
+      { tool: "heartbeat", respond: () => ({ ok: true, payload: { status: "renewed" } }) },
+      { tool: "close_candidate", respond: () => ({ ok: true, payload: { status: "closed", epoch_id: epochId, outcome: "alive" } }) }
+    ]);
+
+    const chunks: string[] = [];
+    const exit = await runGallWork(["--lease", descriptorPath, "--json"], {
+      env: { ...process.env, ZCODE_OCEL: "1", ZCODE_OCEL_DIR: ocelDir },
+      fabricTarget: { url: fabric.url },
+      construct: constructThat(worktree, {
+        exitCode: 0,
+        commitFile: "deliverable.txt",
+        ocelPath: streamOcelPath,
+        ocelSessionId: streamSession
+      }),
+      io: { stdout: captureStream(chunks), stderr: captureStream([]) }
+    });
+
+    expect(exit).toBe(0);
+    expect(JSON.parse(chunks.join("")).standing).toBe("ALIVE");
+    const gallOcel = join(ocelDir, `gall-work-${epochId}.jsonocel`);
+    const joinPath = join(ocelDir, `gall-work-${epochId}.join.json`);
+    expect(existsSync(gallOcel)).toBe(true);
+    expect(existsSync(streamOcelPath)).toBe(true);
+    expect(existsSync(joinPath)).toBe(true);
+    expect(existsSync(join(ocelDir, `gall-work-${epochId}.merged.jsonocel`))).toBe(false);
+    const manifest = JSON.parse(readFileSync(joinPath, "utf8")) as {
+      schema: string;
+      stream_ocel: string;
+      gall_ocel: string;
+      work_order_iri: string;
+      epoch_id: string;
+      sessions?: { stream?: string; gall?: string };
+    };
+    expect(manifest.schema).toBe("zcode.dual-log-join/1");
+    expect(manifest.stream_ocel).toBe(`${streamSession}.jsonocel`);
+    expect(manifest.gall_ocel).toBe(`gall-work-${epochId}.jsonocel`);
+    expect(manifest.work_order_iri).toBe("urn:gall:work-order:xaas:e2e");
+    expect(manifest.epoch_id).toBe(epochId);
+    expect(manifest.sessions).toEqual({
+      stream: streamSession,
+      gall: `gall-work-${epochId}`
+    });
     rmSync(ocelDir, { recursive: true, force: true });
   });
 

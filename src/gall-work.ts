@@ -54,19 +54,20 @@
 // (schema gall.work-result/1) plus the contract exit code, except where a
 // receipt was sealed. No partial silent states.
 //
-// Honesty — yolo grant is structural: construct always passes `--mode yolo`
-// because headless Bash has no permission client otherwise (see
-// runConstruct). The xaas-gate PreToolUse hook only emits deny; mute allow
-// is silent exit 0. Under yolo that mute is an effective host grant for
-// gate-allowlisted tools — required until a non-yolo headless permission
-// client exists. Do not pretend the gate "never grants" in this path.
+// Honesty — yolo mute-grant residual is OPEN: construct always passes
+// `--mode yolo` because headless Bash has no permission client otherwise
+// (see runConstruct). The xaas-gate PreToolUse hook only emits deny; mute
+// allow is silent exit 0. Under yolo that mute is an effective host grant
+// for gate-allowlisted tools. Ambient-env strips (WorkerEnv deny_names +
+// XAAS_SWEEP) close inheritance wideners only — they do not close this
+// residual. Closing it needs a non-yolo headless permission client.
 import { execFile } from "node:child_process";
 import { spawn as spawnChild, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { selectExecutionProvider, type ReadConfigText } from "./execution-providers.ts";
@@ -74,11 +75,10 @@ import {
   GALL_WORK_SOURCE,
   OcelRecorder,
   STREAM_SOURCE,
-  buildDualLogJoinManifest,
   leaseIdentityFromEnv,
   ocelDirectory,
   ocelEnabled,
-  writeDualLogJoinManifest
+  sealDualLogJoinIfBothExist
 } from "./ocel-tap.ts";
 import { resolveRuntimeNode } from "./runtime-node.ts";
 import {
@@ -885,6 +885,76 @@ export interface ConstructOutcome {
 const constructOutputTailBytes = 4096;
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * Fabric `WorkerEnv` deny_names (`priv/ultracode/runtime_surface.json`
+ * `worker_env.deny_names`). Gall-work spreads `process.env` into the
+ * construct child (unlike fabric's `/usr/bin/env -i` allowlist), so every
+ * denied name must be deleted after the spread — ambient inheritance is
+ * not an allowlist.
+ *
+ * Pin is the deny_names set only (small half). Full WorkerEnv parity would
+ * also refuse non-allowlisted names via prefixes/word-regex; that is not
+ * this strip. `XAAS_SWEEP` is handled separately in
+ * {@link CONSTRUCT_AMBIENT_WIDENERS}.
+ */
+export const WORKER_ENV_DENY_NAMES = [
+  "BASH_ENV",
+  "BOTO_CONFIG",
+  "CARGO_HOME",
+  "CURL_HOME",
+  "DATABASE_URL",
+  "DOCKER_HOST",
+  "DSN",
+  "ELIXIR_ERL_OPTIONS",
+  "ENV",
+  "ERL_AFLAGS",
+  "ERL_FLAGS",
+  "ERL_LIBS",
+  "ERL_ZFLAGS",
+  "GH_ENTERPRISE_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_PAT",
+  "GITHUB_TOKEN",
+  "GIT_ASKPASS",
+  "GNUPGHOME",
+  "HEX_API_KEY",
+  "HEX_HOME",
+  "HEX_MIRROR",
+  "HEX_UNSAFE_HTTPS",
+  "INTERNAL_API_TOKEN",
+  "KUBECONFIG",
+  "MIX_DEPS_PATH",
+  "MIX_EXS",
+  "NETRC",
+  "NODE_EXTRA_CA_CERTS",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NPM_TOKEN",
+  "OPENAI_API_KEY",
+  "PROMPT_COMMAND",
+  "RUSTUP_HOME",
+  "SECRET_KEY_BASE",
+  "SSH_ASKPASS",
+  "SSH_AUTH_SOCK",
+  "XAAS_ALLOW_SUBAGENTS",
+  "XAAS_SURFACE_PATH",
+  "XDG_CONFIG_HOME",
+  "ZDOTDIR"
+] as const;
+
+/**
+ * Names not in WorkerEnv deny_names but refused by omission on the fabric
+ * allowlist — ambient inheritance would widen the PreToolUse gate.
+ * `XAAS_SWEEP=1` expands read/git path checks beyond the leased worktree.
+ */
+export const CONSTRUCT_AMBIENT_WIDENERS = ["XAAS_SWEEP"] as const;
+
+/** Delete WorkerEnv-denied + ambient-widener names from a construct child env. */
+export function stripConstructChildEnv(env: NodeJS.ProcessEnv): void {
+  for (const name of WORKER_ENV_DENY_NAMES) delete env[name];
+  for (const name of CONSTRUCT_AMBIENT_WIDENERS) delete env[name];
+}
+
 export interface ConstructRunOptions {
   /** Abort signal: aborting kills the runtime turn (SIGTERM) -- cancellation/deadline. */
   signal?: AbortSignal;
@@ -913,10 +983,12 @@ export async function runConstruct(
   // falsified after the fact by the fabric's verifier court on the captured
   // head. The CLI flag (highest precedence) pins that authority explicitly
   // instead of leaving the turn to an interactive default.
-  // Residual (skeptic 95c8f80a): gate mute-allow is silent exit 0; under
+  //
+  // OPEN residual (yolo mute-grant): gate mute-allow is silent exit 0; under
   // yolo that is an effective host grant for allowlisted tools. Removing
-  // yolo re-breaks headless Bash; closing that residual needs a non-yolo
-  // headless permission client, not an ambient-env strip.
+  // yolo re-breaks headless Bash. Ambient-env strips below are the small
+  // half (WorkerEnv deny_names + XAAS_SWEEP); closing this residual needs
+  // a non-yolo headless permission client — tracked OPEN until that exists.
   const permissionArgs = ["--mode", "yolo"];
   const node = resolveRuntimeNode(process.env.ZCODE_NODE?.trim() || undefined);
   const started = Date.now();
@@ -940,15 +1012,12 @@ export async function runConstruct(
       : {}),
     ...(options.replayBinding ? { XAAS_REPLAY_BINDING: JSON.stringify(options.replayBinding) } : {})
   };
-  // Match fabric WorkerEnv deny_names for these two: ambient inheritance
-  // would let a parent process re-enable Agent spawning or point the gate
-  // at a widened surface policy. Fabric may keystore XAAS_SURFACE_PATH
-  // after WorkerEnv for its own spawn; gall-work never forwards either.
-  // XAAS_LEASE_ID is intentionally kept (fence key); only the deny_names
-  // pair is stripped.
+  // Spread then strip: match fabric WorkerEnv deny_names + strip ambient
+  // wideners (XAAS_SWEEP). leaseEnv wins on conflict; XAAS_LEASE_ID is kept
+  // (fence key). Fabric may keystore XAAS_SURFACE_PATH after WorkerEnv for
+  // its own spawn; gall-work never forwards deny_names or wideners.
   const childEnv: NodeJS.ProcessEnv = { ...process.env, ...leaseEnv };
-  delete childEnv.XAAS_ALLOW_SUBAGENTS;
-  delete childEnv.XAAS_SURFACE_PATH;
+  stripConstructChildEnv(childEnv);
   const ocel = ocelEnabled(process.env)
     ? new OcelRecorder(
         STREAM_SOURCE,
@@ -1723,26 +1792,24 @@ export async function runGallWork(
     if (lifecycle) {
       try {
         const gallSealed = lifecycle.finish();
-        // Dual-log join sidecar: index stream↔gall files by lease identity.
-        // No merge/rehash — basenames + optional session namespaces only.
+        // Dual-log join sidecar: index stream↔gall files by lease identity
+        // only when both OCEL files exist. No merge/rehash.
         const workOrderIri = request.descriptor?.work_order_iri;
         if (streamOcelSeal && workOrderIri) {
-          const manifest = buildDualLogJoinManifest({
-            streamOcel: basename(streamOcelSeal.ocelPath),
-            gallOcel: basename(gallSealed.ocelPath),
-            workOrderIri,
-            epochId: request.epochId,
-            streamSession: streamOcelSeal.sessionId,
-            gallSession: gallSealed.sessionId
-          });
-          if (manifest) {
-            try {
-              writeDualLogJoinManifest(ocelDirectory(env), manifest);
-            } catch (error) {
-              console.error(
-                `gall-work: ocel dual-log join write failed: ${error instanceof Error ? error.message : String(error)}`
-              );
-            }
+          try {
+            sealDualLogJoinIfBothExist({
+              dir: ocelDirectory(env),
+              streamOcelPath: streamOcelSeal.ocelPath,
+              gallOcelPath: gallSealed.ocelPath,
+              workOrderIri,
+              epochId: request.epochId,
+              streamSession: streamOcelSeal.sessionId,
+              gallSession: gallSealed.sessionId
+            });
+          } catch (error) {
+            console.error(
+              `gall-work: ocel dual-log join write failed: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
       } catch (error) {

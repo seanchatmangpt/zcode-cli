@@ -4,17 +4,19 @@
 // ontology-generated tap in ./generated/ocel.ts.
 // Nothing here knows an event type: mapping, hashing and receipts come from the generated modules.
 // Gated by ZCODE_OCEL=1; output directory ZCODE_OCEL_DIR (default ~/.zcode/ocel).
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
 import { Tap, verifyChain, type OcelDoc } from "./generated/ocel.ts";
 import { appendOutcome, appendPending, seal, unpaired, verify, type Chain, type Entry } from "./generated/receipt.ts";
 import {
+  containsUnredactedSecretsOrPii,
   createComplianceRedactor,
   pseudonymizeActor,
+  redactComplianceData,
   redactComplianceText,
   type ComplianceRedactor,
   type RedactComplianceOptions
@@ -103,21 +105,126 @@ export function leaseIdentityFromEnv(env: NodeJS.ProcessEnv): LeaseIdentity {
   };
 }
 
+const defaultLeaseRedactOptions: RedactComplianceOptions = { redactPii: true };
+
+/**
+ * Redact-or-refuse lease identity fields before OCEL bind / receipt write.
+ * `subjectCwd` is kept for git HEAD resolution only (never written to disk).
+ * A field that still trips `containsUnredactedSecretsOrPii` after redaction is
+ * dropped (refused) rather than bound — capability-snapshot fail-closed parity.
+ */
+export function sanitizeLeaseIdentity(
+  identity: LeaseIdentity,
+  options: RedactComplianceOptions = defaultLeaseRedactOptions
+): LeaseIdentity {
+  const scrub = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+    const redacted = redactComplianceText(value, options);
+    if (!redacted || containsUnredactedSecretsOrPii(redacted, options)) return undefined;
+    return redacted;
+  };
+  const out: LeaseIdentity = {};
+  if (identity.subjectCwd) out.subjectCwd = identity.subjectCwd;
+  const workOrderIri = scrub(identity.workOrderIri);
+  if (workOrderIri) out.workOrderIri = workOrderIri;
+  const epochId = scrub(identity.epochId);
+  if (epochId) out.epochId = epochId;
+  const baseSha = scrub(identity.baseSha);
+  if (baseSha && gitShaPattern.test(baseSha)) out.baseSha = baseSha;
+  if (identity.replayBinding) {
+    const replayBinding = redactComplianceData(identity.replayBinding, options) as Record<
+      string,
+      unknown
+    >;
+    if (!containsUnredactedSecretsOrPii(JSON.stringify(replayBinding), options)) {
+      out.replayBinding = replayBinding;
+    }
+  }
+  return out;
+}
+
+/**
+ * Fail-closed disk gate (CAPABILITY_SNAPSHOT `assert_no_secrets` parity): if the
+ * sealed OCEL still carries unredacted secrets/PII, refuse the secret husk and
+ * return a schema-only empty stub. Callers mark standing blocked when
+ * `redactionOk` is false.
+ */
+export function prepareOcelDiskWrite(
+  doc: OcelDoc,
+  options: RedactComplianceOptions = defaultLeaseRedactOptions
+): { diskDoc: OcelDoc; ocelText: string; redactionOk: boolean } {
+  const ocelText = JSON.stringify(doc);
+  if (!containsUnredactedSecretsOrPii(ocelText, options)) {
+    return { diskDoc: doc, ocelText, redactionOk: true };
+  }
+  // Refuse secret husk: keep type declarations, drop events/objects that leaked.
+  const diskDoc: OcelDoc = { ...doc, events: [], objects: [] };
+  const stubText = JSON.stringify(diskDoc);
+  if (containsUnredactedSecretsOrPii(stubText, options)) {
+    throw new Error("REDACTION_FAILURE: refusing to write OCEL with unredacted secrets or PII");
+  }
+  return { diskDoc, ocelText: stubText, redactionOk: false };
+}
+
+/**
+ * Scrub lease-identity string values through the compliance redactor before
+ * E2O bind / receipt write. Lease identity is re-injected *after* ingest
+ * redaction; without this pass, JWT/URL/Bearer/PEM shapes in work_order_iri /
+ * epoch / base_sha / subject would bypass the hash-chain gate
+ * (lie → implementation, 2026-11-21).
+ */
+export function redactLeaseIdentityFields(fields: Record<string, string>): Record<string, string> {
+  const scrubbed = redactComplianceData(fields, { redactPii: false }) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(scrubbed)) {
+    if (typeof value === "string" && value.length > 0) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Scrub a single lease-identity string; undefined when empty after redaction
+ * or when credential/PII survivors remain (redact-or-refuse).
+ */
+export function sanitizeLeaseIdentityString(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const scrubbed = redactLeaseIdentityFields({ value: trimmed }).value;
+  if (!scrubbed || scrubbed.length === 0) return undefined;
+  // Fail-closed: survivors after scrub refuse the field rather than bind raw.
+  if (containsUnredactedSecretsOrPii(scrubbed, { redactPii: false })) return undefined;
+  return scrubbed;
+}
+
+/** True when sealed OCEL text or planned receipt fields still carry secrets/PII. */
+export function isSecretfulOcelSeal(ocelText: string, receiptFields: unknown = {}): boolean {
+  const opts = { redactPii: true } as const;
+  if (containsUnredactedSecretsOrPii(ocelText, opts)) return true;
+  return containsUnredactedSecretsOrPii(JSON.stringify(receiptFields), opts);
+}
+
+/** Redact-or-refuse lease identity strings; cwd kept for git only; replay scrubbed. */
+export function scrubLeaseIdentity(identity: LeaseIdentity): LeaseIdentity {
+  return sanitizeLeaseIdentity(identity, defaultLeaseRedactOptions);
+}
+
 /**
  * Namespaced OCEL object ids for lease identity (Explore 21cd2acc).
  * work_order uses the sjira IRI verbatim; epoch/subject/base keep disjoint
  * namespaces so a raw SHA never collides across object types.
+ * Values pass through `redactLeaseIdentityFields` before bind.
  */
 export function leaseIdentityObjectIds(
   identity: LeaseIdentity,
   subjectSha?: string
 ): Record<string, string> {
+  const safe = scrubLeaseIdentity(identity);
   const out: Record<string, string> = {};
-  if (identity.workOrderIri) out.work_order_iri = identity.workOrderIri;
-  if (identity.epochId) out.epoch = `epoch:${identity.epochId}`;
-  const sha = subjectSha ?? subjectHead(identity.subjectCwd);
-  if (sha) out.subject = `subj:${sha}`;
-  if (identity.baseSha && gitShaPattern.test(identity.baseSha)) out.base = `base:${identity.baseSha}`;
+  if (safe.workOrderIri) out.work_order_iri = safe.workOrderIri;
+  if (safe.epochId) out.epoch = `epoch:${safe.epochId}`;
+  const rawSha = subjectSha ?? subjectHead(identity.subjectCwd);
+  if (rawSha && gitShaPattern.test(rawSha)) out.subject = `subj:${rawSha}`;
+  if (safe.baseSha && gitShaPattern.test(safe.baseSha)) out.base = `base:${safe.baseSha}`;
   return out;
 }
 
@@ -196,7 +303,8 @@ export function closeLeaseIdentityGraph(
   subjectSha?: string,
   time = new Date().toISOString()
 ): OcelDoc {
-  const facts = leaseIdentityObjectIds(identity, subjectSha);
+  const safe = scrubLeaseIdentity(identity);
+  const facts = leaseIdentityObjectIds(safe, subjectSha);
   if (Object.keys(facts).length === 0) return doc;
 
   const objects: OcelObject[] = doc.objects.map((o) => ({
@@ -214,20 +322,23 @@ export function closeLeaseIdentityGraph(
   if (workOrderId) {
     const wo = ensureObject(objects, workOrderId, "work_order");
     pushAttr(wo, "work_order_iri", workOrderId, time);
-    if (identity.epochId) pushAttr(wo, "epoch_id", identity.epochId, time);
+    if (safe.epochId) pushAttr(wo, "epoch_id", safe.epochId, time);
   }
-  if (epochId && identity.epochId) {
+  if (epochId && safe.epochId) {
     const ep = ensureObject(objects, epochId, "epoch");
-    pushAttr(ep, "epoch_id", identity.epochId, time);
+    pushAttr(ep, "epoch_id", safe.epochId, time);
   }
   if (subjectId) {
-    const sha = subjectSha ?? subjectHead(identity.subjectCwd);
+    const rawSha = subjectSha ?? subjectHead(identity.subjectCwd);
+    const sha = rawSha
+      ? redactLeaseIdentityFields({ subject_sha: rawSha }).subject_sha ?? "REDACTED"
+      : undefined;
     const sub = ensureObject(objects, subjectId, "subject");
     if (sha) pushAttr(sub, "subject_sha", sha, time);
   }
-  if (baseId && identity.baseSha) {
+  if (baseId && safe.baseSha) {
     const base = ensureObject(objects, baseId, "base");
-    pushAttr(base, "base_sha", identity.baseSha, time);
+    pushAttr(base, "base_sha", safe.baseSha, time);
   }
 
   // O2O: distinct identity objects linked — never collapse epoch into work_order.
@@ -341,7 +452,15 @@ export function normalizeRecord(record: unknown): unknown {
   return top;
 }
 
-export type OcelResult = { sessionId: string; ocelPath: string; receiptPath: string; events: number; head: string };
+export type OcelResult = {
+  sessionId: string;
+  ocelPath: string;
+  receiptPath: string;
+  events: number;
+  head: string;
+  /** True when finish refused to write secretful OCEL (blocked standing receipt only). */
+  redactionRefused?: boolean;
+};
 
 /** Schema id for the stream↔gall dual-log join sidecar (no merge/rehash). */
 export const DUAL_LOG_JOIN_SCHEMA = "zcode.dual-log-join/1" as const;
@@ -382,8 +501,9 @@ export function buildDualLogJoinManifest(input: {
 }): DualLogJoinManifest | undefined {
   const stream_ocel = input.streamOcel.trim();
   const gall_ocel = input.gallOcel.trim();
-  const work_order_iri = input.workOrderIri.trim();
-  const epoch_id = input.epochId.trim();
+  // Redact-or-refuse lease identity before the join sidecar hits disk.
+  const work_order_iri = sanitizeLeaseIdentityString(input.workOrderIri) ?? "";
+  const epoch_id = sanitizeLeaseIdentityString(input.epochId) ?? "";
   if (!stream_ocel || !gall_ocel || !work_order_iri || !epoch_id) return undefined;
 
   const streamSession = input.streamSession?.trim();
@@ -415,6 +535,100 @@ export function writeDualLogJoinManifest(dir: string, manifest: DualLogJoinManif
 }
 
 /**
+ * Fail-closed parse of a dual-log join sidecar. Rejects wrong schema, missing
+ * core fields, or non-object payloads — never invents a join.
+ */
+export function parseDualLogJoinManifest(raw: unknown): DualLogJoinManifest | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (r.schema !== DUAL_LOG_JOIN_SCHEMA) return undefined;
+  const stream_ocel = typeof r.stream_ocel === "string" ? r.stream_ocel.trim() : "";
+  const gall_ocel = typeof r.gall_ocel === "string" ? r.gall_ocel.trim() : "";
+  const work_order_iri = typeof r.work_order_iri === "string" ? r.work_order_iri.trim() : "";
+  const epoch_id = typeof r.epoch_id === "string" ? r.epoch_id.trim() : "";
+  if (!stream_ocel || !gall_ocel || !work_order_iri || !epoch_id) return undefined;
+
+  let sessions: DualLogJoinManifest["sessions"];
+  if (r.sessions !== undefined) {
+    if (r.sessions === null || typeof r.sessions !== "object" || Array.isArray(r.sessions)) return undefined;
+    const s = r.sessions as Record<string, unknown>;
+    const stream = typeof s.stream === "string" ? s.stream.trim() : undefined;
+    const gall = typeof s.gall === "string" ? s.gall.trim() : undefined;
+    if ((s.stream !== undefined && !stream) || (s.gall !== undefined && !gall)) return undefined;
+    if (stream || gall) {
+      sessions = {
+        ...(stream ? { stream } : {}),
+        ...(gall ? { gall } : {})
+      };
+    }
+  }
+
+  return {
+    schema: DUAL_LOG_JOIN_SCHEMA,
+    stream_ocel,
+    gall_ocel,
+    work_order_iri,
+    epoch_id,
+    ...(sessions ? { sessions } : {})
+  };
+}
+
+/** Read `<dir>/gall-work-<epoch>.join.json`; undefined when absent or invalid. */
+export function readDualLogJoinManifest(dir: string, epochId: string): DualLogJoinManifest | undefined {
+  const path = join(dir, dualLogJoinBasename(epochId));
+  if (!existsSync(path)) return undefined;
+  try {
+    return parseDualLogJoinManifest(JSON.parse(readFileSync(path, "utf8")) as unknown);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve join basenames (or absolute paths) to absolute `.jsonocel` paths under `dir`. */
+export function resolveDualLogJoinPaths(
+  dir: string,
+  manifest: DualLogJoinManifest
+): { streamOcelPath: string; gallOcelPath: string } {
+  const resolve = (name: string): string => (isAbsolute(name) ? name : join(dir, name));
+  return {
+    streamOcelPath: resolve(manifest.stream_ocel),
+    gallOcelPath: resolve(manifest.gall_ocel)
+  };
+}
+
+/**
+ * Seal-time dual-log join: write the sidecar only when both OCEL files exist
+ * under `dir`. Returns the join path, or undefined when either log is absent
+ * or identity fields are incomplete (no fabricated join).
+ */
+export function sealDualLogJoinIfBothExist(input: {
+  dir: string;
+  streamOcelPath: string;
+  gallOcelPath: string;
+  workOrderIri: string;
+  epochId: string;
+  streamSession?: string;
+  gallSession?: string;
+}): string | undefined {
+  const stream_ocel = basename(input.streamOcelPath.trim());
+  const gall_ocel = basename(input.gallOcelPath.trim());
+  if (!stream_ocel || !gall_ocel) return undefined;
+  if (!existsSync(join(input.dir, stream_ocel)) || !existsSync(join(input.dir, gall_ocel))) {
+    return undefined;
+  }
+  const manifest = buildDualLogJoinManifest({
+    streamOcel: stream_ocel,
+    gallOcel: gall_ocel,
+    workOrderIri: input.workOrderIri,
+    epochId: input.epochId,
+    streamSession: input.streamSession,
+    gallSession: input.gallSession
+  });
+  if (!manifest) return undefined;
+  return writeDualLogJoinManifest(input.dir, manifest);
+}
+
+/**
  * Disk receipt for a sealed OCEL tap. Two independent integrity witnesses —
  * never conflate them (pre-fix: `chain_intact` was ALOOP `verify(chain)`,
  * a false witness for OCEL `pi_hash`):
@@ -440,6 +654,11 @@ export interface OcelTapReceipt {
   chain_intact: boolean;
   /** ALOOP receipt seal intact (verify(chain)); orthogonal to OCEL. */
   receipt_chain_intact: boolean;
+  /**
+   * True when finish refused to write a secretful `.jsonocel` (CAPABILITY_SNAPSHOT
+   * fail-closed parity). Standing is blocked; no secretful husk is left behind.
+   */
+  redaction_refused?: boolean;
   unpaired: ReturnType<typeof unpaired>;
   chain: Chain;
 }
@@ -656,7 +875,12 @@ export class OcelRecorder {
     }
     // Promote lease identity into OCEL objects via E2O paths declared in the
     // ontology (work_order_iri / epoch / subject / base) — not receipt-only.
+    // Identity is scrubbed inside bind (leaseIdentityObjectIds); re-check after
+    // bind so post-redact re-injection cannot bypass the ingest gate.
     const withIdentity = bindLeaseIdentityObjects(redacted, this.identity, this.subjectSha);
+    if (this.redactor.containsUnredacted(JSON.stringify(withIdentity))) {
+      throw new Error("REDACTION_FAILURE: unredacted secrets or PII in lease identity bind");
+    }
     this.sessionId ??= sessionOf(withIdentity);
     if (this.tap.spec.kind === "stream-json") this.tap.ingest(JSON.stringify(withIdentity));
     else this.tap.ingest(withIdentity as object);
@@ -670,30 +894,36 @@ export class OcelRecorder {
     this.closed = true;
     const sessionId = sanitizeSessionFileId(this.sessionId ?? `unknown-${Date.now()}`);
     const sealedAt = new Date().toISOString();
+    const safeIdentity = scrubLeaseIdentity(this.identity);
     const doc = closeLeaseIdentityGraph(
       closeEventTypeAttributes(this.tap.toOcel()),
-      this.identity,
+      safeIdentity,
       this.subjectSha,
       sealedAt
     );
     const head = this.tap.seal();
     const ocelText = JSON.stringify(doc);
+    // Fail-closed seal gate (align capability-snapshot assert_no_secrets): never
+    // claim alive / persist an "alive" seal when unredacted secrets or PII remain.
+    const redactionOk = !containsUnredactedSecretsOrPii(ocelText, this.redactionOptions)
+      && !this.redactor.containsUnredacted(ocelText);
     const ocelFileSha256 = sha256(ocelText);
     const objectsSha256 = sha256(JSON.stringify(doc.objects));
     mkdirSync(this.dir, { recursive: true });
     const ocelPath = join(this.dir, `${sessionId}.jsonocel`);
     const receiptPath = join(this.dir, `${sessionId}.receipt.json`);
-    atomicWrite(ocelPath, ocelText);
 
     // OCEL pi_hash integrity — the process-intelligence tripwire. Distinct
     // from the receipt ALOOP seal (`receipt_chain_intact`); never conflate
     // the two (skeptic: chain_intact was a false witness for pi_hash).
-    const ocelIntact = verifyChain(doc as OcelDoc, this.tap.spec.hash) === null && doc.events.length > 0;
+    const ocelIntact =
+      redactionOk && verifyChain(doc as OcelDoc, this.tap.spec.hash) === null && doc.events.length > 0;
+    const standing = ocelIntact ? "alive" : "blocked";
     const chainSubject = receiptChainSubject(sessionId, head, ocelFileSha256, objectsSha256);
     const chain: Chain = [];
     appendPending(chain, `${sessionId}-e1`, chainSubject, "record-ocel");
-    appendOutcome(chain, `${sessionId}-e2`, ocelIntact ? "alive" : "blocked", chainSubject, "record-ocel");
-    seal(chain, `${sessionId}-e3`, ocelIntact ? "alive" : "blocked", chainSubject);
+    appendOutcome(chain, `${sessionId}-e2`, standing, chainSubject, "record-ocel");
+    seal(chain, `${sessionId}-e3`, standing, chainSubject);
     const receiptIntact = verifyOcelReceipt(
       {
         session: sessionId,
@@ -704,6 +934,14 @@ export class OcelRecorder {
       ocelText,
       doc as OcelDoc
     );
+    const receiptIdentity = redactLeaseIdentityFields({
+      ...(this.identity.subjectCwd
+        ? { subject_sha: subjectHead(this.identity.subjectCwd) ?? "REDACTED" }
+        : {}),
+      ...(safeIdentity.workOrderIri ? { work_order_iri: safeIdentity.workOrderIri } : {}),
+      ...(safeIdentity.epochId ? { epoch_id: safeIdentity.epochId } : {}),
+      ...(safeIdentity.baseSha ? { base_sha: safeIdentity.baseSha } : {})
+    });
     const receipt: OcelTapReceipt = {
       session: sessionId,
       source: this.source,
@@ -712,11 +950,12 @@ export class OcelRecorder {
       event_count: doc.events.length,
       head_hash: head,
       // Exact subject and lease identity (ZCODE-26922-06): bound only when
-      // the run carries them, so a receipt can never invent an identity.
-      ...(this.identity.subjectCwd ? { subject_sha: subjectHead(this.identity.subjectCwd) } : {}),
-      ...(this.identity.workOrderIri ? { work_order_iri: this.identity.workOrderIri } : {}),
-      ...(this.identity.epochId ? { epoch_id: this.identity.epochId } : {}),
-      ...(this.identity.baseSha ? { base_sha: this.identity.baseSha } : {}),
+      // the run carries them — scrubbed through redactLeaseIdentityFields so
+      // post-redact re-injection cannot land secrets next to the OCEL log.
+      ...(receiptIdentity.subject_sha ? { subject_sha: receiptIdentity.subject_sha } : {}),
+      ...(receiptIdentity.work_order_iri ? { work_order_iri: receiptIdentity.work_order_iri } : {}),
+      ...(receiptIdentity.epoch_id ? { epoch_id: receiptIdentity.epoch_id } : {}),
+      ...(receiptIdentity.base_sha ? { base_sha: receiptIdentity.base_sha } : {}),
       // Replay binding is redacted before disk write — XAAS_REPLAY_BINDING
       // must not land secrets or PII next to the "redacted" OCEL log.
       ...(this.identity.replayBinding
@@ -727,7 +966,18 @@ export class OcelRecorder {
       unpaired: unpaired(chain),
       chain
     };
-    atomicWrite(receiptPath, JSON.stringify(receipt, null, 2));
+    const receiptText = JSON.stringify(receipt, null, 2);
+    if (
+      !redactionOk
+      || containsUnredactedSecretsOrPii(receiptText, this.redactionOptions)
+      || this.redactor.containsUnredacted(receiptText)
+    ) {
+      // Align capability-snapshot assert: refuse to leave an alive husk; seal
+      // already standing=blocked above. Do not write unredacted OCEL/receipt.
+      throw new Error("REFUSED:UNREDACTED_SECRETS_OR_PII");
+    }
+    atomicWrite(ocelPath, ocelText);
+    atomicWrite(receiptPath, receiptText);
     return { sessionId, ocelPath, receiptPath, events: doc.events.length, head };
   }
 }

@@ -12,6 +12,10 @@ import {
   OcelRecorder,
   buildDualLogJoinManifest,
   dualLogJoinBasename,
+  parseDualLogJoinManifest,
+  readDualLogJoinManifest,
+  resolveDualLogJoinPaths,
+  sealDualLogJoinIfBothExist,
   writeDualLogJoinManifest
 } from "../src/ocel-tap.ts";
 import { fixtures } from "./support/ocel.ts";
@@ -97,6 +101,33 @@ describe("dual-log join manifest", () => {
     }
   });
 
+  test("consumer helpers read/parse/resolve the join without inventing fields", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ocel-dual-consume-"));
+    try {
+      const written = buildDualLogJoinManifest({
+        streamOcel: "stream-sess.jsonocel",
+        gallOcel: `gall-work-${epochId}.jsonocel`,
+        workOrderIri,
+        epochId,
+        streamSession: "stream-sess",
+        gallSession: `gall-work-${epochId}`
+      })!;
+      writeDualLogJoinManifest(dir, written);
+
+      const loaded = readDualLogJoinManifest(dir, epochId);
+      expect(loaded).toEqual(written);
+      expect(parseDualLogJoinManifest({ ...written, schema: "other/1" })).toBeUndefined();
+      expect(parseDualLogJoinManifest({ schema: DUAL_LOG_JOIN_SCHEMA, stream_ocel: "a" })).toBeUndefined();
+      expect(readDualLogJoinManifest(dir, "00000000-0000-4000-8000-000000000000")).toBeUndefined();
+
+      const paths = resolveDualLogJoinPaths(dir, loaded!);
+      expect(paths.streamOcelPath).toBe(join(dir, "stream-sess.jsonocel"));
+      expect(paths.gallOcelPath).toBe(join(dir, `gall-work-${epochId}.jsonocel`));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("seal-time dual logs stay two files; join indexes them by lease identity", () => {
     const dir = mkdtempSync(join(tmpdir(), "ocel-dual-seal-"));
     try {
@@ -122,27 +153,51 @@ describe("dual-log join manifest", () => {
       expect(existsSync(streamOut.ocelPath)).toBe(true);
       expect(existsSync(gallOut.ocelPath)).toBe(true);
 
-      const manifest = buildDualLogJoinManifest({
-        streamOcel: streamOut.sessionId + ".jsonocel",
-        gallOcel: gallOut.sessionId + ".jsonocel",
+      const joinPath = sealDualLogJoinIfBothExist({
+        dir,
+        streamOcelPath: streamOut.ocelPath,
+        gallOcelPath: gallOut.ocelPath,
         workOrderIri,
         epochId,
         streamSession: streamOut.sessionId,
         gallSession: gallOut.sessionId
-      })!;
-      const joinPath = writeDualLogJoinManifest(dir, manifest);
-      const onDisk = JSON.parse(readFileSync(joinPath, "utf8")) as {
-        stream_ocel: string;
-        gall_ocel: string;
-        work_order_iri: string;
-        epoch_id: string;
-      };
+      });
+      expect(joinPath).toBe(join(dir, dualLogJoinBasename(epochId)));
+      const onDisk = readDualLogJoinManifest(dir, epochId)!;
       expect(onDisk.stream_ocel).toBe(`${streamOut.sessionId}.jsonocel`);
       expect(onDisk.gall_ocel).toBe(`${gallOut.sessionId}.jsonocel`);
       expect(onDisk.work_order_iri).toBe(workOrderIri);
       expect(onDisk.epoch_id).toBe(epochId);
+      expect(onDisk.sessions?.stream).toBe(streamOut.sessionId);
+      expect(onDisk.sessions?.gall).toBe(gallOut.sessionId);
+      const resolved = resolveDualLogJoinPaths(dir, onDisk);
+      expect(existsSync(resolved.streamOcelPath)).toBe(true);
+      expect(existsSync(resolved.gallOcelPath)).toBe(true);
       // No merged log was written.
       expect(existsSync(join(dir, `gall-work-${epochId}.merged.jsonocel`))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("sealDualLogJoinIfBothExist refuses when either OCEL file is missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ocel-dual-missing-"));
+    try {
+      const identity = { workOrderIri, epochId };
+      const stream = new OcelRecorder("zcode_stream", dir, identity);
+      stream.write(fixtures()[0].lines.join("\n") + "\n");
+      const streamOut = stream.finish();
+
+      expect(
+        sealDualLogJoinIfBothExist({
+          dir,
+          streamOcelPath: streamOut.ocelPath,
+          gallOcelPath: join(dir, `gall-work-${epochId}.jsonocel`),
+          workOrderIri,
+          epochId
+        })
+      ).toBeUndefined();
+      expect(existsSync(join(dir, dualLogJoinBasename(epochId)))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
