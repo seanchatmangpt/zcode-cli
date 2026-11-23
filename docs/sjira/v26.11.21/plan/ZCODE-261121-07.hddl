@@ -1,0 +1,34 @@
+; GENERATED hand-projection of canonical RDF WorkOrder https://ggen-igniter.dev/ontology/semantic-jira#zcode-261121-07. DO NOT EDIT.
+;; Zero-authority projection: ferroplan-hddl (define (problem ...) (:htn ...)) grammar.
+
+(define (problem promote-ZCODE-261121-07) (:domain semantic-jira-workorder)
+  (:objects
+    ZCODE-261121-07 - workorder
+    court-zcode-261121-07 - court
+    receipt-evidence replay-evidence runtime-evidence source-evidence - evidence
+    fal-zcode-261121-07-1 - falsifier
+    cp-zcode-261121-07 - checkpoint
+  )
+  (:init
+    (workorder ZCODE-261121-07)
+    (standing ZCODE-261121-07 UNKNOWN)
+    (base-sha ZCODE-261121-07 2580032e6933d2c850918ccdf3d132d506a34726)
+    (authority-ceiling ZCODE-261121-07 CONSTRUCT)
+    (exact-subject ZCODE-261121-07 "zcode-cli:xaas-pretooluse-live-gate")
+    (repository ZCODE-261121-07 "seanchatmangpt/zcode-cli")
+    (replay-identity ZCODE-261121-07 "semantic-jira:v26.11.21:ZCODE-261121-07")
+    (projection-authority NONE)
+  )
+  (:goal (and (standing ZCODE-261121-07 ALIVE) (has-receipt ZCODE-261121-07)))
+  (:htn
+    :ordered-subtasks (and
+      (close-court ZCODE-261121-07 court-zcode-261121-07)
+      (produce-evidence ZCODE-261121-07 receipt-evidence)
+      (produce-evidence ZCODE-261121-07 replay-evidence)
+      (produce-evidence ZCODE-261121-07 runtime-evidence)
+      (produce-evidence ZCODE-261121-07 source-evidence)
+      (record-receipt-class ZCODE-261121-07 verification)
+      (record-receipt-class ZCODE-261121-07 replay)
+      (discharge-falsifier ZCODE-261121-07 fal-zcode-261121-07-1)
+      (reach-checkpoint ZCODE-261121-07 cp-zcode-261121-07)
+    )))

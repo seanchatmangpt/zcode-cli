@@ -26,9 +26,11 @@ describe("sjira pin drift detector", () => {
     for (const p of pins) {
       expect(p.sha).toMatch(/^[0-9a-f]{40}$/);
       expect(p.repo).toMatch(/^seanchatmangpt\//);
-      expect(p.file).toMatch(/^docs\/sjira\/v26\.9\.2[12]\/plan\/ZOCEL-\d+\.hddl$/);
+      expect(p.file).toMatch(
+        /^docs\/sjira\/v26\.(9\.2[12]|11\.21)\/plan\/(?:ZOCEL-\d+|ZCODE-261121-\d+)\.hddl$/,
+      );
     }
-    // v26.9.21 corpus pins zcode-cli, v26.9.22 corpus pins xaas (label).
+    // v26.9.21 + v26.11.21 corpora pin zcode-cli; v26.9.22 corpus pins xaas (label).
     const repos = new Set(pins.map((p) => pin_repo(p)));
     expect(repos.has("seanchatmangpt/zcode-cli")).toBeTrue();
     expect(repos.has("seanchatmangpt/xaas")).toBeTrue();

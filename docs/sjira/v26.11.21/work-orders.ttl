@@ -1,0 +1,916 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for ZCODE work orders v26.11.21: post-integrity-wave dogfood
+# + remaining Explore honesty/QMS + queued Exploit upgrades.
+# Integrity PRs #21–#36+#38 are on main at baseSha 2580032 — do NOT re-open.
+# Ticket IDs follow ZCODE-<YYMMDD>-NN (cf. ZCODE-26923-01). Edit this file, never a ticket.
+
+sj:WorkOrder a rdfs:Class .
+sj:Court a rdfs:Class .
+sj:EvidenceRequirement a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:Action a rdfs:Class .
+sj:Checkpoint a rdfs:Class .
+sj:ProjectionSpec a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+sj:StrategicObjective a rdfs:Class .
+
+sj:source-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Source evidence" ;
+    dcterms:description "Exact canonical-source identity evidence." .
+sj:local-execution-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Local execution evidence" ;
+    dcterms:description "Observed repository-local exact-subject execution evidence." .
+sj:hosted-ci-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Hosted CI evidence" ;
+    dcterms:description "Hosted CI evidence kept distinct from local execution." .
+sj:runtime-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Runtime evidence" ;
+    dcterms:description "Runtime execution evidence for the exact admitted subject." .
+sj:postcondition-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Postcondition evidence" ;
+    dcterms:description "Independent evidence that the required consequence holds." .
+sj:receipt-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Receipt evidence" ;
+    dcterms:description "Durable receipt evidence for the exact subject and transition." .
+sj:replay-evidence a sj:EvidenceRequirement ;
+    rdfs:label "Replay evidence" ;
+    dcterms:description "Fresh replay over pack, dependency, graph, consequence, toolchain, and environment identities." .
+
+sj:projection-jira a sj:ProjectionSpec ;
+    rdfs:label "Jira/Markdown ticket" ;
+    dcterms:description "Deterministic jira/markdown ticket projection; authority is NONE." ;
+    sj:projectionType "jira" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.11.21-hand" ;
+    sj:authorityClaim "NONE" .
+sj:projection-hddl a sj:ProjectionSpec ;
+    rdfs:label "HDDL task/method projection" ;
+    dcterms:description "Deterministic hddl task/method projection; authority is NONE." ;
+    sj:projectionType "hddl" ;
+    sj:extension "hddl" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.11.21-hand" ;
+    sj:authorityClaim "NONE" .
+sj:projection-ard a sj:ProjectionSpec ;
+    rdfs:label "Architecture requirements document" ;
+    dcterms:description "Deterministic architecture requirements document projection; authority is NONE." ;
+    sj:projectionType "ard" ;
+    sj:extension "md" ;
+    sj:generatorIdentity "ggen_igniter:semantic-jira-pack@26.11.21-hand" ;
+    sj:authorityClaim "NONE" .
+
+sj:objective-code-work-authority a sj:StrategicObjective ;
+    rdfs:label "Code work originates from admitted semantic authority" ;
+    dcterms:description "All code work originates from admitted semantic authority in the canonical graph; agents communicate only through sJira state; prose, chat, and Markdown are observation surfaces, never work authority." ;
+    sj:admissionDigest "sha256:310e14f1e30a9bb4d6ebd4388036e10ce3c973b13c0d45a7b550fa3dfd53c72c" .
+
+
+# ---- ZCODE-261121-01 (EXPLORE) ----
+sj:zcode-261121-01
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-01: Dogfood loop — pin GGEN_BIN and run sJira → POWL → ledger with honest exits" ;
+    dcterms:identifier "ZCODE-261121-01" ;
+    dcterms:title "Dogfood loop — pin GGEN_BIN and run sJira → POWL → ledger with honest exits" ;
+    dcterms:description "[LANE:EXPLORE] Post-integrity-wave dogfood meta-order. Pin absolute GGEN_BIN (hands-free ancestor >= fd4f99bbd; no PATH fallback) and exercise the clean-room adapter seam: ggen sjira frontier (or SJIRA_CANDIDATES JSONL) → candidatesToPowl → runFoundryLoop / powl-foundry-loop --dry-run → ledger.jsonl + loop_receipt.json with honest exit codes 0/1/2/3 and no fake ALIVE. Marketplace + igniter courts must fail-closed (validateWriteScope before mutate; clean-room trio: unstaged + staged + untracked). Integrity PRs #21–#36+#38 are already on main at baseSha — do not re-open them. Standing stays UNKNOWN until a court receipt exists." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:dogfood-loop-v26.11.21" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-01" ;
+    sj:pathScope "src/adapters", "src/io", "scripts", "test", "docs/sjira/v26.11.21" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-261121-01 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-261121-01-1, sj:acc-zcode-261121-01-2, sj:acc-zcode-261121-01-3 ;
+    sj:falsifier sj:fal-zcode-261121-01-1, sj:fal-zcode-261121-01-2 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-01 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-01 ;
+    .
+
+sj:court-zcode-261121-01 a sj:Court ;
+    rdfs:label "ZCODE-261121-01 exact-subject court" ;
+    dcterms:description "Independent court for Dogfood loop — pin GGEN_BIN and run sJira → POWL → ledger with honest exits: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-01-1 a sj:AcceptanceCriterion ;
+    rdfs:label "GGEN_BIN absolute and pinned" ;
+    dcterms:description "export GGEN_BIN to an absolute path whose --version / git identity is recorded; relative or PATH-resolved GGEN_BIN must refuse (GGEN_BIN_NOT_ABSOLUTE). Record tool identity in the receipt. Earns: GGEN_BIN_PINNED." .
+
+sj:acc-zcode-261121-01-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Frontier → POWL ingest" ;
+    dcterms:description "With SJIRA_CANDIDATES pointing at docs/sjira/v26.11.21 candidates (or \"$GGEN_BIN\" sjira frontier over this milestone graph), candidatesToPowl produces a PartialOrder and bun scripts/powl-foundry-loop.ts --dry-run exits with an honest code (0 success, 2 SUBJECT_MISSING/PARTIAL, never promotes PARTIAL_ALIVE→ALIVE). Earns: DOGFOOD_INGEST." .
+
+sj:acc-zcode-261121-01-3 a sj:AcceptanceCriterion ;
+    rdfs:label "Courts fail-closed" ;
+    dcterms:description "bun test test/adapters.test.ts test/sjira-adapter.test.ts test/adapters-chicago.test.ts reports 0 fail at exact head; staged/untracked dirty trees refuse igniter clean-room; marketplace court does not short-circuit on ggen.toml. Earns: COURTS_FAIL_CLOSED." .
+
+sj:fal-zcode-261121-01-1 a sj:Falsifier ;
+    rdfs:label "PATH fallback" ;
+    dcterms:description "Resolving ggen via PATH or a relative GGEN_BIN while claiming ALIVE refutes the pin." .
+
+sj:fal-zcode-261121-01-2 a sj:Falsifier ;
+    rdfs:label "Fake ALIVE" ;
+    dcterms:description "loop_receipt.json standing ALIVE with nonzero aggregate exit or PARTIAL_ALIVE promotion without a new court refutes honesty." .
+
+sj:cp-zcode-261121-01 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-01 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-01 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-01 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-01" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-01 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-02 (EXPLORE) ----
+sj:zcode-261121-02
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-02: Calver / lock / AGENTS honesty — close provenance drift" ;
+    dcterms:identifier "ZCODE-261121-02" ;
+    dcterms:title "Calver / lock / AGENTS honesty — close provenance drift" ;
+    dcterms:description "[LANE:EXPLORE] Explore honesty defect (charter delta / C4 Annex IV(7)): package.json still reports 3.14.4-1 while docs/AGENTS speak calver v26.x and Desktop/bun pins drift vs zcode-runtime.lock.json. Align version narrative, AGENTS toolchain pins, and lock identity so Art.11 versioning evidence is not dual-narrative. Do not invent a release tag in this order — docs/lock/AGENTS truthfulness only." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:calver-lock-agents-drift" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-02" ;
+    sj:pathScope "package.json", "AGENTS.md", "zcode-runtime.lock.json", "README.md", "docs" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-02 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-02-1, sj:acc-zcode-261121-02-2 ;
+    sj:falsifier sj:fal-zcode-261121-02-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-02 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-02 ;
+    .
+
+sj:court-zcode-261121-02 a sj:Court ;
+    rdfs:label "ZCODE-261121-02 exact-subject court" ;
+    dcterms:description "Independent court for Calver / lock / AGENTS honesty — close provenance drift: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-02-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Single version narrative" ;
+    dcterms:description "Document (or fix) the active version scheme so package.json, AGENTS.md, and release docs do not contradict; either advance package.json to the calver wave or explicitly document the dual scheme with a bound subjectSha. Earns: VERSION_NARRATIVE_BOUND." .
+
+sj:acc-zcode-261121-02-2 a sj:AcceptanceCriterion ;
+    rdfs:label "AGENTS pins match lock" ;
+    dcterms:description "AGENTS.md Desktop/runtime/bun pins match zcode-runtime.lock.json + packageManager at exact head; grep for stale pins that disagree with lock fails closed. Earns: AGENTS_LOCK_ALIGNED." .
+
+sj:fal-zcode-261121-02-1 a sj:Falsifier ;
+    rdfs:label "Dual active claims" ;
+    dcterms:description "README/AGENTS claiming calver-as-active while package.json alone is treated as release identity without disclosure refutes honesty." .
+
+sj:cp-zcode-261121-02 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-02 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-02 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-02 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-02" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-02 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-03 (EXPLORE) ----
+sj:zcode-261121-03
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-03: STANDING-RECEIPT re-cert after integrity wave" ;
+    dcterms:identifier "ZCODE-261121-03" ;
+    dcterms:title "STANDING-RECEIPT re-cert after integrity wave" ;
+    dcterms:description "[LANE:EXPLORE] docs/sjira/v26.10.8/STANDING-RECEIPT.md pins FAIL-HONEST at 9ceba84; E2 confirmed stale×N once src/scripts moved (integrity wave landed on 2580032). Re-issue standing at post-integrity HEAD (or explicitly grandfather docs-only with a new receipt that discloses the pin)." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:standing-receipt-recert" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-03" ;
+    sj:pathScope "docs/sjira/v26.10.8", "docs/sjira/v26.11.21", "receipts" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-261121-03 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:postcondition-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-03-1, sj:acc-zcode-261121-03-2 ;
+    sj:falsifier sj:fal-zcode-261121-03-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-03 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-03 ;
+    .
+
+sj:court-zcode-261121-03 a sj:Court ;
+    rdfs:label "ZCODE-261121-03 exact-subject court" ;
+    dcterms:description "Independent court for STANDING-RECEIPT re-cert after integrity wave: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-03-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Drift measured" ;
+    dcterms:description "git log --oneline 9ceba84..HEAD -- src/ scripts/ is recorded; if nonempty, standing is STALE until re-cert. Earns: DRIFT_MEASURED." .
+
+sj:acc-zcode-261121-03-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Fresh standing receipt" ;
+    dcterms:description "A new STANDING-RECEIPT (under v26.11.21/receipts/ or refreshed v26.10.8) binds subject_sha=exact HEAD, standing FAIL-HONEST or measured pass, and discloses witness lineage. Earns: STANDING_RECERTIFIED." .
+
+sj:fal-zcode-261121-03-1 a sj:Falsifier ;
+    rdfs:label "Silent grandfather" ;
+    dcterms:description "Leaving the 9ceba84 pin without a STALE/disclosure receipt after code-surface moves refutes QMS honesty." .
+
+sj:cp-zcode-261121-03 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-03 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-03 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-03 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-03" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-03 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-04 (EXPLORE) ----
+sj:zcode-261121-04
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-04: HDDL ferroplan 16/16 + pyshacl work-order corpus refresh" ;
+    dcterms:identifier "ZCODE-261121-04" ;
+    dcterms:title "HDDL ferroplan 16/16 + pyshacl work-order corpus refresh" ;
+    dcterms:description "[LANE:EXPLORE] E2 confirmed: 16/16 checked-in HDDL plans refuse ferroplan-hddl (old defproblem shorthand vs pack (define (problem …) (:htn …))); pyshacl fails v26.9.21/22/23 work-orders + stop-court (missing sj:originAuthority, nextAction typing, closed GoalCheckpoint shapes). Refresh this milestone's plans to ferroplan grammar; either regenerate legacy graphs against live semantic-jira-pack shapes or quarantine them with an honest UNSUPPORTED/STALE receipt." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:hddl-pyshacl-corpus" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-04" ;
+    sj:pathScope "docs/sjira" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-04 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-04-1, sj:acc-zcode-261121-04-2 ;
+    sj:falsifier sj:fal-zcode-261121-04-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-04 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-04 ;
+    .
+
+sj:court-zcode-261121-04 a sj:Court ;
+    rdfs:label "ZCODE-261121-04 exact-subject court" ;
+    dcterms:description "Independent court for HDDL ferroplan 16/16 + pyshacl work-order corpus refresh: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-04-1 a sj:AcceptanceCriterion ;
+    rdfs:label "v26.11.21 plans parse" ;
+    dcterms:description "ferroplan-hddl validate_files over docs/sjira/v26.11.21/plan/*.hddl exits 0 for every file (define/problem/:htn grammar). Earns: HDDL_FERROPLAN_GREEN." .
+
+sj:acc-zcode-261121-04-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Legacy disposition honest" ;
+    dcterms:description "Legacy 16 plans + work-orders.ttl either re-projected to pass pyshacl+ferroplan or explicitly receipted STALE/UNSUPPORTED with shape-pack digests. Earns: LEGACY_DISPOSITION." .
+
+sj:fal-zcode-261121-04-1 a sj:Falsifier ;
+    rdfs:label "defproblem claimed green" ;
+    dcterms:description "Any receipt claiming ferroplan green while a plan still starts with (defproblem refutes the court." .
+
+sj:cp-zcode-261121-04 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-04 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-04 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-04 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-04" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-04 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-05 (EXPLORE) ----
+sj:zcode-261121-05
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-05: Vendor-free CI truthfulness — Chicago timeout first-class" ;
+    dcterms:identifier "ZCODE-261121-05" ;
+    dcterms:title "Vendor-free CI truthfulness — Chicago timeout first-class" ;
+    dcterms:description "[LANE:EXPLORE] Explore CI honesty: unit/docs still overclaim vendor-free green; Chicago zero-mock harness flakes/timeouts were fixed per-PR rather than as a first-class gate. Make vendor absence and Chicago timeout budgets explicit in CI/docs so red means measurement failure, not silent skip or band-aid." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:vendor-free-ci-chicago" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-05" ;
+    sj:pathScope ".github/workflows", "test", "docs" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-05 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:hosted-ci-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-05-1, sj:acc-zcode-261121-05-2 ;
+    sj:falsifier sj:fal-zcode-261121-05-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-05 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-05 ;
+    .
+
+sj:court-zcode-261121-05 a sj:Court ;
+    rdfs:label "ZCODE-261121-05 exact-subject court" ;
+    dcterms:description "Independent court for Vendor-free CI truthfulness — Chicago timeout first-class: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-05-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Vendor-absent path documented" ;
+    dcterms:description "CI or docs state what runs without vendor/zcode.cjs vs what requires sync:locked; a missing vendor produces typed skip/fail, never a green lie. Earns: VENDOR_TRUTH." .
+
+sj:acc-zcode-261121-05-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Chicago timeout first-class" ;
+    dcterms:description "test/adapters-chicago.test.ts (and powl-ocel chicago if present) carry an explicit timeout budget in config/docs; hosted CI evidence shows the gate without per-PR one-off only. Earns: CHICAGO_TIMEOUT_CLASS." .
+
+sj:fal-zcode-261121-05-1 a sj:Falsifier ;
+    rdfs:label "Green without vendor when required" ;
+    dcterms:description "A job claiming full runtime coverage while vendor/ is absent and the suite skips silently refutes truthfulness." .
+
+sj:cp-zcode-261121-05 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-05 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-05 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-05 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-05" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-05 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-06 (EXPLORE) ----
+sj:zcode-261121-06
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-06: Interactive TUI OCEL coverage gap — measure or close" ;
+    dcterms:identifier "ZCODE-261121-06" ;
+    dcterms:title "Interactive TUI OCEL coverage gap — measure or close" ;
+    dcterms:description "[LANE:EXPLORE] D4 closed --print→--prompt tap arming on main (#24). Residual: interactive TUI sessions still lack OCEL unless they speak app-server/stream-json (Art.12 logging gap). Either wire a fail-closed TUI logging path under ZCODE_OCEL=1 or emit an honest UNSUPPORTED receipt that interactive TUI is out of Explore telemetry scope." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:interactive-tui-ocel" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-06" ;
+    sj:pathScope "packages/zcode-tui", "src", "test/tui", "docs" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-06 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-06-1 ;
+    sj:falsifier sj:fal-zcode-261121-06-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-06 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-06 ;
+    .
+
+sj:court-zcode-261121-06 a sj:Court ;
+    rdfs:label "ZCODE-261121-06 exact-subject court" ;
+    dcterms:description "Independent court for Interactive TUI OCEL coverage gap — measure or close: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-06-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Gap disposition" ;
+    dcterms:description "Documented measurement: interactive TUI with ZCODE_OCEL=1 either emits chain-verifiable events or the receipt standing is UNSUPPORTED(interactive-tui-ocel) with falsifier that README/AGENTS do not claim otherwise. Earns: TUI_OCEL_DISPOSED." .
+
+sj:fal-zcode-261121-06-1 a sj:Falsifier ;
+    rdfs:label "Claimed coverage without events" ;
+    dcterms:description "Marketing or README claiming OCEL for interactive TUI without a capture refutes the disposition." .
+
+sj:cp-zcode-261121-06 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-06 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-06 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-06 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-06" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-06 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-07 (EXPLORE) ----
+sj:zcode-261121-07
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-07: XAAS PreToolUse live gate verification" ;
+    dcterms:identifier "ZCODE-261121-07" ;
+    dcterms:title "XAAS PreToolUse live gate verification" ;
+    dcterms:description "[LANE:EXPLORE] Swarm never executed a live XAAS_WORKER=1 PreToolUse gate (hooks/hooks.json → xaas-gate.mjs deny/defer, never grant). Verify fail-closed behavior against the installed fabric plugin: without lease → typed refusal; with valid gall-work lease → allow tool path per contract; never invent xaas app code in this repo. Evidence may be host-local; absence of plugin => UNSUPPORTED, not ALIVE." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:xaas-pretooluse-live-gate" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-07" ;
+    sj:pathScope "docs", "test", "src/gall-work.ts" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-261121-07 ;
+    sj:requiresEvidence sj:source-evidence, sj:runtime-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-261121-07-1, sj:acc-zcode-261121-07-2 ;
+    sj:falsifier sj:fal-zcode-261121-07-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-07 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-07 ;
+    .
+
+sj:court-zcode-261121-07 a sj:Court ;
+    rdfs:label "ZCODE-261121-07 exact-subject court" ;
+    dcterms:description "Independent court for XAAS PreToolUse live gate verification: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-07-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Gate observed or UNSUPPORTED" ;
+    dcterms:description "With XAAS_WORKER=1, a tool call without lease is denied/deferred (nonzero / typed refusal); capture hook output. If plugin absent, standing UNSUPPORTED(pretooluse-host) with evidence of absence. Earns: PRETOOLUSE_OBSERVED_OR_UNSUPPORTED." .
+
+sj:acc-zcode-261121-07-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Lease path documented" ;
+    dcterms:description "Receipt binds gall-work.contract.json sha256 and docs/c4-zcode-cli-xaas.md path; no grant-on-missing-hook. Earns: LEASE_GATE_BOUND." .
+
+sj:fal-zcode-261121-07-1 a sj:Falsifier ;
+    rdfs:label "Grant without lease" ;
+    dcterms:description "A tool call succeeding under XAAS_WORKER=1 without a valid lease refutes fail-closed." .
+
+sj:cp-zcode-261121-07 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-07 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-07 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-07 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-07" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-07 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-08 (EXPLORE) ----
+sj:zcode-261121-08
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-08: EU AI Act Annex IV / Art.11 technical documentation pack" ;
+    dcterms:identifier "ZCODE-261121-08" ;
+    dcterms:title "EU AI Act Annex IV / Art.11 technical documentation pack" ;
+    dcterms:description "[LANE:EXPLORE] C4: Annex IV engineering pack absent ahead of 2026-08-01 prep (intended-purpose memo, assumptions register, controls→tests index). Author docs/EU_AI_ACT_TECHNICAL_FILE.md (or docs/sjira/v26.11.21 annex) mapping Annex IV(1)–(9) to repo evidence without claiming conformity assessment. Integrity honesty already merged via #31 — build on that." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:annex-iv-art11-pack" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-08" ;
+    sj:pathScope "docs" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-08 ;
+    sj:requiresEvidence sj:source-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-08-1, sj:acc-zcode-261121-08-2 ;
+    sj:falsifier sj:fal-zcode-261121-08-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-08 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-08 ;
+    .
+
+sj:court-zcode-261121-08 a sj:Court ;
+    rdfs:label "ZCODE-261121-08 exact-subject court" ;
+    dcterms:description "Independent court for EU AI Act Annex IV / Art.11 technical documentation pack: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-08-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Annex IV outline committed" ;
+    dcterms:description "A committed technical-file doc maps IV(1)–IV(9) to concrete paths (SPEC, OCEL tap, receipts:validate, PreToolUse, locks) and marks gaps honestly. Earns: ANNEX_IV_OUTLINE." .
+
+sj:acc-zcode-261121-08-2 a sj:AcceptanceCriterion ;
+    rdfs:label "No false conformity claim" ;
+    dcterms:description "Doc states engineering readiness only; no CE/conformity language. Earns: NO_FALSE_CONFORMITY." .
+
+sj:fal-zcode-261121-08-1 a sj:Falsifier ;
+    rdfs:label "Conformity overclaim" ;
+    dcterms:description "Language asserting Act conformity or completed Notified Body assessment refutes the pack." .
+
+sj:cp-zcode-261121-08 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-08 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-08 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-08 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-08" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-08 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-09 (EXPLORE) ----
+sj:zcode-261121-09
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-09: order_hook / MxLoop pack leakage — pack-owned fix" ;
+    dcterms:identifier "ZCODE-261121-09" ;
+    dcterms:title "order_hook / MxLoop pack leakage — pack-owned fix" ;
+    dcterms:description "[LANE:EXPLORE] B2: generated ocel.ts/loop.ts still carry order_hook/place_order/ship_order and MxLoop* symbols from pack leakage; zcode-loop.ttl consumer surface does not. Fix requires pack owners + B3 toolchain (ggen), never hand-edit src/generated/. Either packs stop emitting leakage and gen-ocel --check is clean of order_hook/MxLoop, or standing stays UNSUPPORTED(packs)." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:order-hook-mxloop-leakage" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-09" ;
+    sj:pathScope "ontology", "scripts/gen-ocel.ts", "src/generated", "HANDWRITTEN.md" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-09 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-09-1, sj:acc-zcode-261121-09-2 ;
+    sj:falsifier sj:fal-zcode-261121-09-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-09 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-09 ;
+    .
+
+sj:court-zcode-261121-09 a sj:Court ;
+    rdfs:label "ZCODE-261121-09 exact-subject court" ;
+    dcterms:description "Independent court for order_hook / MxLoop pack leakage — pack-owned fix: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-09-1 a sj:AcceptanceCriterion ;
+    rdfs:label "No hand-edit of generated" ;
+    dcterms:description "Diff does not modify src/generated/* by hand; HANDWRITTEN.md unchanged for those paths. Earns: NO_HAND_EDIT." .
+
+sj:acc-zcode-261121-09-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Leakage disposition" ;
+    dcterms:description "Either regenerated projections omit order_hook/MxLoop* after pack fix, or receipt standing UNSUPPORTED(pack-leakage) with greps recorded. Earns: LEAKAGE_DISPOSED." .
+
+sj:fal-zcode-261121-09-1 a sj:Falsifier ;
+    rdfs:label "Hand-patched generated" ;
+    dcterms:description "Editing src/generated to hide symbols without pack change refutes the order." .
+
+sj:cp-zcode-261121-09 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-09 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-09 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-09 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-09" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-09 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-10 (EXPLORE) ----
+sj:zcode-261121-10
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-10: WorkspaceFingerprint / rollback — Explore stub only" ;
+    dcterms:identifier "ZCODE-261121-10" ;
+    dcterms:title "WorkspaceFingerprint / rollback — Explore stub only" ;
+    dcterms:description "[LANE:EXPLORE] Exploit X1 needs WorkspaceFingerprint + transactional rollback; Explore may only ship a stub/interface + measurements of dirty-write rates so Exploit does not corrupt baselines. Stub must not claim rollback safety. Feeds ZCODE-261121-12." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:workspace-fingerprint-stub" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-10" ;
+    sj:pathScope "src", "test", "docs" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-10 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-10-1, sj:acc-zcode-261121-10-2 ;
+    sj:falsifier sj:fal-zcode-261121-10-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-10 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-10 ;
+    .
+
+sj:court-zcode-261121-10 a sj:Court ;
+    rdfs:label "ZCODE-261121-10 exact-subject court" ;
+    dcterms:description "Independent court for WorkspaceFingerprint / rollback — Explore stub only: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-10-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Stub or measurement note" ;
+    dcterms:description "Either a typed WorkspaceFingerprint interface with tests that prove it does NOT roll back yet, or a receipt measuring dirty-write/retry rates from Explore runs. Earns: FINGERPRINT_STUB." .
+
+sj:acc-zcode-261121-10-2 a sj:AcceptanceCriterion ;
+    rdfs:label "No Exploit claim" ;
+    dcterms:description "Docs tag [EXPLORE-SCOPE] stub; expandTransactionalLifecycle remains ABSENT. Earns: NO_X1_CLAIM." .
+
+sj:fal-zcode-261121-10-1 a sj:Falsifier ;
+    rdfs:label "Rollback claimed" ;
+    dcterms:description "README/SPEC claiming workspace rollback ALIVE without X1 implementation refutes the stub." .
+
+sj:cp-zcode-261121-10 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-10 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-10 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-10 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-10" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-10 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-11 (EXPLOIT) ----
+sj:zcode-261121-11
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-11: [EXPLOIT] A* trace alignment over enforced-net heuristics" ;
+    dcterms:identifier "ZCODE-261121-11" ;
+    dcterms:title "[EXPLOIT] A* trace alignment over enforced-net heuristics" ;
+    dcterms:description "[LANE:EXPLOIT] Exploit upgrade X2 (charter): replace enforced-net token-replay heuristics (m≡0 by construction on orchestrator schedule) with optimal A* trace alignment (γ=0) over observed agent tool-call traces (alignTraceAStar / src/conformance.ts). Do not claim behavioral conformance until this lands with Exp evidence. Queued — must not alter Explore fitness marketing." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:exploit-astar-alignment" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-11" ;
+    sj:pathScope "src", "test" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-261121-11 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence, sj:replay-evidence ;
+    sj:acceptance sj:acc-zcode-261121-11-1, sj:acc-zcode-261121-11-2 ;
+    sj:falsifier sj:fal-zcode-261121-11-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-11 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-11 ;
+    sj:dependsOn sj:dep-zcode-261121-11-on-01 ;
+    .
+
+sj:court-zcode-261121-11 a sj:Court ;
+    rdfs:label "ZCODE-261121-11 exact-subject court" ;
+    dcterms:description "Independent court for [EXPLOIT] A* trace alignment over enforced-net heuristics: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-11-1 a sj:AcceptanceCriterion ;
+    rdfs:label "alignTraceAStar exists" ;
+    dcterms:description "Path-exact export alignTraceAStar (or SPEC § path) with unit tests on synthetic moves/logs; γ=0 optimal cost verified on a fixture. Earns: ASTAR_PRESENT." .
+
+sj:acc-zcode-261121-11-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Heuristic not marketed as conformance" ;
+    dcterms:description "Docs keep token-replay f as completion heuristic; A* is the conformance path. Earns: HONEST_CONFORMANCE_LABEL." .
+
+sj:fal-zcode-261121-11-1 a sj:Falsifier ;
+    rdfs:label "Vacuous gamma" ;
+    dcterms:description "Alignment always returning cost 0 on mismatched traces refutes optimality." .
+
+sj:cp-zcode-261121-11 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-11 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-11 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-11 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-11" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-11 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-12 (EXPLOIT) ----
+sj:zcode-261121-12
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-12: [EXPLOIT] Bounded transactional lifecycle nets + workspace rollback" ;
+    dcterms:identifier "ZCODE-261121-12" ;
+    dcterms:title "[EXPLOIT] Bounded transactional lifecycle nets + workspace rollback" ;
+    dcterms:description "[LANE:EXPLOIT] Exploit upgrade X1: expandTransactionalLifecycle + WorkspaceFingerprint rollback replacing naked timeout token-returns. Depends on Explore stub ZCODE-261121-10. Prevents dirty-state retries / implicit livelocks." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:exploit-transactional-lifecycle" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-12" ;
+    sj:pathScope "src", "test" ;
+    sj:requiresReceiptClass "verification", "replay" ;
+    sj:requiresCourt sj:court-zcode-261121-12 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-12-1, sj:acc-zcode-261121-12-2 ;
+    sj:falsifier sj:fal-zcode-261121-12-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-12 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-12 ;
+    sj:dependsOn sj:dep-zcode-261121-12-on-01, sj:dep-zcode-261121-12-on-10 ;
+    .
+
+sj:court-zcode-261121-12 a sj:Court ;
+    rdfs:label "ZCODE-261121-12 exact-subject court" ;
+    dcterms:description "Independent court for [EXPLOIT] Bounded transactional lifecycle nets + workspace rollback: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-12-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Transactional expand" ;
+    dcterms:description "expandTransactionalLifecycle (or SPEC path) bounds retry; fingerprint mismatch triggers rollback test. Earns: X1_TRANSACTIONAL." .
+
+sj:acc-zcode-261121-12-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Rollback falsifier" ;
+    dcterms:description "Injected dirty write after timeout is rolled back in test; without fingerprint, test fails. Earns: ROLLBACK_PROVEN." .
+
+sj:fal-zcode-261121-12-1 a sj:Falsifier ;
+    rdfs:label "Token return only" ;
+    dcterms:description "Only returning tokens to input places without workspace rollback while claiming X1 ALIVE refutes the upgrade." .
+
+sj:cp-zcode-261121-12 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-12 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-12 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-12 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-12" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-12 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-13 (EXPLOIT) ----
+sj:zcode-261121-13
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-13: [EXPLOIT] OCPN / OC-DFG process discovery" ;
+    dcterms:identifier "ZCODE-261121-13" ;
+    dcterms:title "[EXPLOIT] OCPN / OC-DFG process discovery" ;
+    dcterms:description "[LANE:EXPLOIT] Exploit upgrade X4: graduate from single-case POWL + OCEL logging to Object-Centric Petri Nets and OC-DFG discovery (src/ocel-discover.ts). Precision gates must use object links; flat event.type Inductive Miner alone is insufficient (C3)." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:exploit-ocpn-ocdfg" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-13" ;
+    sj:pathScope "src", "test" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-13 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-13-1, sj:acc-zcode-261121-13-2 ;
+    sj:falsifier sj:fal-zcode-261121-13-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-13 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-13 ;
+    sj:dependsOn sj:dep-zcode-261121-13-on-01 ;
+    .
+
+sj:court-zcode-261121-13 a sj:Court ;
+    rdfs:label "ZCODE-261121-13 exact-subject court" ;
+    dcterms:description "Independent court for [EXPLOIT] OCPN / OC-DFG process discovery: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-13-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Discovery module" ;
+    dcterms:description "src/ocel-discover.ts (or SPEC path) emits OC-DFG/OCPN from fixture OCEL with object types; tests assert object-aware edges. Earns: OCDFG_PRESENT." .
+
+sj:acc-zcode-261121-13-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Precision not flat-only" ;
+    dcterms:description "Fixture precision under object-aware discovery exceeds documented flat baseline or explains residual honestly. Earns: OBJECT_AWARE_PRECISION." .
+
+sj:fal-zcode-261121-13-1 a sj:Falsifier ;
+    rdfs:label "Flat-only claim" ;
+    dcterms:description "Reporting OC-DFG ALIVE while only flat DFG over event.type exists refutes X4." .
+
+sj:cp-zcode-261121-13 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-13 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-13 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-13 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-13" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-13 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-14 (EXPLOIT) ----
+sj:zcode-261121-14
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-14: [EXPLOIT] Kingman / TTFT AIMD split from heavy-tailed turns" ;
+    dcterms:identifier "ZCODE-261121-14" ;
+    dcterms:title "[EXPLOIT] Kingman / TTFT AIMD split from heavy-tailed turns" ;
+    dcterms:description "[LANE:EXPLOIT] Exploit upgrade X3 (+ Explore TTFT wiring): dual-constraint AIMD keyed on transport/TTFT and TPM/RPM, never raw serviceMs (D1 already removed forbidden serviceMs MD on main). Maximize λ_alive under Kingman variance, not ρ→100%." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:exploit-kingman-ttft-aimd" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-14" ;
+    sj:pathScope "src", "test" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-14 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:runtime-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-14-1, sj:acc-zcode-261121-14-2 ;
+    sj:falsifier sj:fal-zcode-261121-14-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-14 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-14 ;
+    sj:dependsOn sj:dep-zcode-261121-14-on-01 ;
+    .
+
+sj:court-zcode-261121-14 a sj:Court ;
+    rdfs:label "ZCODE-261121-14 exact-subject court" ;
+    dcterms:description "Independent court for [EXPLOIT] Kingman / TTFT AIMD split from heavy-tailed turns: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-14-1 a sj:AcceptanceCriterion ;
+    rdfs:label "TTFT MD signal" ;
+    dcterms:description "AimdWipController MD on TTFT/connect/429 signals with tests; serviceMs-only spike does not MD (D1 preserved). Earns: TTFT_MD." .
+
+sj:acc-zcode-261121-14-2 a sj:AcceptanceCriterion ;
+    rdfs:label "TPM/RPM dual constraint" ;
+    dcterms:description "Documented dual constraint or controller hooks for provider budgets; HANDOFF when capped. Earns: DUAL_CONSTRAINT." .
+
+sj:fal-zcode-261121-14-1 a sj:Falsifier ;
+    rdfs:label "serviceMs MD returns" ;
+    dcterms:description "Reintroducing MD on serviceMs>2×median refutes D1+X3." .
+
+sj:cp-zcode-261121-14 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-14 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-14 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-14 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-14" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-14 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+# ---- ZCODE-261121-15 (EXPLOIT) ----
+sj:zcode-261121-15
+    a sj:WorkOrder ;
+    rdfs:label "ZCODE-261121-15: [EXPLOIT] Cap per-signature remediation retries" ;
+    dcterms:identifier "ZCODE-261121-15" ;
+    dcterms:title "[EXPLOIT] Cap per-signature remediation retries" ;
+    dcterms:description "[LANE:EXPLOIT] Exploit upgrade #5: maxRemediationAttempts / HANDOFF per failure signature in runAutonomicLoop so remediation cannot unbounded-burn. Spec'd in ARD; not closed as production control." ;
+    sj:repository "seanchatmangpt/zcode-cli" ;
+    sj:baseSha "2580032e6933d2c850918ccdf3d132d506a34726" ;
+    sj:subject "zcode-cli:exploit-remediation-retry-caps" ;
+    sj:standing "UNKNOWN" ;
+    sj:evidenceCeiling "SPECIFIED" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    sj:authorityRequirement "NONE" ;
+    sj:originAuthority sj:objective-code-work-authority ;
+    sj:promotionRule "Standing may advance only from an independent exact-head court receipt binding candidateSha, subjectSha and a durable receipt for this subject; a passing test log alone, a generated ticket, or an upstream standing is not promotion. Explore and Exploit lanes must not cross-contaminate measurements." ;
+    sj:replayIdentity "semantic-jira:v26.11.21:ZCODE-261121-15" ;
+    sj:pathScope "src", "test" ;
+    sj:requiresReceiptClass "verification" ;
+    sj:requiresCourt sj:court-zcode-261121-15 ;
+    sj:requiresEvidence sj:source-evidence, sj:local-execution-evidence, sj:receipt-evidence ;
+    sj:acceptance sj:acc-zcode-261121-15-1, sj:acc-zcode-261121-15-2 ;
+    sj:falsifier sj:fal-zcode-261121-15-1 ;
+    sj:projection sj:projection-jira, sj:projection-hddl, sj:projection-ard ;
+    sj:nextAction sj:run-court-zcode-261121-15 ;
+    sj:nextCheckpoint sj:cp-zcode-261121-15 ;
+    sj:dependsOn sj:dep-zcode-261121-15-on-01 ;
+    .
+
+sj:court-zcode-261121-15 a sj:Court ;
+    rdfs:label "ZCODE-261121-15 exact-subject court" ;
+    dcterms:description "Independent court for [EXPLOIT] Cap per-signature remediation retries: runs acceptance at an exact head and binds candidateSha, subjectSha, tool versions and receipt identity. Fail-closed; never fake ALIVE." .
+
+sj:acc-zcode-261121-15-1 a sj:AcceptanceCriterion ;
+    rdfs:label "Per-signature cap" ;
+    dcterms:description "Controller enforces maxRemediationAttempts per signature; excess → HANDOFF/UNSUPPORTED typed outcome in test. Earns: RETRY_CAPPED." .
+
+sj:acc-zcode-261121-15-2 a sj:AcceptanceCriterion ;
+    rdfs:label "Bound maxCycles preserved" ;
+    dcterms:description "A4 maxCycles bound still holds; caps compose, not replace. Earns: MAXCYCLES_PRESERVED." .
+
+sj:fal-zcode-261121-15-1 a sj:Falsifier ;
+    rdfs:label "Unbounded retry" ;
+    dcterms:description "Same signature retrying past cap without HANDOFF refutes the control." .
+
+sj:cp-zcode-261121-15 a sj:Checkpoint ;
+    rdfs:label "ZCODE-261121-15 checkpoint" ;
+    dcterms:description "Closed when the ZCODE-261121-15 court returns a receipt at the exact head; the frontier then advances to dependents of this work order." .
+
+sj:run-court-zcode-261121-15 a sj:Action ;
+    rdfs:label "Next action for ZCODE-261121-15" ;
+    dcterms:description "Run the acceptance commands of ZCODE-261121-15 at an exact head in the scoped worktree, preserve failure output as evidence, and never rerun an unchanged failure without a new hypothesis." .
+
+
+sj:dep-zcode-261121-11-on-01 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-11 depends on ZCODE-261121-01" ;
+    sj:upstreamWorkOrder sj:zcode-261121-01 ;
+    sj:downstreamWorkOrder sj:zcode-261121-11 ;
+    dcterms:description "Frontier rule: ZCODE-261121-11 is claimable only when ZCODE-261121-01 has standing ALIVE at an exact-head receipt." .
+
+
+sj:dep-zcode-261121-12-on-01 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-12 depends on ZCODE-261121-01" ;
+    sj:upstreamWorkOrder sj:zcode-261121-01 ;
+    sj:downstreamWorkOrder sj:zcode-261121-12 ;
+    dcterms:description "Frontier rule: ZCODE-261121-12 is claimable only when ZCODE-261121-01 has standing ALIVE at an exact-head receipt." .
+
+
+sj:dep-zcode-261121-12-on-10 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-12 depends on ZCODE-261121-10" ;
+    sj:upstreamWorkOrder sj:zcode-261121-10 ;
+    sj:downstreamWorkOrder sj:zcode-261121-12 ;
+    dcterms:description "Frontier rule: ZCODE-261121-12 is claimable only when ZCODE-261121-10 has standing ALIVE at an exact-head receipt." .
+
+
+sj:dep-zcode-261121-13-on-01 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-13 depends on ZCODE-261121-01" ;
+    sj:upstreamWorkOrder sj:zcode-261121-01 ;
+    sj:downstreamWorkOrder sj:zcode-261121-13 ;
+    dcterms:description "Frontier rule: ZCODE-261121-13 is claimable only when ZCODE-261121-01 has standing ALIVE at an exact-head receipt." .
+
+
+sj:dep-zcode-261121-14-on-01 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-14 depends on ZCODE-261121-01" ;
+    sj:upstreamWorkOrder sj:zcode-261121-01 ;
+    sj:downstreamWorkOrder sj:zcode-261121-14 ;
+    dcterms:description "Frontier rule: ZCODE-261121-14 is claimable only when ZCODE-261121-01 has standing ALIVE at an exact-head receipt." .
+
+
+sj:dep-zcode-261121-15-on-01 a sj:DependencyEdge ;
+    rdfs:label "ZCODE-261121-15 depends on ZCODE-261121-01" ;
+    sj:upstreamWorkOrder sj:zcode-261121-01 ;
+    sj:downstreamWorkOrder sj:zcode-261121-15 ;
+    dcterms:description "Frontier rule: ZCODE-261121-15 is claimable only when ZCODE-261121-01 has standing ALIVE at an exact-head receipt." .
